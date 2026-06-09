@@ -1,0 +1,156 @@
+name: Release
+
+# Build native binaries for Windows / Linux / macOS.
+#  - Push a tag like `v0.2.3`  -> builds all platforms and attaches the archives
+#    to a GitHub Release.
+#  - Run manually (workflow_dispatch) -> builds all platforms and uploads them as
+#    downloadable workflow artifacts (no release created).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create / update the GitHub Release
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x86_64
+            bin: ashell.exe
+          - os: ubuntu-22.04            # build on the oldest supported runner for broader glibc compatibility
+            target: x86_64-unknown-linux-gnu
+            name: linux-x86_64
+            bin: ashell
+          - os: macos-14               # Apple Silicon
+            target: aarch64-apple-darwin
+            name: macos-aarch64
+            bin: ashell
+          - os: macos-13               # Intel
+            target: x86_64-apple-darwin
+            name: macos-x86_64
+            bin: ashell
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # GPUI needs these system libs on Linux to compile.
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake \
+            libfontconfig1-dev libfreetype6-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgtk-3-dev \
+            libudev-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build (release)
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          STAGE="ashell-${VERSION}-${{ matrix.name }}"
+
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # ── Build a proper .app bundle ────────────────────────────────────
+            # Note: We build the bundle manually here rather than running
+            # scripts/package-macos-app.sh, because that script runs `cargo build`
+            # without respecting the `--target` flag from the matrix.
+            
+            APP="ashell.app"
+            CONTENTS="$APP/Contents"
+            mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
+
+            cp "target/${{ matrix.target }}/release/ashell" "$CONTENTS/MacOS/"
+
+            VERSION_NUM="${VERSION#v}"
+            cat > "$CONTENTS/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+            "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleExecutable</key>
+            <string>ashell</string>
+            <key>CFBundleIdentifier</key>
+            <string>dev.ashell.app</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>ashell</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION_NUM}</string>
+            <key>CFBundleVersion</key>
+            <string>1</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>12.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+            printf 'APPL????' > "$CONTENTS/PkgInfo"
+
+            # Ad-hoc code-sign the assembled bundle.
+            codesign --force --deep --sign - "$APP"
+            codesign --verify --verbose "$APP"
+
+            # Package with ditto (Apple's tool) to preserve signature/metadata
+            ditto -c -k --keepParent "$APP" "${STAGE}.zip"
+            echo "ASSET=${STAGE}.zip" >> "$GITHUB_ENV"
+
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            mkdir "$STAGE"
+            cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$STAGE/"
+            7z a "${STAGE}.zip" "$STAGE" >/dev/null
+            echo "ASSET=${STAGE}.zip" >> "$GITHUB_ENV"
+
+          else
+            # Linux
+            mkdir "$STAGE"
+            cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$STAGE/"
+            tar -czf "${STAGE}.tar.gz" "$STAGE"
+            echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ env.ASSET }}
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
+          fail_on_unmatched_files: true
