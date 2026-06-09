@@ -47,7 +47,7 @@ pub struct PreviewData {
 }
 
 #[derive(Debug)]
-enum SftpCommand {
+pub enum SftpCommand {
     ListDir(String),
     Preview(String),
     Download { remote: String, local_dir: String },
@@ -56,7 +56,7 @@ enum SftpCommand {
 }
 
 pub struct SftpHandle {
-    commands: UnboundedSender<SftpCommand>,
+    pub commands: UnboundedSender<SftpCommand>,
     #[allow(dead_code)]
     join: Option<JoinHandle<()>>,
 }

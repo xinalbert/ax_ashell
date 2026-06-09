@@ -15,7 +15,7 @@ use alacritty_terminal::index::Side;
 use alacritty_terminal::selection::SelectionType;
 use anyhow::{Context as _, Result};
 use gpui::{
-    Anchor, App, AppContext as _, Bounds, ClipboardItem, Context, Entity, FocusHandle,
+    Anchor, App, AppContext as _, Bounds, ClipboardItem, Context, Entity, FocusHandle, ElementId,
     Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
     PathPromptOptions, Pixels, Point, QuitMode, Render, ScrollDelta, ScrollWheelEvent,
@@ -23,7 +23,7 @@ use gpui::{
     prelude::FluentBuilder as _, px, size, uniform_list,
 };
 use gpui_component::{
-    ActiveTheme as _, ElementExt, IconName, Root, Sizable as _, Theme, ThemeMode, ThemeRegistry,
+    ActiveTheme as _, ElementExt, IconName, Root, Sizable as _, Disableable, Theme, ThemeMode, ThemeRegistry,
     WindowExt as _,
     button::{Button, ButtonVariants as _},
     checkbox::Checkbox,
@@ -2200,6 +2200,81 @@ impl Ashell {
             )
     }
 
+    fn toggle_sftp_entry(&mut self, path: String, checked: bool, cx: &mut Context<Self>) {
+        if let Some(sftp) = self.active_sftp_mut() {
+            if checked {
+                sftp.selected_entries.insert(path);
+            } else {
+                sftp.selected_entries.remove(&path);
+            }
+            cx.notify();
+        }
+    }
+
+    fn toggle_all_sftp_entries(&mut self, checked: bool, cx: &mut Context<Self>) {
+        if let Some(sftp) = self.active_sftp_mut() {
+            if checked {
+                let paths: Vec<String> = sftp.entries.iter().map(|e| e.full_path.clone()).collect();
+                for path in paths {
+                    sftp.selected_entries.insert(path);
+                }
+            } else {
+                sftp.selected_entries.clear();
+            }
+            cx.notify();
+        }
+    }
+
+    fn download_selected_sftp_entries(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(sftp) = self.active_sftp() else { return };
+        let selected: Vec<String> = sftp.selected_entries.iter().cloned().collect();
+        if selected.is_empty() { return }
+
+        let Some(handle) = self.active_sftp_handle().cloned() else { return };
+
+        let path_prompt = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Select Download Folder".into()),
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Ok(Some(mut paths))) = path_prompt.await {
+                if let Some(folder) = paths.pop() {
+                    let local_dir = folder.to_string_lossy().to_string();
+                    for remote in selected {
+                        let _ = handle.commands.send(crate::sftp::SftpCommand::Download {
+                            remote,
+                            local_dir: local_dir.clone(),
+                        });
+                    }
+                    
+                    let _ = this.update(cx, |this, cx| {
+                        if let Some(sftp_mut) = this.active_sftp_mut() {
+                            sftp_mut.selected_entries.clear();
+                        }
+                        cx.notify();
+                    });
+                }
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+        .detach();
+    }
+
+    fn upload_sftp_files_batch(&mut self, paths: Vec<String>, _cx: &mut Context<Self>) {
+        if paths.is_empty() { return }
+        if let Some(sftp) = self.active_sftp() {
+            if let Some(handle) = self.active_sftp_handle() {
+                let _ = handle.commands.send(crate::sftp::SftpCommand::UploadPaths {
+                    locals: paths,
+                    remote_dir: sftp.current_path.clone(),
+                });
+            }
+        }
+    }
+
     fn theme_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity();
         let themes = ThemeRegistry::global(cx)
@@ -2324,6 +2399,8 @@ impl Ashell {
             .filter(|entry| self.show_hidden_files || !entry.name.starts_with('.'))
             .collect::<Vec<_>>();
         let status = sftp.status.clone();
+        let selected_entries = sftp.selected_entries.clone();
+        let all_selected = !entries.is_empty() && entries.iter().all(|e| selected_entries.contains(&e.full_path));
         let parent_path = Self::sftp_parent_path(&sftp.current_path);
         let view = cx.entity();
         let icon_col_width = px(14.);
@@ -2335,6 +2412,10 @@ impl Ashell {
             .gap_0()
             .border_color(cx.theme().border)
             .bg(cx.theme().background)
+            .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                let paths_to_upload: Vec<String> = paths.0.iter().map(|p| p.to_string_lossy().to_string()).collect();
+                this.upload_sftp_files_batch(paths_to_upload, cx);
+            }))
             .child(
                 h_flex()
                     .h(px(34.))
@@ -2381,6 +2462,17 @@ impl Ashell {
                             })),
                     )
                     .child(
+                        Button::new("sftp-download-selected")
+                            .ghost()
+                            .small()
+                            .icon(IconName::ArrowDown)
+                            .label(format!("download ({})", selected_entries.len()))
+                            .disabled(selected_entries.is_empty())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.download_selected_sftp_entries(window, cx);
+                            })),
+                    )
+                    .child(
                         Checkbox::new("sftp-show-hidden")
                             .label("hidden")
                             .checked(self.show_hidden_files)
@@ -2421,6 +2513,20 @@ impl Ashell {
                     .border_b_1()
                     .border_color(cx.theme().border)
                     .bg(cx.theme().muted.opacity(0.8))
+                    .child(
+                        h_flex()
+                            .w(px(24.))
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                Checkbox::new("sftp-select-all")
+                                    .checked(all_selected)
+                                    .on_click(cx.listener(move |this, checked, _, cx| {
+                                        this.toggle_all_sftp_entries(*checked, cx);
+                                    })),
+                            )
+                    )
                     .child(
                         h_flex()
                             .flex_1()
@@ -2472,6 +2578,7 @@ impl Ashell {
                                         let left_row = entry.clone();
                                         let right_row = entry.clone();
                                         let remote_path = entry.full_path.clone();
+                                        let is_checked = selected_entries.contains(&entry.full_path);
                                         let is_selected = selected_path
                                             .as_deref()
                                             .map(|path| path == entry.full_path)
@@ -2528,6 +2635,25 @@ impl Ashell {
                                                         );
                                                     }
                                                 }),
+                                            )
+                                            .child(
+                                                h_flex()
+                                                    .w(px(24.))
+                                                    .flex_none()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                                    .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+                                                    .child(
+                                                        Checkbox::new(ElementId::Name(format!("check-{}", entry.full_path).into()))
+                                                            .checked(is_checked)
+                                                            .on_click(window.listener_for(&view, {
+                                                                let path = entry.full_path.clone();
+                                                                move |this, checked, _, cx| {
+                                                                    this.toggle_sftp_entry(path.clone(), *checked, cx);
+                                                                }
+                                                            })),
+                                                    )
                                             )
                                             .child(
                                                 h_flex()

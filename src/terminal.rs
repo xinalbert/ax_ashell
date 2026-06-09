@@ -119,6 +119,7 @@ pub struct SftpUiState {
     pub entries: Vec<RemoteEntry>,
     pub selected_path: Option<String>,
     pub preview: Option<PreviewData>,
+    pub selected_entries: std::collections::HashSet<String>,
 }
 
 impl TerminalTab {
@@ -143,6 +144,7 @@ impl TerminalTab {
             entries: Vec::new(),
             selected_path: None,
             preview: None,
+            selected_entries: std::collections::HashSet::new(),
         });
         tab
     }
