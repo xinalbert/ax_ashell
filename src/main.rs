@@ -17,8 +17,9 @@ use gpui::{
     Anchor, App, AppContext as _, Bounds, ClipboardItem, Context, ElementId, Entity, FocusHandle,
     Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
-    PathPromptOptions, Pixels, Point, QuitMode, Render, ScrollDelta, ScrollWheelEvent,
-    SharedString, Size, StatefulInteractiveElement, Styled as _, UniformListScrollHandle, Window, WindowOptions, div, point,
+    PathBuilder, PathPromptOptions, Pixels, Point, QuitMode, Render, ScrollDelta,
+    ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled as _,
+    UniformListScrollHandle, Window, WindowOptions, canvas, div, point,
     prelude::FluentBuilder as _, px, rems, size, uniform_list,
 };
 use gpui_component::{
@@ -52,7 +53,7 @@ mod terminal_element;
 
 use config::{AuthMethod, ConfigStore, Session};
 use sftp::{RemoteEntry, SftpHandle, format_mtime};
-use system::{DiskSample, SystemSampler, SystemSnapshot, format_bytes};
+use system::{SystemSampler, SystemSnapshot, format_bytes};
 use terminal::{BackendCommand, BackendEvent, TabKind, TerminalTab, encode_key};
 use terminal_element::TerminalElement;
 
@@ -185,6 +186,9 @@ struct Ashell {
     config: ConfigStore,
     system_sampler: SystemSampler,
     system: SystemSnapshot,
+    cpu_history: Vec<f32>,
+    net_rx_history: Vec<f32>,
+    net_tx_history: Vec<f32>,
     last_system_sample: Instant,
     last_theme_sync: Instant,
     last_window_appearance: Option<gpui::WindowAppearance>,
@@ -349,6 +353,9 @@ impl Ashell {
             config,
             system_sampler,
             system,
+            cpu_history: Vec::with_capacity(20),
+            net_rx_history: Vec::with_capacity(20),
+            net_tx_history: Vec::with_capacity(20),
             last_system_sample: Instant::now(),
             last_theme_sync: Instant::now(),
             last_window_appearance: None,
@@ -664,6 +671,16 @@ impl Ashell {
             self.system = self.system_sampler.sample();
             self.system_status = None;
             self.remote_sample_in_flight = false;
+        }
+        self.cpu_history.push(self.system.cpu_percent);
+        if self.cpu_history.len() > 20 {
+            self.cpu_history.remove(0);
+        }
+        self.net_rx_history.push(self.system.net_rx_rate as f32);
+        self.net_tx_history.push(self.system.net_tx_rate as f32);
+        if self.net_rx_history.len() > 20 {
+            self.net_rx_history.remove(0);
+            self.net_tx_history.remove(0);
         }
         self.last_system_sample = Instant::now();
     }
@@ -3070,13 +3087,6 @@ impl Ashell {
         format!("{}@{}:{}", session.user, session.host, session.port)
     }
 
-    fn system_target_label(&self) -> String {
-        match self.active_kind() {
-            Some(TabKind::Ssh) => self.active_title(),
-            Some(TabKind::Local) => "local host".into(),
-            None => "idle".into(),
-        }
-    }
 
     fn sync_terminal_size(&mut self, window: &Window, cx: &App) {
         let viewport = window.viewport_size();
@@ -3105,174 +3115,6 @@ impl Ashell {
         }
     }
 
-    fn system_card(
-        &self,
-        label: String,
-        percent: f32,
-        detail: String,
-        fill: Hsla,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let percent = percent.clamp(0.0, 1.0);
-        v_flex()
-            .gap_1()
-            .p_2()
-            .rounded_md()
-            .border_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().muted)
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_size(rems(0.917))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(fill)
-                            .child(label.clone()),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_size(rems(0.917))
-                            .text_color(cx.theme().muted_foreground)
-                            .flex_none()
-                            .child(format!("{:.0}%", percent * 100.0)),
-                    ),
-            )
-            .child(
-                Progress::new(format!("system-progress-{label}"))
-                    .with_size(px(6.))
-                    .value(percent * 100.0)
-                    .color(fill)
-                    .w_full(),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .min_w(px(0.))
-                    .overflow_hidden()
-                    .text_size(rems(0.917))
-                    .text_color(cx.theme().muted_foreground)
-                    .child(detail),
-            )
-    }
-
-    fn network_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .gap_2()
-            .p_2()
-            .rounded_md()
-            .border_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().muted)
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_size(rems(1.0))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(cx.theme().chart_4)
-                            .child(t!("net")),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_size(rems(0.917))
-                            .text_color(cx.theme().muted_foreground)
-                            .child(t!("live")),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(
-                        h_flex()
-                            .flex_1()
-                            .min_w(px(0.))
-                            .gap_1()
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .text_size(rems(1.0))
-                                    .text_color(cx.theme().chart_4)
-                                    .child("↓"),
-                            )
-                            .child(div().text_size(rems(1.0)).child(self.system.net_rx.clone())),
-                    )
-                    .child(
-                        h_flex()
-                            .flex_1()
-                            .min_w(px(0.))
-                            .gap_1()
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .text_size(rems(1.0))
-                                    .text_color(cx.theme().chart_5)
-                                    .child("↑"),
-                            )
-                            .child(div().text_size(rems(1.0)).child(self.system.net_tx.clone())),
-                    ),
-            )
-    }
-
-    fn disk_row(&self, disk: DiskSample, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let mount = disk.mount.clone();
-        let used = disk.total_bytes.saturating_sub(disk.available_bytes);
-        let percent = if disk.total_bytes == 0 {
-            0.0
-        } else {
-            used as f32 / disk.total_bytes as f32
-        }
-        .clamp(0.0, 1.0);
-
-        v_flex()
-            .gap_1()
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.))
-                            .overflow_hidden()
-                            .text_size(rems(0.917))
-                            .text_color(cx.theme().foreground)
-                            .child(mount.clone()),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .text_size(rems(0.917))
-                            .text_color(cx.theme().muted_foreground)
-                            .child(format!("{:.0}%", percent * 100.0)),
-                    ),
-            )
-            .child(
-                Progress::new(format!("disk-progress-{mount}"))
-                    .with_size(px(5.))
-                    .value(percent * 100.0)
-                    .color(cx.theme().chart_5)
-                    .w_full(),
-            )
-            .child(
-                div()
-                    .min_w(px(0.))
-                    .overflow_hidden()
-                    .text_size(rems(0.917))
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!(
-                        "{}/{}",
-                        format_bytes(used),
-                        format_bytes(disk.total_bytes)
-                    )),
-            )
-    }
 
     fn toggle_sftp_entry(&mut self, path: String, checked: bool, cx: &mut Context<Self>) {
         if let Some(sftp) = self.active_sftp_mut() {
@@ -3936,6 +3778,365 @@ impl Ashell {
             .into_any_element()
     }
 
+    fn render_monitoring_panel(
+        &mut self,
+        viewport_width: Pixels,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let cpu_color = cx.theme().chart_1;
+        let mem_color = cx.theme().chart_2;
+        let swap_color = cx.theme().chart_3;
+        let net_color = cx.theme().chart_4;
+        let disk_color = cx.theme().chart_5;
+        let border_color = cx.theme().border;
+        let muted_fg = cx.theme().muted_foreground;
+
+        let cpu_pct = self.system.cpu_percent;
+        let mem_pct = self.system.mem_percent;
+        let swap_pct = self.system.swap_percent;
+        let mem_detail = self.system.mem_detail.clone();
+        let swap_detail = self.system.swap_detail.clone();
+        let net_rx = self.system.net_rx.clone();
+        let net_tx = self.system.net_tx.clone();
+
+        let (disk_used, disk_total) =
+            self.system
+                .disks
+                .iter()
+                .fold((0u64, 0u64), |(u, t), d| {
+                    (u + (d.total_bytes - d.available_bytes), t + d.total_bytes)
+                });
+        let disk_pct = if disk_total > 0 {
+            disk_used as f64 / disk_total as f64 * 100.0
+        } else {
+            0.0
+        };
+
+        let cpu_spark_data = self.cpu_history.clone();
+        let net_rx_history = self.net_rx_history.clone();
+        let net_tx_history = self.net_tx_history.clone();
+        let disks = self.system.disks.clone();
+        let card_min_w = px(110.);
+
+        let show_net_card = viewport_width > px(750.);
+        let show_disk_card = viewport_width > px(600.);
+
+        // --- CPU card ---
+        let cpu_card = v_flex()
+            .min_w(card_min_w)
+            .flex_1()
+            .h_full()
+            .px_1()
+            .py_1()
+            .gap_0p5()
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_size(rems(0.833))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(cpu_color)
+                            .child("CPU"),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .text_size(rems(0.833))
+                            .text_color(muted_fg)
+                            .child(format!("{:.0}%", cpu_pct * 100.0)),
+                    ),
+            )
+            .child(
+                canvas(
+                    move |bounds, _window, _cx| {
+                        let n = cpu_spark_data.len();
+                        if n < 2 {
+                            return None;
+                        }
+                        let mut path = PathBuilder::stroke(px(1.5));
+                        let w = bounds.size.width;
+                        let h = bounds.size.height;
+                        let max_val =
+                            cpu_spark_data.iter().cloned().fold(0.0f32, f32::max).max(1.0);
+                        for (i, &val) in cpu_spark_data.iter().enumerate() {
+                            let x =
+                                bounds.origin.x + w * i as f32 / (n - 1).max(1) as f32;
+                            let y = bounds.origin.y + h * (1.0 - val / max_val * 0.85);
+                            let pt = point(x, y);
+                            if i == 0 {
+                                path.move_to(pt);
+                            } else {
+                                path.line_to(pt);
+                            }
+                        }
+                        path.build().ok()
+                    },
+                    move |_bounds, path_opt, window, _cx| {
+                        if let Some(path) = path_opt {
+                            window.paint_path(path, cpu_color);
+                        }
+                    },
+                )
+                .flex_1()
+                .w_full(),
+            );
+
+        // --- MEM card: mem + swap ---
+        let mem_card = v_flex()
+            .min_w(card_min_w)
+            .flex_1()
+            .h_full()
+            .px_1()
+            .py_1()
+            .gap_0p5()
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_size(rems(0.833))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(mem_color)
+                            .child("MEM"),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .text_size(rems(0.833))
+                            .text_color(muted_fg)
+                            .child(format!("{:.0}%", mem_pct * 100.0)),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        Progress::new("mem-progress")
+                            .value(mem_pct * 100.0)
+                            .color(mem_color)
+                            .with_size(px(5.))
+                            .flex_1(),
+                    )
+                    .child(
+                        div()
+                            .text_size(rems(0.7))
+                            .text_color(muted_fg)
+                            .child(mem_detail),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        Progress::new("swap-progress")
+                            .value(swap_pct * 100.0)
+                            .color(swap_color)
+                            .with_size(px(4.))
+                            .flex_1(),
+                    )
+                    .child(
+                        div()
+                            .text_size(rems(0.7))
+                            .text_color(muted_fg)
+                            .child(swap_detail),
+                    ),
+            );
+
+        // --- NET card: rx/tx text + dual sparkline ---
+        let net_card = if show_net_card {
+            Some(
+                v_flex()
+                    .min_w(card_min_w)
+                    .flex_1()
+                    .h_full()
+                    .px_1()
+                    .py_1()
+                    .gap_0p5()
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .items_center()
+                            .child(
+                                div()
+                                    .text_size(rems(0.833))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(net_color)
+                                    .child("NET"),
+                            )
+                            .child(div().flex_1())
+                            .child(
+                                div()
+                                    .text_size(rems(0.75))
+                                    .text_color(muted_fg)
+                                    .child(format!("↓{}  ↑{}", net_rx, net_tx)),
+                            ),
+                    )
+                    .child(
+                        canvas(
+                            move |bounds, _window, _cx| {
+                                let n_rx = net_rx_history.len();
+                                let n_tx = net_tx_history.len();
+                                if n_rx < 2 || n_tx < 2 {
+                                    return None;
+                                }
+                                let all: Vec<f32> = net_rx_history
+                                    .iter()
+                                    .chain(net_tx_history.iter())
+                                    .cloned()
+                                    .collect();
+                                let max_val = all.iter().cloned().fold(0.0f32, f32::max).max(1.0);
+
+                                let w = bounds.size.width;
+                                let h = bounds.size.height;
+
+                                let mut rx_path = PathBuilder::stroke(px(1.0));
+                                for (i, &val) in net_rx_history.iter().enumerate() {
+                                    let x = bounds.origin.x
+                                        + w * i as f32 / (n_rx - 1).max(1) as f32;
+                                    let y = bounds.origin.y
+                                        + h * (1.0 - val / max_val * 0.85);
+                                    let pt = point(x, y);
+                                    if i == 0 {
+                                        rx_path.move_to(pt);
+                                    } else {
+                                        rx_path.line_to(pt);
+                                    }
+                                }
+                                let rx_path = rx_path.build().ok();
+
+                                let mut tx_path = PathBuilder::stroke(px(1.0));
+                                for (i, &val) in net_tx_history.iter().enumerate() {
+                                    let x = bounds.origin.x
+                                        + w * i as f32 / (n_tx - 1).max(1) as f32;
+                                    let y = bounds.origin.y
+                                        + h * (1.0 - val / max_val * 0.85);
+                                    let pt = point(x, y);
+                                    if i == 0 {
+                                        tx_path.move_to(pt);
+                                    } else {
+                                        tx_path.line_to(pt);
+                                    }
+                                }
+                                let tx_path = tx_path.build().ok();
+
+                                Some((rx_path, tx_path))
+                            },
+                            move |_bounds, paths_opt, window, _cx| {
+                                if let Some((rx_path, tx_path)) = paths_opt {
+                                    if let Some(path) = rx_path {
+                                        window.paint_path(path, net_color);
+                                    }
+                                    if let Some(path) = tx_path {
+                                        window.paint_path(path, muted_fg);
+                                    }
+                                }
+                            },
+                        )
+                        .flex_1()
+                        .w_full(),
+                    )
+                    .into_any_element(),
+            )
+        } else {
+            None
+        };
+
+        // --- DISK card: per-mount list ---
+        let disk_card = if show_disk_card {
+            Some(
+                v_flex()
+                    .min_w(card_min_w)
+                    .flex_1()
+                    .h_full()
+                    .px_1()
+                    .py_1()
+                    .gap_0p5()
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .items_center()
+                            .child(
+                                div()
+                                    .text_size(rems(0.833))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(disk_color)
+                                    .child("DISK"),
+                            )
+                            .child(div().flex_1())
+                            .child(
+                                div()
+                                    .text_size(rems(0.833))
+                                    .text_color(muted_fg)
+                                    .child(format!("{:.0}%", disk_pct)),
+                            ),
+                    )
+                    .children(disks.iter().take(3).map(|disk| {
+                        let used = disk.total_bytes - disk.available_bytes;
+                        let pct = if disk.total_bytes > 0 {
+                            used as f64 / disk.total_bytes as f64 * 100.0
+                        } else {
+                            0.0
+                        };
+                        let mount_short = disk.mount.clone();
+                        let mount_id = format!("disk-{}", mount_short);
+                        h_flex()
+                            .w_full()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_size(rems(0.667))
+                                    .text_color(muted_fg)
+                                    .child(mount_short),
+                            )
+                            .child(
+                                Progress::new(mount_id)
+                                    .value(pct as f32)
+                                    .color(disk_color)
+                                    .with_size(px(4.))
+                                    .flex_1(),
+                            )
+                            .child(
+                                div()
+                                    .text_size(rems(0.667))
+                                    .text_color(muted_fg)
+                                    .child(format!("{:.0}%", pct)),
+                            )
+                    }))
+                    .into_any_element(),
+            )
+        } else {
+            None
+        };
+
+        let mut panel = h_flex()
+            .h(px(80.))
+            .w_full()
+            .flex_none()
+            .px_3()
+            .gap_3()
+            .border_b_1()
+            .border_color(border_color)
+            .bg(cx.theme().muted);
+
+        panel = panel.child(cpu_card);
+        panel = panel.child(mem_card);
+        if let Some(card) = net_card {
+            panel = panel.child(card);
+        }
+        if let Some(card) = disk_card {
+            panel = panel.child(card);
+        }
+        panel
+    }
+
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let sessions = self.config.sessions().to_vec();
         let active_session_id = self.active_session_id().map(ToOwned::to_owned);
@@ -3988,80 +4189,6 @@ impl Ashell {
                                         }
                                     }),
                             ),
-                    ),
-            )
-            .child(
-                v_flex()
-                    .gap_2()
-                    .child(
-                        h_flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .text_size(rems(1.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(cx.theme().primary)
-                                    .child(t!("system")),
-                            )
-                            .child(div().flex_1())
-                            .child(
-                                div()
-                                    .text_size(rems(0.917))
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(self.system_target_label()),
-                            ),
-                    )
-                    .when_some(self.system_status.clone(), |this, text| {
-                        this.child(
-                            div()
-                                .text_size(rems(0.917))
-                                .text_color(cx.theme().muted_foreground)
-                                .child(text),
-                        )
-                    })
-                    .child(self.system_card(
-                        t!("cpu").to_string(),
-                        self.system.cpu_percent,
-                        t!("global_load").into(),
-                        cx.theme().chart_1,
-                        cx,
-                    ))
-                    .child(self.system_card(
-                        t!("mem").to_string(),
-                        self.system.mem_percent,
-                        self.system.mem_detail.clone(),
-                        cx.theme().chart_2,
-                        cx,
-                    ))
-                    .child(self.system_card(
-                        t!("swap").to_string(),
-                        self.system.swap_percent,
-                        self.system.swap_detail.clone(),
-                        cx.theme().chart_3,
-                        cx,
-                    ))
-                    .child(self.network_card(cx))
-                    .child(
-                        v_flex()
-                            .gap_2()
-                            .p_2()
-                            .rounded_md()
-                            .border_1()
-                            .border_color(cx.theme().border)
-                            .bg(cx.theme().muted)
-                            .child(
-                                div()
-                                    .text_size(rems(0.917))
-                                    .text_color(cx.theme().chart_5)
-                                    .child(t!("disk")),
-                            )
-                            .children({
-                                let mut disk_elements = Vec::new();
-                                for disk in self.system.disks.clone() {
-                                    disk_elements.push(self.disk_row(disk, cx));
-                                }
-                                disk_elements
-                            }),
                     ),
             )
             .child(
@@ -4403,15 +4530,23 @@ impl Render for Ashell {
                                                     )
                                                     .into_any_element(),
                                             }),
-                                    ),
+                                            ),
                                         )
                                         .child(
                                             resizable_panel()
                                                 .size(px(self.config.body_panels().and_then(|s| s.get(1).copied()).unwrap_or(248.0)))
-                                                .size_range(px(180.)..px(1000.))
-                                                .child(self.render_sftp_panel(window, cx)),
+                                                .size_range(px(180.)..px(1200.))
+                                                .child(
+                                                    v_flex()
+                                                        .size_full()
+                                                        .child(self.render_monitoring_panel(
+                                                            window.viewport_size().width,
+                                                            cx,
+                                                        ))
+                                                        .child(self.render_sftp_panel(window, cx)),
+                                                ),
                                         ),
-                                ),
+                                )
                         ),
                     ),
             )
