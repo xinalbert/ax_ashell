@@ -195,16 +195,61 @@ impl Ashell {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.show_transfers_dialog(window, cx);
                     })),
+            )
+            .child(
+                Button::new("sftp-minimize-toggle")
+                    .ghost()
+                    .small()
+                    .icon(if self.sftp_panel_minimized { IconName::ChevronUp } else { IconName::ChevronDown })
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        let state = this.body_panels.clone();
+                        let minimized = this.sftp_panel_minimized;
+                        
+                        if !minimized {
+                            // Going to minimized: save the current size
+                            let sizes = state.read(cx).sizes();
+                            if sizes.len() > 1 {
+                                this.prev_monitoring_size = Some(sizes[1]);
+                            }
+                            this.sftp_panel_minimized = true;
+                        } else {
+                            // Going to unminimized: restore the old size
+                            this.sftp_panel_minimized = false;
+                            let prev_size = this.prev_monitoring_size.unwrap_or(px(328.));
+                            
+                            cx.on_next_frame(window, move |this: &mut crate::app::Ashell, window: &mut gpui::Window, cx: &mut gpui::Context<crate::app::Ashell>| {
+                                cx.on_next_frame(window, move |this: &mut crate::app::Ashell, window: &mut gpui::Window, cx: &mut gpui::Context<crate::app::Ashell>| {
+                                    this.body_panels.update(cx, |state, cx| {
+                                        let sizes = state.sizes();
+                                        let c_size_f32: f32 = sizes.iter().map(|s| s.as_f32()).sum();
+                                        let c_size = px(c_size_f32);
+                                        let target_p0 = c_size - prev_size;
+                                        state.resize_panel(0, target_p0, window, cx);
+                                    });
+                                    cx.notify();
+                                });
+                            });
+                        }
+                        cx.notify();
+                    })),
             );
 
         let Some(sftp) = active_sftp else {
-            return v_flex()
-                .size_full()
+            let mut panel = v_flex()
                 .gap_0()
                 .border_color(cx.theme().border)
-                .bg(cx.theme().background)
-                .child(header)
-                .child(
+                .bg(cx.theme().background);
+            
+            if !self.sftp_panel_minimized {
+                panel = panel.size_full();
+            } else {
+                panel = panel.flex_none();
+            }
+            
+            panel = panel.child(header);
+            
+            if !self.sftp_panel_minimized {
+                panel = panel.child(
                     v_flex()
                         .flex_1()
                         .items_center()
@@ -216,8 +261,9 @@ impl Ashell {
                                 .text_color(cx.theme().muted_foreground)
                                 .child(t!("open_ssh_tab_sftp")),
                         ),
-                )
-                .into_any_element();
+                );
+            }
+            return panel.into_any_element();
         };
 
         let selected_path = sftp.selected_path.clone();
@@ -239,11 +285,18 @@ impl Ashell {
         let size_col_width = px(96.);
         let modified_col_width = px(152.);
 
-        v_flex()
-            .size_full()
+        let mut panel = v_flex()
             .gap_0()
             .border_color(cx.theme().border)
-            .bg(cx.theme().background)
+            .bg(cx.theme().background);
+
+        if !self.sftp_panel_minimized {
+            panel = panel.size_full();
+        } else {
+            panel = panel.flex_none();
+        }
+
+        panel = panel
             .on_drop(
                 cx.listener(|this, paths: &gpui::ExternalPaths, _window, cx| {
                     let paths_to_upload: Vec<String> = paths
@@ -254,7 +307,10 @@ impl Ashell {
                     this.upload_sftp_files_batch(paths_to_upload, cx);
                 }),
             )
-            .child(header)
+            .child(header);
+
+        if !self.sftp_panel_minimized {
+            panel = panel
             .child(
                 h_flex()
                     .h(px(36.))
@@ -535,8 +591,10 @@ impl Ashell {
                             .text_color(cx.theme().muted_foreground)
                             .child(status),
                     ),
-            )
-            .into_any_element()
+            );
+        }
+
+        panel.into_any_element()
     }
 
     fn render_monitoring_panel(
@@ -1366,20 +1424,43 @@ impl Render for Ashell {
             .flex_none()
             .child(self.sidebar(cx));
 
-        let monitoring_panel = resizable_panel()
-            .size(px(328.))
-            .size_range(px(260.)..px(1200.))
-            .child(
-                v_flex()
-                    .size_full()
-                    .child(self.render_monitoring_panel(window.viewport_size().width, cx))
-                    .child(self.render_sftp_panel(window, cx)),
-            );
+        let monitoring_contents = v_flex()
+            .size_full()
+            .child(self.render_monitoring_panel(window.viewport_size().width, cx))
+            .child(self.render_sftp_panel(window, cx));
 
-        let body_panel = v_resizable("ashell-body")
-            .with_state(&self.body_panels)
-            .child(resizable_panel().child(self.render_terminal_panel(terminal_snapshot, cx)))
-            .child(monitoring_panel);
+        let body_panel = if self.sftp_panel_minimized {
+            v_flex()
+                .size_full()
+                .child(
+                    div().flex_1().min_h(px(0.)).child(
+                        v_resizable("ashell-body")
+                            .with_state(&self.body_panels)
+                            .child(resizable_panel().child(self.render_terminal_panel(terminal_snapshot, cx)))
+                    )
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .h(px(114.))
+                        .w_full()
+                        .border_t_1()
+                        .border_color(cx.theme().border)
+                        .child(monitoring_contents)
+                )
+                .into_any_element()
+        } else {
+            v_resizable("ashell-body")
+                .with_state(&self.body_panels)
+                .child(resizable_panel().child(self.render_terminal_panel(terminal_snapshot, cx)))
+                .child(
+                    resizable_panel()
+                        .size(px(328.))
+                        .size_range(px(260.)..px(1200.))
+                        .child(monitoring_contents)
+                )
+                .into_any_element()
+        };
 
         let main_area = resizable_panel().child(
             v_flex()
