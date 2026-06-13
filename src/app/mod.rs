@@ -224,6 +224,7 @@ pub(crate) struct Ashell {
     pub(crate) tabs_scroll_handle: gpui::ScrollHandle,
     pub(crate) selector_scroll_handle: gpui::ScrollHandle,
     pub(crate) saved_scroll_handle: gpui::ScrollHandle,
+    pub(crate) connection_scroll_handle: gpui::ScrollHandle,
     pub(crate) connection_progress: Option<ConnectionProgress>,
     pub(crate) pending_sftp_path_sync: Option<String>,
     pub(crate) sftp_context_menu: Option<SftpContextMenuState>,
@@ -404,6 +405,7 @@ impl Ashell {
             tabs_scroll_handle: gpui::ScrollHandle::new(),
             selector_scroll_handle: gpui::ScrollHandle::new(),
             saved_scroll_handle: gpui::ScrollHandle::new(),
+            connection_scroll_handle: gpui::ScrollHandle::new(),
             connection_progress: None,
             pending_sftp_path_sync: Some("/".into()),
             sftp_context_menu: None,
@@ -541,6 +543,8 @@ impl Ashell {
                     if let Some(progress) = self.connection_progress.as_mut() {
                         if progress.tab_id == tab_id {
                             progress.lines.push(text.clone().into());
+                            let _idx = progress.lines.len().saturating_sub(1);
+                            self.connection_scroll_handle.set_offset(point(px(0.), px(-99999.0)));
                         }
                     }
                     self.status = text.into();
@@ -692,6 +696,8 @@ impl Ashell {
                     if let Some(progress) = self.connection_progress.as_mut() {
                         if progress.tab_id == tab_id {
                             progress.lines.push(reason.clone().into());
+                            let _idx = progress.lines.len().saturating_sub(1);
+                            self.connection_scroll_handle.set_offset(point(px(0.), px(-99999.0)));
                             let _ = session_label;
                             let _ = tab_title;
                             progress.title = t!("connection_failed").into();

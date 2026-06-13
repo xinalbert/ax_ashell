@@ -1984,20 +1984,46 @@ impl Render for Ashell {
                                                 .loading(!progress.failed)
                                                 .label(progress.title.clone()),
                                         )
-                                        .child(div().max_h(px(220.)).overflow_y_scrollbar().child(
-                                            v_flex().gap_2().children(
-                                                progress.lines.iter().cloned().map(|line| {
+                                        .child(
+                                            div()
+                                                .relative()
+                                                .min_h(px(0.))
+                                                .max_h(px(220.))
+                                                .child(
                                                     div()
-                                                        .text_size(rems(1.0))
-                                                        .text_color(if progress.failed {
-                                                            cx.theme().danger
-                                                        } else {
-                                                            cx.theme().muted_foreground
-                                                        })
-                                                        .child(line)
-                                                }),
-                                            ),
-                                        ))
+                                                        .id("connection-progress-scroll")
+                                                        .max_h(px(220.))
+                                                        .overflow_hidden()
+                                                        .overflow_y_scroll()
+                                                        .track_scroll(&self.connection_scroll_handle)
+                                                        .child(
+                                                            v_flex().gap_2().children(
+                                                                progress.lines.iter().cloned().map(|line| {
+                                                                    div()
+                                                                        .text_size(rems(1.0))
+                                                                        .text_color(if progress.failed {
+                                                                            cx.theme().danger
+                                                                        } else {
+                                                                            cx.theme().muted_foreground
+                                                                        })
+                                                                        .child(line)
+                                                                }),
+                                                            ),
+                                                        )
+                                                )
+                                                .child(
+                                                    div()
+                                                        .absolute()
+                                                        .top_0()
+                                                        .right_0()
+                                                        .bottom_0()
+                                                        .w(px(16.))
+                                                        .child(
+                                                            Scrollbar::vertical(&self.connection_scroll_handle)
+                                                                .scrollbar_show(ScrollbarShow::Scrolling)
+                                                        )
+                                                )
+                                        )
                                         .when(progress.failed, |this| {
                                             this.child(
                                                 h_flex()
