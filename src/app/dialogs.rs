@@ -517,8 +517,12 @@ impl Ashell {
                                     )
                                 } else {
                                     match t.info.kind {
-                                        crate::terminal::TransferType::Upload => format!("{}...", t!("uploading")),
-                                        crate::terminal::TransferType::Download => format!("{}...", t!("downloading")),
+                                        crate::terminal::TransferType::Upload => {
+                                            format!("{}...", t!("uploading"))
+                                        }
+                                        crate::terminal::TransferType::Download => {
+                                            format!("{}...", t!("downloading"))
+                                        }
                                     }
                                 };
                                 let btn_pause =
@@ -753,7 +757,6 @@ impl Ashell {
                                     )
                                 },
                             )
-
                     }));
 
                     let scroll_handle = window
@@ -1030,6 +1033,8 @@ impl Ashell {
 
                         content.child(
                             div()
+                                .flex()
+                                .flex_col()
                                 .size_full()
                                 .track_focus(&focus_handle)
                                 .on_key_down({
