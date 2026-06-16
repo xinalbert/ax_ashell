@@ -290,6 +290,8 @@ pub(crate) fn open_main_window(cx: &mut App) {
                 .map(|s| s.into())
                 .collect();
             config.set_layout_state(Some(saved_bounds), Some(workspace_sizes), Some(body_sizes));
+            config.set_sidebar_collapsed(view_clone.read(cx).sidebar_collapsed);
+            config.set_sftp_panel_minimized(view_clone.read(cx).sftp_panel_minimized);
             let _ = config.save();
             true
         });

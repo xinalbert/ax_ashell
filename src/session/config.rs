@@ -135,6 +135,10 @@ pub struct ConfigFile {
     #[serde(default = "default_monitoring_position")]
     pub monitoring_position: String,
     #[serde(default)]
+    pub sidebar_collapsed: bool,
+    #[serde(default)]
+    pub sftp_panel_minimized: bool,
+    #[serde(default)]
     pub key_bindings: std::collections::HashMap<String, String>,
 }
 
@@ -408,6 +412,22 @@ impl ConfigStore {
 
     pub fn set_show_hidden_files(&mut self, val: bool) {
         self.cache.show_hidden_files = val;
+    }
+
+    pub fn sidebar_collapsed(&self) -> bool {
+        self.cache.sidebar_collapsed
+    }
+
+    pub fn set_sidebar_collapsed(&mut self, val: bool) {
+        self.cache.sidebar_collapsed = val;
+    }
+
+    pub fn sftp_panel_minimized(&self) -> bool {
+        self.cache.sftp_panel_minimized
+    }
+
+    pub fn set_sftp_panel_minimized(&mut self, val: bool) {
+        self.cache.sftp_panel_minimized = val;
     }
 
     pub fn get(&self, id: &str) -> Option<&Session> {
