@@ -513,9 +513,11 @@ impl Ashell {
                                     .small()
                                     .ghost()
                                     .icon(IconName::Close)
-                                    .on_click(|_, window, cx| {
+                                    .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                        this.active_dialog = None;
                                         window.close_dialog(cx);
-                                    }),
+                                        cx.notify();
+                                    })),
                             ),
                         );
 
