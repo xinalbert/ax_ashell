@@ -101,8 +101,8 @@ pub enum SavedWindowBounds {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TitleBarStyle {
-    #[default]
     Native,
+    #[default]
     Integrated,
 }
 
