@@ -332,8 +332,12 @@ impl TerminalTab {
             });
         }
 
-        // Get highlights from cache or recompute
-        let highlights = {
+        // Get highlights from cache or recompute, only if keyword_highlight is enabled.
+        let is_enabled = crate::session::config::ConfigStore::load()
+            .map(|c| c.keyword_highlight())
+            .unwrap_or(false);
+
+        let highlights = if is_enabled {
             let mut cache = self.highlight_cache.borrow_mut();
             let cache_valid = cache.as_ref().map_or(false, |(cached_cells, _)| {
                 cached_cells == &cells
@@ -345,6 +349,8 @@ impl TerminalTab {
                 *cache = Some((cells.clone(), computed.clone()));
                 computed
             }
+        } else {
+            std::collections::HashMap::new()
         };
 
         RenderSnapshot {
