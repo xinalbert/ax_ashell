@@ -1985,7 +1985,7 @@ impl Ashell {
         let is_macos = cfg!(target_os = "macos");
         let is_fullscreen = window.is_fullscreen();
         
-        let is_active = cx.active_window().map_or(true, |active| active == window.window_handle());
+        let is_active = cx.active_window() == Some(window.window_handle());
 
         h_flex()
             .group("window-controls")
