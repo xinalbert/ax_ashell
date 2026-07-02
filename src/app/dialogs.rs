@@ -1668,6 +1668,25 @@ impl Ashell {
                                                 )
                                                 .item(
                                                     SettingItem::new(
+                                                        t!("lock_layout").to_string(),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            move |_, window, cx| {
+                                                                Switch::new("lock-layout")
+                                                                    .small()
+                                                                    .checked(view.read(cx).config.lock_layout())
+                                                                    .on_click(window.listener_for(&view, |this, checked, _, cx| {
+                                                                        this.config.set_lock_layout(*checked);
+                                                                        let _ = this.config.save();
+                                                                        cx.notify();
+                                                                    }))
+                                                                    .into_any_element()
+                                                            }
+                                                        })
+                                                    ).description(t!("lock_layout_hint").to_string())
+                                                )
+                                                .item(
+                                                    SettingItem::new(
                                                         t!("monitoring_position").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();

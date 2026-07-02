@@ -13,11 +13,11 @@ use gpui_component::{
     input::Input,
     menu::{ContextMenuExt as _, PopupMenuItem},
     progress::Progress,
-    resizable::{h_resizable, resizable_panel, v_resizable},
     scroll::{ScrollableElement as _, Scrollbar, ScrollbarShow},
     tab::{Tab, TabBar},
     v_flex,
 };
+use crate::app::resizable::{h_resizable, resizable_panel, v_resizable};
 use rust_i18n::t;
 
 use crate::{
@@ -2647,6 +2647,7 @@ impl Render for Ashell {
         };
 
         let body_panel = v_resizable("ashell-body")
+            .lock(self.config.lock_layout())
             .with_state(&self.body_panels)
             .child(resizable_panel().child(self.render_terminal_panel(window, cx)))
             .child(
@@ -2733,6 +2734,7 @@ impl Render for Ashell {
             );
 
             h_resizable("ashell-workspace")
+                .lock(self.config.lock_layout())
                 .with_state(&self.workspace_panels)
                 .child(sidebar_area)
                 .child(main_area)

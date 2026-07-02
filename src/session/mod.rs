@@ -354,8 +354,8 @@ impl Ashell {
         let _ = self.config.save();
 
         self.is_layout_reset = true;
-        self.workspace_panels = cx.new(|_| gpui_component::resizable::ResizableState::default());
-        self.body_panels = cx.new(|_| gpui_component::resizable::ResizableState::default());
+        self.workspace_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
+        self.body_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
 
         cx.notify();
     }

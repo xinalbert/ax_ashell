@@ -176,6 +176,8 @@ pub struct ConfigFile {
     pub transfers: Vec<crate::terminal::Transfer>,
     #[serde(default)]
     pub show_hidden_files: bool,
+    #[serde(default)]
+    pub lock_layout: bool,
     #[serde(default = "default_monitoring_position")]
     pub monitoring_position: String,
     #[serde(default)]
@@ -288,6 +290,7 @@ impl Default for ConfigFile {
             body_panels: None,
             transfers: Vec::new(),
             show_hidden_files: false,
+            lock_layout: false,
             monitoring_position: default_monitoring_position(),
             sidebar_collapsed: false,
             sftp_panel_minimized: false,
@@ -700,6 +703,14 @@ impl ConfigStore {
 
     pub fn set_show_hidden_files(&mut self, val: bool) {
         self.cache.show_hidden_files = val;
+    }
+
+    pub fn lock_layout(&self) -> bool {
+        self.cache.lock_layout
+    }
+
+    pub fn set_lock_layout(&mut self, val: bool) {
+        self.cache.lock_layout = val;
     }
 
     pub fn sidebar_collapsed(&self) -> bool {

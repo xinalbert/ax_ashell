@@ -6,6 +6,7 @@ pub mod search;
 pub mod startup;
 pub mod theme;
 pub mod ui;
+pub mod resizable;
 
 use std::{
     cell::{Cell, RefCell},
@@ -23,9 +24,9 @@ use gpui::{
 use gpui_component::{
     Theme, ThemeMode, ThemeRegistry,
     input::{InputEvent, InputState},
-    resizable::ResizableState,
     scroll::ScrollbarHandle,
 };
+use crate::app::resizable::ResizableState;
 use rust_i18n::t;
 use tokio::runtime::Runtime;
 
