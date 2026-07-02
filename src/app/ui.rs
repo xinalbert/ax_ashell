@@ -2808,6 +2808,7 @@ impl Render for Ashell {
                         .h(px(34.))
                         .w_full()
                         .bg(cx.theme().tab_bar)
+                        .window_control_area(gpui::WindowControlArea::Drag)
                         .on_double_click(|_, window, _| {
                             #[cfg(target_os = "macos")]
                             window.titlebar_double_click();
