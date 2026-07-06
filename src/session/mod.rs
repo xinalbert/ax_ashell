@@ -990,7 +990,20 @@ impl AxAshell {
     }
 
     pub(crate) fn session_detail(&self, session: &Session) -> String {
-        format!("{}@{}:{}", session.user, session.host, session.port)
+        format!("{}@{}", session.user, session.host)
+    }
+
+    pub(crate) fn session_connection_info(&self, session: &Session) -> String {
+        format!(
+            "{}\n{}@{}:{}\nssh {}@{} -p {}",
+            session.name,
+            session.user,
+            session.host,
+            session.port,
+            session.user,
+            session.host,
+            session.port
+        )
     }
 
     pub(crate) fn split_current_pane(&mut self, direction: &str, cx: &mut Context<Self>) {

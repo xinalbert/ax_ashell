@@ -1695,6 +1695,9 @@ impl AxAshell {
                                                 == Some(session.id.as_str());
                                             let name = session.name.clone();
                                             let detail = self.session_detail(&session);
+                                            let full_detail = self.session_connection_info(&session);
+                                            let tooltip_detail = full_detail.clone();
+                                            let menu_detail = full_detail.clone();
                                             div()
                                                 .id(("saved-connect", ix))
                                                 .w_full()
@@ -1722,13 +1725,39 @@ impl AxAshell {
                                                         )
                                                     }),
                                                 )
+                                                .tooltip({
+                                                    let tooltip_text = tooltip_detail.clone();
+                                                    move |window, cx| {
+                                                        gpui_component::tooltip::Tooltip::new(
+                                                            tooltip_text.clone(),
+                                                        )
+                                                        .build(window, cx)
+                                                    }
+                                                })
                                                 .context_menu({
                                                     let view = cx.entity();
                                                     move |menu, window, _| {
+                                                        let copy_value = menu_detail.clone();
                                                         let edit_value = edit_id.clone();
                                                         let clone_value = edit_id.clone();
                                                         let delete_value = delete_id.clone();
                                                         menu.item(
+                                                            PopupMenuItem::new(
+                                                                t!("copy_connection_info")
+                                                                    .to_string(),
+                                                            )
+                                                            .on_click(window.listener_for(
+                                                                &view,
+                                                                move |_, _, _, cx| {
+                                                                    cx.write_to_clipboard(
+                                                                        gpui::ClipboardItem::new_string(
+                                                                            copy_value.clone(),
+                                                                        ),
+                                                                    );
+                                                                },
+                                                            )),
+                                                        )
+                                                        .item(
                                                             PopupMenuItem::new(
                                                                 t!("clone").to_string(),
                                                             )
@@ -1775,16 +1804,29 @@ impl AxAshell {
                                                     }
                                                 })
                                                 .child(
-                                                    v_flex()
-                                                        .gap_1()
+                                                    h_flex()
+                                                        .w_full()
+                                                        .min_w(px(0.))
+                                                        .gap_2()
+                                                        .items_center()
                                                         .child(
                                                             div()
+                                                                .max_w(px(180.))
+                                                                .min_w(px(0.))
+                                                                .overflow_hidden()
+                                                                .text_ellipsis()
+                                                                .whitespace_nowrap()
                                                                 .text_size(rems(1.0))
                                                                 .font_weight(FontWeight::SEMIBOLD)
                                                                 .child(name),
                                                         )
                                                         .child(
                                                             div()
+                                                                .flex_1()
+                                                                .min_w(px(0.))
+                                                                .overflow_hidden()
+                                                                .text_ellipsis()
+                                                                .whitespace_nowrap()
                                                                 .text_size(rems(0.917))
                                                                 .text_color(
                                                                     cx.theme().muted_foreground,
@@ -1895,6 +1937,9 @@ impl AxAshell {
 
                                 let edit_id = session.id.clone();
                                 let delete_id = session.id.clone();
+                                let full_detail = self.session_connection_info(&session);
+                                let tooltip_detail = full_detail.clone();
+                                let menu_detail = full_detail.clone();
                                 div()
                                     .id(("collapsed-saved", ix))
                                     .w(px(36.))
@@ -1923,7 +1968,7 @@ impl AxAshell {
                                         }),
                                     )
                                     .tooltip({
-                                        let tooltip_text = format!("{} {}", name, session.user);
+                                        let tooltip_text = tooltip_detail.clone();
                                         move |window, cx| {
                                             gpui_component::tooltip::Tooltip::new(
                                                 tooltip_text.clone(),
@@ -1934,10 +1979,26 @@ impl AxAshell {
                                     .context_menu({
                                         let view = cx.entity();
                                         move |menu, window, _| {
+                                            let copy_value = menu_detail.clone();
                                             let edit_value = edit_id.clone();
                                             let clone_value = edit_id.clone();
                                             let delete_value = delete_id.clone();
                                             menu.item(
+                                                PopupMenuItem::new(
+                                                    t!("copy_connection_info").to_string(),
+                                                )
+                                                .on_click(window.listener_for(
+                                                    &view,
+                                                    move |_, _, _, cx| {
+                                                        cx.write_to_clipboard(
+                                                            gpui::ClipboardItem::new_string(
+                                                                copy_value.clone(),
+                                                            ),
+                                                        );
+                                                    },
+                                                )),
+                                            )
+                                            .item(
                                                 PopupMenuItem::new(t!("clone").to_string())
                                                     .on_click(window.listener_for(
                                                         &view,
