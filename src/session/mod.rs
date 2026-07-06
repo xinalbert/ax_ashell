@@ -24,8 +24,17 @@ fn mask_session_part(value: &str) -> String {
         return "***".to_string();
     }
 
-    let visible: String = trimmed.chars().take(3).collect();
-    format!("{visible}***")
+    let chars: Vec<char> = trimmed.chars().collect();
+    if chars.len() <= 2 {
+        return "*".to_string();
+    }
+    if chars.len() <= 4 {
+        return format!("{}*", chars[0]);
+    }
+
+    let prefix: String = chars.iter().take(2).collect();
+    let suffix: String = chars.iter().skip(chars.len().saturating_sub(2)).collect();
+    format!("{prefix}*{suffix}")
 }
 
 fn mask_session_host(host: &str) -> String {
@@ -36,7 +45,7 @@ fn mask_session_host(host: &str) -> String {
             .iter()
             .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
     {
-        return format!("{}.{}.*.{}", ipv4_parts[0], ipv4_parts[1], ipv4_parts[3]);
+        return format!("{}.*.*.{}", ipv4_parts[0], ipv4_parts[3]);
     }
 
     let ipv6_parts: Vec<&str> = trimmed.split(':').filter(|part| !part.is_empty()).collect();
