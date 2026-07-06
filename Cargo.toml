@@ -10,7 +10,7 @@ rust-version = "1.85.0"
 [dependencies]
 anyhow = "1"
 tokio-socks = "0.5"
-alacritty_terminal = { git = "https://github.com/zed-industries/alacritty", rev = "fcf32feacb367b75ec84dd40f041e4fd411d3cc1" }
+alacritty_terminal = "0.26.0"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 directories = "5"
