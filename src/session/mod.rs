@@ -18,6 +18,39 @@ use crate::{
     terminal::{BackendCommand, RenderSnapshot, TabKind, TerminalTab},
 };
 
+fn mask_session_part(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return "***".to_string();
+    }
+
+    let visible: String = trimmed.chars().take(3).collect();
+    format!("{visible}***")
+}
+
+fn mask_session_host(host: &str) -> String {
+    let trimmed = host.trim();
+    let ipv4_parts: Vec<&str> = trimmed.split('.').collect();
+    if ipv4_parts.len() == 4
+        && ipv4_parts
+            .iter()
+            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+    {
+        return format!("{}.{}.*.{}", ipv4_parts[0], ipv4_parts[1], ipv4_parts[3]);
+    }
+
+    let ipv6_parts: Vec<&str> = trimmed.split(':').filter(|part| !part.is_empty()).collect();
+    if trimmed.contains(':') && ipv6_parts.len() >= 2 {
+        return format!(
+            "{}:****:{}",
+            ipv6_parts.first().unwrap_or(&""),
+            ipv6_parts.last().unwrap_or(&"")
+        );
+    }
+
+    mask_session_part(trimmed)
+}
+
 impl AxAshell {
     pub(crate) fn open_local(&mut self, cx: &mut Context<Self>) {
         let id = Uuid::new_v4().to_string();
@@ -257,6 +290,87 @@ impl AxAshell {
             Ok::<(), anyhow::Error>(())
         })
         .detach();
+    }
+
+    pub(crate) fn pick_xquartz_app_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let start_dir = if cfg!(target_os = "macos") {
+            std::path::PathBuf::from("/Applications/Utilities")
+        } else if cfg!(target_os = "windows") {
+            std::env::var("ProgramFiles")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::path::PathBuf::from("C:\\"))
+        } else {
+            std::path::PathBuf::from("/usr/bin")
+        };
+        let dialog = rfd::AsyncFileDialog::new().set_directory(start_dir);
+        #[cfg(target_os = "macos")]
+        let file_dialog = dialog.pick_folder();
+        #[cfg(not(target_os = "macos"))]
+        let file_dialog = dialog.pick_file();
+
+        cx.spawn_in(window, async move |this, mut cx| {
+            if let Some(folder) = file_dialog.await {
+                let _ = gpui::AsyncWindowContext::update(&mut cx, |window, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        Self::set_input_value(
+                            &this.xquartz_app_path_input,
+                            folder.path().to_string_lossy().to_string(),
+                            window,
+                            cx,
+                        );
+                    });
+                });
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+        .detach();
+    }
+
+    pub(crate) fn reset_xquartz_app_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let default_path = crate::session::config::default_local_x_server_app_path();
+        Self::set_input_value(
+            &self.xquartz_app_path_input,
+            default_path.clone(),
+            window,
+            cx,
+        );
+        self.config.set_local_x_server_app_path(default_path);
+        if let Err(err) = self.config.save() {
+            self.status = format!("failed to save local X server path: {err:#}").into();
+        } else {
+            self.status = "local X server path reset".into();
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn save_x11_settings(&mut self, cx: &mut Context<Self>) {
+        let path = self
+            .xquartz_app_path_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
+        self.config.set_local_x_server_app_path(path);
+        if let Err(err) = self.config.save() {
+            self.status = format!("failed to save X11 settings: {err:#}").into();
+        } else {
+            self.status = "X11 settings saved".into();
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn open_configured_xquartz(&mut self, cx: &mut Context<Self>) {
+        self.save_x11_settings(cx);
+        match crate::app::startup::launch_local_x_server_app(self.config.local_x_server_app_path())
+        {
+            Ok(()) => {
+                self.status = "local X server launch requested".into();
+            }
+            Err(err) => {
+                self.status = format!("failed to launch local X server: {err:#}").into();
+            }
+        }
+        cx.notify();
     }
 
     pub(crate) fn open_new_ssh_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -990,7 +1104,11 @@ impl AxAshell {
     }
 
     pub(crate) fn session_detail(&self, session: &Session) -> String {
-        format!("{}@{}", session.user, session.host)
+        format!(
+            "{}@{}",
+            mask_session_part(&session.user),
+            mask_session_host(&session.host)
+        )
     }
 
     pub(crate) fn session_connection_info(&self, session: &Session) -> String {

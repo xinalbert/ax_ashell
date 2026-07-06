@@ -227,6 +227,7 @@ pub(crate) struct AxAshell {
     pub(crate) global_proxy_port_input: Entity<InputState>,
     pub(crate) global_proxy_user_input: Entity<InputState>,
     pub(crate) global_proxy_password_input: Entity<InputState>,
+    pub(crate) xquartz_app_path_input: Entity<InputState>,
     pub(crate) sync_endpoint_input: Entity<InputState>,
     pub(crate) sync_username_input: Entity<InputState>,
     pub(crate) sync_webdav_password_input: Entity<InputState>,
@@ -456,6 +457,11 @@ impl AxAshell {
                 .masked(true)
                 .default_value(config.global_proxy_password())
         });
+        let xquartz_app_path_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::session::config::default_local_x_server_app_path())
+                .default_value(config.local_x_server_app_path())
+        });
         let sync_endpoint_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("https://dav.example.com/ax_ashell/")
@@ -543,6 +549,7 @@ impl AxAshell {
             cx.subscribe_in(&proxy_port_input, window, Self::on_input_event),
             cx.subscribe_in(&proxy_user_input, window, Self::on_input_event),
             cx.subscribe_in(&proxy_password_input, window, Self::on_input_event),
+            cx.subscribe_in(&xquartz_app_path_input, window, Self::on_input_event),
             cx.subscribe_in(&sftp_path_input, window, Self::on_input_event),
             cx.subscribe_in(&sftp_new_folder_input, window, Self::on_input_event),
             cx.subscribe_in(&search_input, window, Self::on_input_event),
@@ -631,6 +638,7 @@ impl AxAshell {
             global_proxy_port_input,
             global_proxy_user_input,
             global_proxy_password_input,
+            xquartz_app_path_input,
             sync_endpoint_input,
             sync_username_input,
             sync_webdav_password_input,

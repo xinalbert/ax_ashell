@@ -1,3 +1,4 @@
+use anyhow::{Context as _, Result, anyhow};
 use gpui::{App, AppContext as _, Bounds, WindowOptions, point, px, size};
 use gpui_component::Root;
 
@@ -217,6 +218,69 @@ fn read_proxy_from_env() -> Option<(String, String, Option<u16>, String, String)
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn sync_macos_launch_environment() {}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn launch_local_x_server_app(path: &str) -> Result<()> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(anyhow!("local X server app path is empty"));
+    }
+    let app_path = std::path::Path::new(path);
+    if !app_path.exists() {
+        return Err(anyhow!(
+            "local X server app not found at {}",
+            app_path.display()
+        ));
+    }
+    std::process::Command::new("open")
+        .arg("-g")
+        .arg(app_path)
+        .spawn()
+        .with_context(|| format!("launch local X server at {}", app_path.display()))?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn launch_local_x_server_app(path: &str) -> Result<()> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(anyhow!("local X server executable path is empty"));
+    }
+    let app_path = std::path::Path::new(path);
+    if !app_path.exists() {
+        return Err(anyhow!(
+            "local X server executable not found at {}",
+            app_path.display()
+        ));
+    }
+    let mut command = std::process::Command::new(app_path);
+    for arg in crate::session::config::default_local_x_server_launch_args(path) {
+        command.arg(arg);
+    }
+    command
+        .spawn()
+        .with_context(|| format!("launch local X server at {}", app_path.display()))?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub(crate) fn launch_local_x_server_app(path: &str) -> Result<()> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Ok(());
+    }
+    let app_path = std::path::Path::new(path);
+    if !app_path.exists() {
+        return Err(anyhow!(
+            "local X server executable not found at {}",
+            app_path.display()
+        ));
+    }
+    std::process::Command::new(app_path)
+        .spawn()
+        .with_context(|| format!("launch local X server at {}", app_path.display()))?;
+    Ok(())
+}
 
 pub(crate) fn open_main_window(cx: &mut App) {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());

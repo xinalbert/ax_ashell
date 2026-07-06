@@ -1198,6 +1198,9 @@ impl AxAshell {
         let muted_foreground = cx.theme().muted_foreground;
         let use_proxy = self.config.use_proxy();
         let read_env_proxy = self.config.read_env_proxy();
+        let x11_forwarding_enabled = self.config.x11_forwarding_enabled();
+        let x11_launch_xquartz = self.config.x11_launch_xquartz();
+        let xquartz_app_path_input = self.xquartz_app_path_input.clone();
         let global_proxy_host_input = self.global_proxy_host_input.clone();
         let global_proxy_port_input = self.global_proxy_port_input.clone();
         let global_proxy_user_input = self.global_proxy_user_input.clone();
@@ -2597,6 +2600,99 @@ impl AxAshell {
                                                                         cx.notify();
                                                                     }))
                                                             )
+                                                    }
+                                                }))
+                                        )
+                                        .group(
+                                            SettingGroup::new()
+                                                .title(t!("settings_x11").to_string())
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("enable_x11_forwarding").to_string(),
+                                                        SettingField::render({
+                                                            let view = view.clone();
+                                                            let enabled = x11_forwarding_enabled;
+                                                            move |_, window, _cx| {
+                                                                Switch::new("x11-forwarding-enabled")
+                                                                    .small()
+                                                                    .checked(enabled)
+                                                                    .on_click(window.listener_for(&view, |this, checked, _, cx| {
+                                                                        this.config.set_x11_forwarding_enabled(*checked);
+                                                                        let _ = this.config.save();
+                                                                        cx.notify();
+                                                                    }))
+                                                                    .into_any_element()
+                                                            }
+                                                        })
+                                                    ).description(t!("enable_x11_forwarding_desc").to_string())
+                                                )
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("x11_launch_xquartz").to_string(),
+                                                        SettingField::render({
+                                                            let view = view.clone();
+                                                            let enabled = x11_launch_xquartz;
+                                                            move |_, window, _cx| {
+                                                                Switch::new("x11-launch-xquartz")
+                                                                    .small()
+                                                                    .checked(enabled)
+                                                                    .on_click(window.listener_for(&view, |this, checked, _, cx| {
+                                                                        this.config.set_x11_launch_xquartz(*checked);
+                                                                        let _ = this.config.save();
+                                                                        cx.notify();
+                                                                    }))
+                                                                    .into_any_element()
+                                                            }
+                                                        })
+                                                    ).description(t!("x11_launch_xquartz_desc").to_string())
+                                                )
+                                                .item(SettingItem::render({
+                                                    let view = view.clone();
+                                                    let xquartz_app_path_input = xquartz_app_path_input.clone();
+                                                    move |_, window, _cx| {
+                                                        v_flex()
+                                                            .w_full()
+                                                            .gap_3()
+                                                            .child(div().text_sm().font_weight(FontWeight::BOLD).child(t!("xquartz_app_path").to_string()))
+                                                            .child(Input::new(&xquartz_app_path_input).w_full())
+                                                            .child(
+                                                                h_flex()
+                                                                    .gap_2()
+                                                                    .child(
+                                                                        Button::new("browse-xquartz-app")
+                                                                            .small()
+                                                                            .label(t!("browse").to_string())
+                                                                            .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                                                                this.pick_xquartz_app_path(window, cx);
+                                                                            }))
+                                                                    )
+                                                                    .child(
+                                                                        Button::new("reset-xquartz-app")
+                                                                            .small()
+                                                                            .label(t!("reset_default").to_string())
+                                                                            .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                                                                this.reset_xquartz_app_path(window, cx);
+                                                                            }))
+                                                                    )
+                                                                    .child(
+                                                                        Button::new("save-x11-settings")
+                                                                            .small()
+                                                                            .primary()
+                                                                            .label(t!("save_x11_settings").to_string())
+                                                                            .on_click(window.listener_for(&view, |this, _, _, cx| {
+                                                                                this.save_x11_settings(cx);
+                                                                            }))
+                                                                    )
+                                                                    .child(
+                                                                        Button::new("open-xquartz")
+                                                                            .small()
+                                                                            .label(t!("open_xquartz").to_string())
+                                                                            .on_click(window.listener_for(&view, |this, _, _, cx| {
+                                                                                this.open_configured_xquartz(cx);
+                                                                            }))
+                                                                    )
+                                                            )
+                                                            .child(div().text_xs().text_color(muted_foreground).child(t!("xquartz_app_path_desc").to_string()))
                                                     }
                                                 }))
                                         )

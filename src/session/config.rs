@@ -230,6 +230,12 @@ pub struct ConfigFile {
     pub global_proxy_user: String,
     #[serde(default)]
     pub global_proxy_password: String,
+    #[serde(default)]
+    pub x11_forwarding_enabled: bool,
+    #[serde(default = "default_x11_launch_xquartz")]
+    pub x11_launch_xquartz: bool,
+    #[serde(default = "default_xquartz_app_path")]
+    pub xquartz_app_path: String,
 }
 
 fn default_read_env_proxy() -> bool {
@@ -238,6 +244,87 @@ fn default_read_env_proxy() -> bool {
 
 fn default_global_proxy_type() -> String {
     "socks5".to_string()
+}
+
+pub fn default_xquartz_app_path() -> String {
+    default_local_x_server_app_path()
+}
+
+pub fn default_local_x_server_app_path() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        return "/Applications/Utilities/XQuartz.app".to_string();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates = Vec::new();
+        if let Ok(program_files) = std::env::var("ProgramFiles") {
+            candidates.push(
+                std::path::PathBuf::from(&program_files)
+                    .join("VcXsrv")
+                    .join("vcxsrv.exe"),
+            );
+            candidates.push(
+                std::path::PathBuf::from(&program_files)
+                    .join("Xming")
+                    .join("Xming.exe"),
+            );
+        }
+        if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
+            candidates.push(
+                std::path::PathBuf::from(&program_files_x86)
+                    .join("VcXsrv")
+                    .join("vcxsrv.exe"),
+            );
+            candidates.push(
+                std::path::PathBuf::from(&program_files_x86)
+                    .join("Xming")
+                    .join("Xming.exe"),
+            );
+        }
+        return candidates
+            .into_iter()
+            .find(|path| path.exists())
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Program Files\VcXsrv\vcxsrv.exe"))
+            .to_string_lossy()
+            .to_string();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        String::new()
+    }
+}
+
+pub fn default_local_x_display() -> String {
+    std::env::var("DISPLAY")
+        .ok()
+        .map(|display| display.trim().to_string())
+        .filter(|display| !display.is_empty())
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "windows") {
+                "127.0.0.1:0".to_string()
+            } else {
+                ":0".to_string()
+            }
+        })
+}
+
+#[cfg(target_os = "windows")]
+pub fn default_local_x_server_launch_args(path: &str) -> Vec<&'static str> {
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with("vcxsrv.exe") || lower.ends_with("xming.exe") {
+        vec![":0", "-multiwindow", "-clipboard"]
+    } else {
+        Vec::new()
+    }
+}
+
+pub fn should_launch_local_x_server_by_default() -> bool {
+    cfg!(any(target_os = "macos", target_os = "windows"))
+}
+
+pub fn default_x11_launch_xquartz() -> bool {
+    should_launch_local_x_server_by_default()
 }
 
 fn default_monitoring_position() -> String {
@@ -339,6 +426,9 @@ impl Default for ConfigFile {
             global_proxy_port: None,
             global_proxy_user: String::new(),
             global_proxy_password: String::new(),
+            x11_forwarding_enabled: false,
+            x11_launch_xquartz: default_x11_launch_xquartz(),
+            xquartz_app_path: default_xquartz_app_path(),
         }
     }
 }
@@ -799,6 +889,43 @@ impl ConfigStore {
     }
     pub fn set_global_proxy_password(&mut self, val: String) {
         self.cache.global_proxy_password = val;
+    }
+
+    pub fn x11_forwarding_enabled(&self) -> bool {
+        self.cache.x11_forwarding_enabled
+    }
+
+    pub fn set_x11_forwarding_enabled(&mut self, val: bool) {
+        self.cache.x11_forwarding_enabled = val;
+    }
+
+    pub fn x11_launch_xquartz(&self) -> bool {
+        self.cache.x11_launch_xquartz
+    }
+
+    pub fn x11_launch_local_x_server(&self) -> bool {
+        self.cache.x11_launch_xquartz
+    }
+
+    pub fn set_x11_launch_xquartz(&mut self, val: bool) {
+        self.cache.x11_launch_xquartz = val;
+    }
+
+    pub fn local_x_server_app_path(&self) -> &str {
+        if self.cache.xquartz_app_path.trim().is_empty() {
+            ""
+        } else {
+            self.cache.xquartz_app_path.trim()
+        }
+    }
+
+    pub fn set_local_x_server_app_path(&mut self, val: String) {
+        let val = val.trim();
+        self.cache.xquartz_app_path = if val.is_empty() {
+            default_xquartz_app_path()
+        } else {
+            val.to_string()
+        };
     }
 
     pub fn show_hidden_files(&self) -> bool {
