@@ -1417,6 +1417,7 @@ impl Ashell {
                                                                                             cx.notify();
                                                                                         }))
                                                                                 );
+                                                                            }
                                                                             menu
                                                                         }
                                                                     })

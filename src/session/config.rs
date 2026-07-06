@@ -298,6 +298,7 @@ impl Default for ConfigFile {
             show_hidden_files: false,
             lock_layout: false,
             monitoring_position: default_monitoring_position(),
+            show_monitoring_dashboard: default_show_monitoring_dashboard(),
             sidebar_collapsed: false,
             sftp_panel_minimized: false,
             key_bindings: std::collections::HashMap::new(),
