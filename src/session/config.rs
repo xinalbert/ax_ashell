@@ -153,6 +153,14 @@ pub struct ConfigFile {
     #[serde(default = "default_ui_font_size")]
     pub ui_font_size: f32,
     #[serde(default)]
+    pub custom_primary_color: String,
+    #[serde(default)]
+    pub custom_background_color: String,
+    #[serde(default = "default_custom_font_brightness")]
+    pub custom_font_brightness: f32,
+    #[serde(default = "default_custom_theme_name")]
+    pub custom_theme_name: String,
+    #[serde(default)]
     pub right_click_copy_paste: bool,
     #[serde(default)]
     pub keyword_highlight: bool,
@@ -264,6 +272,14 @@ fn default_ui_font_size() -> f32 {
     14.0
 }
 
+fn default_custom_font_brightness() -> f32 {
+    1.0
+}
+
+fn default_custom_theme_name() -> String {
+    "Custom Theme".to_string()
+}
+
 pub fn default_ui_font_family() -> String {
     // ".SystemUIFont" is a GPUI sentinel that resolves to the platform system UI font.
     // This matches gpui-component's own Theme default.
@@ -284,6 +300,10 @@ impl Default for ConfigFile {
             locale: default_locale(),
             terminal_font_size: default_terminal_font_size(),
             ui_font_size: default_ui_font_size(),
+            custom_primary_color: String::new(),
+            custom_background_color: String::new(),
+            custom_font_brightness: default_custom_font_brightness(),
+            custom_theme_name: default_custom_theme_name(),
             right_click_copy_paste: false,
             keyword_highlight: false,
             ui_font_family: default_ui_font_family(),
@@ -634,6 +654,52 @@ impl ConfigStore {
 
     pub fn set_ui_font_size(&mut self, ui_font_size: f32) {
         self.cache.ui_font_size = ui_font_size.max(8.0);
+    }
+
+    pub fn custom_primary_color(&self) -> &str {
+        self.cache.custom_primary_color.trim()
+    }
+
+    pub fn set_custom_primary_color(&mut self, color: &str) {
+        self.cache.custom_primary_color = color.trim().to_string();
+    }
+
+    pub fn custom_background_color(&self) -> &str {
+        self.cache.custom_background_color.trim()
+    }
+
+    pub fn set_custom_background_color(&mut self, color: &str) {
+        self.cache.custom_background_color = color.trim().to_string();
+    }
+
+    pub fn custom_font_brightness(&self) -> f32 {
+        let value = self.cache.custom_font_brightness;
+        if value <= 0.0 {
+            default_custom_font_brightness()
+        } else {
+            value.clamp(0.6, 1.6)
+        }
+    }
+
+    pub fn set_custom_font_brightness(&mut self, brightness: f32) {
+        self.cache.custom_font_brightness = brightness.clamp(0.6, 1.6);
+    }
+
+    pub fn custom_theme_name(&self) -> &str {
+        if self.cache.custom_theme_name.trim().is_empty() {
+            "Custom Theme"
+        } else {
+            self.cache.custom_theme_name.trim()
+        }
+    }
+
+    pub fn set_custom_theme_name(&mut self, name: &str) {
+        let name = name.trim();
+        self.cache.custom_theme_name = if name.is_empty() {
+            default_custom_theme_name()
+        } else {
+            name.to_string()
+        };
     }
 
     pub fn ui_font_family(&self) -> &str {

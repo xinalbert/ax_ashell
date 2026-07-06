@@ -194,10 +194,16 @@ impl ScrollbarHandle for TerminalScrollbarHandle {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DialogKind {
-    Settings,
     SessionSelector,
     Transfers,
     NewSsh,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum WorkspacePage {
+    #[default]
+    Terminal,
+    Settings,
 }
 
 pub(crate) struct AxAshell {
@@ -232,6 +238,10 @@ pub(crate) struct AxAshell {
     pub(crate) sync_s3_secret_key_input: Entity<InputState>,
     pub(crate) sync_s3_session_token_input: Entity<InputState>,
     pub(crate) sync_encryption_password_input: Entity<InputState>,
+    pub(crate) custom_theme_name_input: Entity<InputState>,
+    pub(crate) custom_primary_color_input: Entity<InputState>,
+    pub(crate) custom_background_color_input: Entity<InputState>,
+    pub(crate) custom_font_brightness_input: Entity<InputState>,
     pub(crate) sync_in_progress: bool,
     pub(crate) sync_status: SharedString,
     pub(crate) sftp_path_input: Entity<InputState>,
@@ -290,6 +300,8 @@ pub(crate) struct AxAshell {
     pub(crate) system_sampler: SystemSampler,
     pub(crate) recording_action: Option<String>,
     pub(crate) active_dialog: Option<DialogKind>,
+    pub(crate) workspace_page: WorkspacePage,
+    pub(crate) settings_page_open: bool,
     /// Error message when a recorded keybinding conflicts with another
     pub(crate) keybind_error: Option<(String, String)>, // (action_id, error_message)
     /// Whether workspace keybindings are currently suspended (during settings)
@@ -497,6 +509,26 @@ impl AxAshell {
                 .placeholder(t!("sync_encryption_password").to_string())
                 .masked(true)
         });
+        let custom_primary_color_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("#4f8cff")
+                .default_value(config.custom_primary_color())
+        });
+        let custom_theme_name_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Custom Theme")
+                .default_value(config.custom_theme_name())
+        });
+        let custom_background_color_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("#111827")
+                .default_value(config.custom_background_color())
+        });
+        let custom_font_brightness_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("1.0")
+                .default_value(format!("{:.2}", config.custom_font_brightness()))
+        });
 
         let _subscriptions = vec![
             cx.subscribe_in(&host_input, window, Self::on_input_event),
@@ -529,6 +561,10 @@ impl AxAshell {
                 window,
                 Self::on_input_event,
             ),
+            cx.subscribe_in(&custom_theme_name_input, window, Self::on_input_event),
+            cx.subscribe_in(&custom_primary_color_input, window, Self::on_input_event),
+            cx.subscribe_in(&custom_background_color_input, window, Self::on_input_event),
+            cx.subscribe_in(&custom_font_brightness_input, window, Self::on_input_event),
         ];
 
         let (events_tx, events_rx) = mpsc::channel();
@@ -606,6 +642,10 @@ impl AxAshell {
             sync_s3_secret_key_input,
             sync_s3_session_token_input,
             sync_encryption_password_input,
+            custom_theme_name_input,
+            custom_primary_color_input,
+            custom_background_color_input,
+            custom_font_brightness_input,
             sync_in_progress: false,
             sync_status: t!("sync_not_run").into(),
             sftp_path_input,
@@ -677,6 +717,8 @@ impl AxAshell {
             system_sampler,
             recording_action: None,
             active_dialog: None,
+            workspace_page: WorkspacePage::Terminal,
+            settings_page_open: false,
             keybind_error: None,
             keybinds_suspended: false,
             system,
@@ -713,6 +755,46 @@ impl AxAshell {
         // this.open_local(cx);
         this.start_event_pump(cx);
         this
+    }
+
+    pub(crate) fn set_workspace_page(&mut self, page: WorkspacePage, cx: &mut Context<Self>) {
+        if self.workspace_page == page {
+            return;
+        }
+
+        if self.workspace_page == WorkspacePage::Settings {
+            self.keybinds_suspended = false;
+            self.recording_action = None;
+            self.keybind_error = None;
+            crate::app::keybinding_recorder::bind_workspace_keys_from_config(cx, &self.config);
+        }
+
+        if page == WorkspacePage::Settings {
+            crate::app::keybinding_recorder::unbind_all_workspace_keys(cx, &self.config);
+            self.keybinds_suspended = true;
+            self.search_active = false;
+            self.search_query.clear();
+            self.search_matches.clear();
+            self.search_current = 0;
+            self.search_target_tab = None;
+        }
+
+        self.workspace_page = page;
+        cx.notify();
+    }
+
+    pub(crate) fn open_settings_page(&mut self, cx: &mut Context<Self>) {
+        self.settings_page_open = true;
+        self.set_workspace_page(WorkspacePage::Settings, cx);
+    }
+
+    pub(crate) fn close_settings_page(&mut self, cx: &mut Context<Self>) {
+        self.settings_page_open = false;
+        if self.workspace_page == WorkspacePage::Settings {
+            self.set_workspace_page(WorkspacePage::Terminal, cx);
+        } else {
+            cx.notify();
+        }
     }
 
     pub(crate) fn on_input_event(
@@ -766,6 +848,16 @@ impl AxAshell {
                 } else {
                     self.search_goto_next(cx);
                 }
+                window.prevent_default();
+                cx.stop_propagation();
+            }
+        } else if input == &self.custom_theme_name_input
+            || input == &self.custom_primary_color_input
+            || input == &self.custom_background_color_input
+            || input == &self.custom_font_brightness_input
+        {
+            if let InputEvent::PressEnter { .. } = event {
+                self.save_custom_appearance(window, cx);
                 window.prevent_default();
                 cx.stop_propagation();
             }

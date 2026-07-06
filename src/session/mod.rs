@@ -1,8 +1,8 @@
 pub mod config;
 
 use gpui::{
-    AppContext as _, Context, Entity, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, SharedString, Window, px,
+    AppContext as _, Context, Entity, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+    SharedString, Window, px,
 };
 use gpui_component::{Theme, WindowExt as _, input::InputState};
 use rust_i18n::t;
@@ -12,9 +12,8 @@ use self::config::{AuthMethod, Session};
 
 use crate::{
     AxAshell, PaneLayout, SelectorEntry, TabGroup,
-    app::constants::{
-        DEFAULT_COLS, DEFAULT_ROWS,
-    },
+    app::WorkspacePage,
+    app::constants::{DEFAULT_COLS, DEFAULT_ROWS},
     backend::{local, ssh},
     terminal::{BackendCommand, RenderSnapshot, TabKind, TerminalTab},
 };
@@ -47,6 +46,7 @@ impl AxAshell {
                 self.active_group = Some(group_id);
                 self.tabs_scroll_handle.scroll_to_item(self.tabs.len() - 1);
                 self.status = "local terminal opened".into();
+                self.set_workspace_page(WorkspacePage::Terminal, cx);
             }
             Err(err) => {
                 self.status = format!("failed to open local terminal: {err:#}").into();
@@ -135,6 +135,7 @@ impl AxAshell {
         self.open_ssh_session(session, cx);
         self.editing_session_id = None;
         self.active_dialog = None;
+        self.set_workspace_page(WorkspacePage::Terminal, cx);
         window.close_dialog(cx);
         cx.notify();
     }
@@ -202,15 +203,33 @@ impl AxAshell {
         } else {
             session.proxy_type.clone()
         };
-        Self::set_input_value(&self.proxy_host_input, session.proxy_host.clone(), window, cx);
         Self::set_input_value(
-            &self.proxy_port_input,
-            session.proxy_port.map(|p| p.to_string()).unwrap_or_default(),
+            &self.proxy_host_input,
+            session.proxy_host.clone(),
             window,
             cx,
         );
-        Self::set_input_value(&self.proxy_user_input, session.proxy_user.clone(), window, cx);
-        Self::set_input_value(&self.proxy_password_input, session.proxy_password.clone(), window, cx);
+        Self::set_input_value(
+            &self.proxy_port_input,
+            session
+                .proxy_port
+                .map(|p| p.to_string())
+                .unwrap_or_default(),
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.proxy_user_input,
+            session.proxy_user.clone(),
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.proxy_password_input,
+            session.proxy_password.clone(),
+            window,
+            cx,
+        );
     }
 
     pub(crate) fn pick_ssh_key_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -901,7 +920,12 @@ impl AxAshell {
             if event.modifiers.platform {
                 if let Some((row, col, _side)) = self.terminal_grid_point_and_side(event.position) {
                     if let Some(snapshot) = self.active_snapshot() {
-                        if let Some((url, _)) = crate::terminal::highlight::find_url_at_cell(&snapshot.cells, snapshot.rows, row, col) {
+                        if let Some((url, _)) = crate::terminal::highlight::find_url_at_cell(
+                            &snapshot.cells,
+                            snapshot.rows,
+                            row,
+                            col,
+                        ) {
                             let _ = open::that(&url);
                             return;
                         }
@@ -913,7 +937,8 @@ impl AxAshell {
                     if !text.is_empty() {
                         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
                         if let Some(active_id) = &self.active_tab {
-                            if let Some(tab) = self.tabs.iter_mut().find(|tab| &tab.id == active_id) {
+                            if let Some(tab) = self.tabs.iter_mut().find(|tab| &tab.id == active_id)
+                            {
                                 tab.clear_selection();
                             }
                         }
@@ -967,10 +992,6 @@ impl AxAshell {
     pub(crate) fn session_detail(&self, session: &Session) -> String {
         format!("{}@{}:{}", session.user, session.host, session.port)
     }
-
-
-
-
 
     pub(crate) fn split_current_pane(&mut self, direction: &str, cx: &mut Context<Self>) {
         tracing::info!(
@@ -1237,6 +1258,7 @@ impl AxAshell {
             }
             self.focus_handle.focus(window, cx);
         }
+        self.set_workspace_page(WorkspacePage::Terminal, cx);
         self.sync_system_tab_to_active_group();
         cx.notify();
     }

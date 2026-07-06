@@ -1146,131 +1146,138 @@ impl AxAshell {
                 })
         });
     }
-    pub(crate) fn show_settings_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.active_dialog.is_some() {
-            return;
-        }
-        self.active_dialog = Some(crate::app::DialogKind::Settings);
+    pub(crate) fn show_settings_dialog(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.open_settings_page(cx);
+    }
+
+    pub(crate) fn render_settings_page(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl gpui::IntoElement {
+        use gpui::IntoElement;
+        use gpui_component::setting::{
+            SettingField, SettingGroup, SettingItem, SettingPage, Settings,
+        };
 
         let view = cx.entity();
+        let version = crate::app::constants::public_version_label();
+        let view_clone_for_general = view.clone();
+        let view_clone_for_custom = view.clone();
+        let follow_system_theme = self.follow_system_theme;
+        let theme_mode_is_dark = self.theme_mode.is_dark();
+        let light_theme_name = self.light_theme_name.to_string();
+        let dark_theme_name = self.dark_theme_name.to_string();
+        let custom_theme_name = self.config.custom_theme_name().to_string();
+        let title_bar_style = self.config.effective_title_bar_style();
+        let ui_font_size = self.ui_font_size;
+        let terminal_font_size = self.terminal_font_size;
+        let ui_font_family = self.ui_font_family.to_string();
+        let terminal_font_family = self.terminal_font_family.to_string();
+        let cursor_style = self.cursor_style;
+        let right_click_copy_paste = self.config.right_click_copy_paste();
+        let keyword_highlight = self.config.keyword_highlight();
+        let lock_layout = self.config.lock_layout();
+        let show_monitoring_dashboard = self.config.show_monitoring_dashboard();
+        let monitoring_position = self.config.monitoring_position().to_string();
+        let current_locale = self.config.locale().to_string();
+        let sync_endpoint_input = self.sync_endpoint_input.clone();
+        let sync_username_input = self.sync_username_input.clone();
+        let sync_webdav_password_input = self.sync_webdav_password_input.clone();
+        let sync_s3_endpoint_input = self.sync_s3_endpoint_input.clone();
+        let sync_s3_region_input = self.sync_s3_region_input.clone();
+        let sync_s3_bucket_input = self.sync_s3_bucket_input.clone();
+        let sync_s3_object_key_input = self.sync_s3_object_key_input.clone();
+        let sync_s3_access_key_input = self.sync_s3_access_key_input.clone();
+        let sync_s3_secret_key_input = self.sync_s3_secret_key_input.clone();
+        let sync_s3_session_token_input = self.sync_s3_session_token_input.clone();
+        let sync_encryption_password_input = self.sync_encryption_password_input.clone();
+        let sync_in_progress = self.sync_in_progress;
+        let sync_status = self.sync_status.clone();
+        let sync_backend_is_s3 = self.config.sync_backend() == "s3";
+        let muted_foreground = cx.theme().muted_foreground;
+        let use_proxy = self.config.use_proxy();
+        let read_env_proxy = self.config.read_env_proxy();
+        let global_proxy_host_input = self.global_proxy_host_input.clone();
+        let global_proxy_port_input = self.global_proxy_port_input.clone();
+        let global_proxy_user_input = self.global_proxy_user_input.clone();
+        let global_proxy_password_input = self.global_proxy_password_input.clone();
+        let global_proxy_type = self.global_proxy_type.clone();
+        let custom_theme_name_input = self.custom_theme_name_input.clone();
+        let custom_primary_color_input = self.custom_primary_color_input.clone();
+        let custom_background_color_input = self.custom_background_color_input.clone();
+        let custom_font_brightness_input = self.custom_font_brightness_input.clone();
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .on_key_down({
+                let view = view.clone();
+                move |ev: &gpui::KeyDownEvent, window, cx| {
+                    view.update(cx, |this, cx| {
+                        let Some(action) = this.recording_action.clone() else {
+                            return;
+                        };
 
-        // Unbind all workspace keys so they don't interfere with keybinding recording
-        crate::app::keybinding_recorder::unbind_all_workspace_keys(cx, &self.config);
-        self.keybinds_suspended = true;
+                        window.prevent_default();
+                        cx.stop_propagation();
 
-        window.open_dialog(cx, move |dialog: Dialog, _window, _| {
-            dialog
-                .title(t!("settings").to_string())
-                .w(px(840.))
-                .h(px(560.))
-                .on_close({
-                    let view = view.clone();
-                    move |_, _window, cx| {
-                        // Re-register all workspace keys when closing settings
-                        view.update(cx, |this, cx| {
-                            this.active_dialog = None;
-                            this.keybinds_suspended = false;
+                        if ev.keystroke.key == "escape" {
                             this.recording_action = None;
-                            this.keybind_error = None;
-                            crate::app::keybinding_recorder::bind_workspace_keys_from_config(
-                                cx,
-                                &this.config,
-                            );
                             cx.notify();
-                        });
-                    }
-                })
-                .content({
-                    let view = view.clone();
-                    move |content, _window, cx| {
-                        use gpui_component::setting::{Settings, SettingPage, SettingGroup, SettingItem, SettingField};
-                        use gpui::IntoElement;
-                        let version = crate::app::constants::public_version_label();
-                        let view_clone_for_general = view.clone();
-                        let sync_endpoint_input = view.read(cx).sync_endpoint_input.clone();
-                        let sync_username_input = view.read(cx).sync_username_input.clone();
-                        let sync_webdav_password_input = view.read(cx).sync_webdav_password_input.clone();
-                        let sync_s3_endpoint_input = view.read(cx).sync_s3_endpoint_input.clone();
-                        let sync_s3_region_input = view.read(cx).sync_s3_region_input.clone();
-                        let sync_s3_bucket_input = view.read(cx).sync_s3_bucket_input.clone();
-                        let sync_s3_object_key_input = view.read(cx).sync_s3_object_key_input.clone();
-                        let sync_s3_access_key_input = view.read(cx).sync_s3_access_key_input.clone();
-                        let sync_s3_secret_key_input = view.read(cx).sync_s3_secret_key_input.clone();
-                        let sync_s3_session_token_input = view.read(cx).sync_s3_session_token_input.clone();
-                        let sync_encryption_password_input = view.read(cx).sync_encryption_password_input.clone();
+                            return;
+                        }
 
-                        let focus_handle = view.read(cx).focus_handle.clone();
+                        let Some(new_key) =
+                            crate::app::keybinding_recorder::normalize_recorded_keystroke(ev)
+                        else {
+                            return;
+                        };
 
-                        content.child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .size_full()
-                                .track_focus(&focus_handle)
-                                .on_key_down({
-                                    let view = view.clone();
-                                    move |ev: &gpui::KeyDownEvent, window, cx| {
-                                        view.update(cx, |this, cx| {
-                                            let Some(action) = this.recording_action.clone() else {
-                                                return;
-                                            };
+                        if let Some((_conflict_id, conflict_label)) =
+                            crate::app::keybinding_recorder::find_conflict(
+                                &this.config,
+                                &action,
+                                &new_key,
+                            )
+                        {
+                            let formatted =
+                                crate::app::keybinding_recorder::format_keystroke(&new_key);
+                            this.recording_action = None;
+                            this.keybind_error = Some((
+                                action.clone(),
+                                t!("keybind_conflict", key = formatted, action = conflict_label)
+                                    .to_string(),
+                            ));
+                            cx.notify();
+                            return;
+                        }
 
-                                            window.prevent_default();
-                                            cx.stop_propagation();
-
-                                            if ev.keystroke.key == "escape" {
-                                                this.recording_action = None;
-                                                cx.notify();
-                                                return;
-                                            }
-
-                                            let Some(new_key) = crate::app::keybinding_recorder::normalize_recorded_keystroke(ev) else {
-                                                return;
-                                            };
-
-                                            // Check for conflicts with other actions
-                                            if let Some((_conflict_id, conflict_label)) =
-                                                crate::app::keybinding_recorder::find_conflict(
-                                                    &this.config,
-                                                    &action,
-                                                    &new_key,
-                                                )
-                                            {
-                                                let formatted = crate::app::keybinding_recorder::format_keystroke(&new_key);
-                                                this.recording_action = None;
-                                                this.keybind_error = Some((
-                                                    action.clone(),
-                                                    t!("keybind_conflict", key = formatted, action = conflict_label).to_string(),
-                                                ));
-                                                cx.notify();
-                                                return;
-                                            }
-
-                                            this.recording_action = None;
-                                            this.keybind_error = None;
-                                            this.config.set_key_binding(&action, &new_key);
-                                            if let Err(err) = this.config.save() {
-                                                tracing::error!("failed to save key binding: {err:#}");
-                                            }
-                                            cx.notify();
-                                        });
-                                    }
-                                })
-                                .on_mouse_down_out({
-                                    let view = view.clone();
-                                    move |_, _window, cx| {
-                                        view.update(cx, |this, cx| {
-                                            if this.recording_action.is_some() {
-                                                this.recording_action = None;
-                                                cx.notify();
-                                            }
-                                        });
-                                    }
-                                })
-                                .child(
-                                    Settings::new("settings")
-                                        .sidebar_width(px(180.))
-                                        .sidebar_style(div().bg(cx.theme().background).style())
+                        this.recording_action = None;
+                        this.keybind_error = None;
+                        this.config.set_key_binding(&action, &new_key);
+                        if let Err(err) = this.config.save() {
+                            tracing::error!("failed to save key binding: {err:#}");
+                        }
+                        cx.notify();
+                    });
+                }
+            })
+            .on_mouse_down_out({
+                let view = view.clone();
+                move |_, _window, cx| {
+                    view.update(cx, |this, cx| {
+                        if this.recording_action.is_some() {
+                            this.recording_action = None;
+                            cx.notify();
+                        }
+                    });
+                }
+            })
+            .child(
+                Settings::new("settings")
+                    .sidebar_width(px(180.))
+                    .sidebar_style(div().bg(cx.theme().background).style())
                                 .page(
                                     SettingPage::new(t!("settings_general").to_string())
                                         .icon(IconName::Settings)
@@ -1283,22 +1290,18 @@ impl AxAshell {
                                                         t!("theme_mode").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, _window, cx| {
-                                                                let (follow_system, is_dark_mode) = {
-                                                                    let state = view.read(cx);
-                                                                    (state.follow_system_theme, state.theme_mode.is_dark())
-                                                                };
+                                                            let follow_system = follow_system_theme;
+                                                            let is_dark_mode = theme_mode_is_dark;
+                                                            move |_, _window, _cx| {
                                                                 Button::new("theme-mode-dropdown")
                                                                     .small()
                                                                     .icon(if follow_system { IconName::Sun } else if is_dark_mode { IconName::Moon } else { IconName::Sun })
                                                                     .label(if follow_system { t!("follow_system").to_string() } else if is_dark_mode { t!("use_dark_mode").to_string() } else { t!("use_light_mode").to_string() })
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
-                                                                        move |mut menu, window, cx| {
-                                                                            let (follow_system, is_dark_mode) = {
-                                                                                let state = view.read(cx);
-                                                                                (state.follow_system_theme, state.theme_mode.is_dark())
-                                                                            };
+                                                                        let follow_system = follow_system;
+                                                                        let is_dark_mode = is_dark_mode;
+                                                                        move |mut menu, window, _cx| {
                                                                             menu = menu.min_w(160.)
                                                                                 .item(
                                                                                     PopupMenuItem::new(t!("follow_system").to_string())
@@ -1311,14 +1314,14 @@ impl AxAshell {
                                                                                     PopupMenuItem::new(t!("use_light_mode").to_string())
                                                                                         .checked(!follow_system && !is_dark_mode)
                                                                                         .on_click(window.listener_for(&view, |this, _, window, cx| {
-                                                                                            this.switch_theme_mode(crate::app::ThemeMode::Light, window, cx)
+                                                                                            this.switch_theme_mode(gpui_component::ThemeMode::Light, window, cx)
                                                                                         }))
                                                                                 )
                                                                                 .item(
                                                                                     PopupMenuItem::new(t!("use_dark_mode").to_string())
                                                                                         .checked(!follow_system && is_dark_mode)
                                                                                         .on_click(window.listener_for(&view, |this, _, window, cx| {
-                                                                                            this.switch_theme_mode(crate::app::ThemeMode::Dark, window, cx)
+                                                                                            this.switch_theme_mode(gpui_component::ThemeMode::Dark, window, cx)
                                                                                         }))
                                                                                 );
                                                                             menu
@@ -1334,16 +1337,18 @@ impl AxAshell {
                                                         t!("light_theme").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, _window, cx| {
-                                                                let current_theme = view.read(cx).light_theme_name.to_string();
+                                                            let current_theme = light_theme_name.clone();
+                                                            let custom_theme = custom_theme_name.clone();
+                                                            move |_, _window, _cx| {
                                                                 Button::new("light-theme-dropdown")
                                                                     .small()
                                                                     .icon(IconName::Sun)
                                                                     .label(current_theme.clone())
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
+                                                                        let current_theme = current_theme.clone();
+                                                                        let custom_theme = custom_theme.clone();
                                                                         move |mut menu, window, cx| {
-                                                                            let current_theme = view.read(cx).light_theme_name.to_string();
                                                                             let themes = gpui_component::ThemeRegistry::global(cx).sorted_themes();
                                                                             let light_themes: Vec<_> = themes.into_iter().filter(|t| !t.mode.is_dark()).map(|t| t.name.clone()).collect();
                                                                             menu = menu.min_w(160.).max_h(px(320.)).scrollable(true);
@@ -1357,6 +1362,13 @@ impl AxAshell {
                                                                                         }))
                                                                                 );
                                                                             }
+                                                                            menu = menu.separator().item(
+                                                                                PopupMenuItem::new(custom_theme.clone())
+                                                                                    .checked(current_theme == custom_theme)
+                                                                                    .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                                                                        this.apply_custom_theme(gpui_component::ThemeMode::Light, window, cx)
+                                                                                    }))
+                                                                            );
                                                                             menu
                                                                         }
                                                                     })
@@ -1370,16 +1382,18 @@ impl AxAshell {
                                                         t!("dark_theme").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, _window, cx| {
-                                                                let current_theme = view.read(cx).dark_theme_name.to_string();
+                                                            let current_theme = dark_theme_name.clone();
+                                                            let custom_theme = custom_theme_name.clone();
+                                                            move |_, _window, _cx| {
                                                                 Button::new("dark-theme-dropdown")
                                                                     .small()
                                                                     .icon(IconName::Moon)
                                                                     .label(current_theme.clone())
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
+                                                                        let current_theme = current_theme.clone();
+                                                                        let custom_theme = custom_theme.clone();
                                                                         move |mut menu, window, cx| {
-                                                                            let current_theme = view.read(cx).dark_theme_name.to_string();
                                                                             let themes = gpui_component::ThemeRegistry::global(cx).sorted_themes();
                                                                             let dark_themes: Vec<_> = themes.into_iter().filter(|t| t.mode.is_dark()).map(|t| t.name.clone()).collect();
                                                                             menu = menu.min_w(160.).max_h(px(320.)).scrollable(true);
@@ -1393,6 +1407,13 @@ impl AxAshell {
                                                                                         }))
                                                                                 );
                                                                             }
+                                                                            menu = menu.separator().item(
+                                                                                PopupMenuItem::new(custom_theme.clone())
+                                                                                    .checked(current_theme == custom_theme)
+                                                                                    .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                                                                        this.apply_custom_theme(gpui_component::ThemeMode::Dark, window, cx)
+                                                                                    }))
+                                                                            );
                                                                             menu
                                                                         }
                                                                     })
@@ -1406,11 +1427,8 @@ impl AxAshell {
                                                         format!("{}{}", t!("title_bar_style"), t!("restart_hint")),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, _window, cx| {
-                                                                let current_style = view
-                                                                    .read(cx)
-                                                                    .config
-                                                                    .effective_title_bar_style();
+                                                            let current_style = title_bar_style;
+                                                            move |_, _window, _cx| {
                                                                 let supports_integrated =
                                                                     cfg!(target_os = "macos");
                                                                 Button::new("title-bar-style-dropdown")
@@ -1421,11 +1439,8 @@ impl AxAshell {
                                                                     })
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
-                                                                        move |mut menu, window, cx| {
-                                                                            let current_style = view
-                                                                                .read(cx)
-                                                                                .config
-                                                                                .effective_title_bar_style();
+                                                                        let current_style = current_style;
+                                                                        move |mut menu, window, _cx| {
                                                                             menu = menu.min_w(160.)
                                                                                 .item(
                                                                                     PopupMenuItem::new(t!("title_bar_native").to_string())
@@ -1464,12 +1479,13 @@ impl AxAshell {
                                                         t!("ui_font_size").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, window, cx| {
+                                                            let current_ui_font_size = ui_font_size;
+                                                            move |_, window, _cx| {
                                                                 h_flex()
                                                                     .items_center()
                                                                     .gap_3()
                                                                     .child(Button::new("ui-font-size-down").small().label("-").on_click(window.listener_for(&view, |this, _, _, cx| this.change_ui_font_size(-1.0, cx))))
-                                                                    .child(div().min_w(px(64.)).text_center().child(format!("{:.0}px", view.read(cx).ui_font_size)))
+                                                                    .child(div().min_w(px(64.)).text_center().child(format!("{:.0}px", current_ui_font_size)))
                                                                     .child(Button::new("ui-font-size-up").small().label("+").on_click(window.listener_for(&view, |this, _, _, cx| this.change_ui_font_size(1.0, cx))))
                                                                     .into_any_element()
                                                             }
@@ -1481,12 +1497,13 @@ impl AxAshell {
                                                         t!("terminal_font_size").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, window, cx| {
+                                                            let current_terminal_font_size = terminal_font_size;
+                                                            move |_, window, _cx| {
                                                                 h_flex()
                                                                     .items_center()
                                                                     .gap_3()
                                                                     .child(Button::new("terminal-font-size-down").small().label("-").on_click(window.listener_for(&view, |this, _, _, cx| this.change_terminal_font_size(-1.0, cx))))
-                                                                    .child(div().min_w(px(64.)).text_center().child(format!("{:.0}px", view.read(cx).terminal_font_size)))
+                                                                    .child(div().min_w(px(64.)).text_center().child(format!("{:.0}px", current_terminal_font_size)))
                                                                     .child(Button::new("terminal-font-size-up").small().label("+").on_click(window.listener_for(&view, |this, _, _, cx| this.change_terminal_font_size(1.0, cx))))
                                                                     .into_any_element()
                                                             }
@@ -1498,12 +1515,12 @@ impl AxAshell {
                                                         t!("ui_font_family").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
+                                                            let current = ui_font_family.clone();
                                                             move |_, _window, cx| {
                                                                 Button::new("ui-font-dropdown")
                                                                     .small()
                                                                     .icon(IconName::ChevronsUpDown)
                                                                     .label({
-                                                                        let current = view.read(cx).ui_font_family.to_string();
                                                                         let names = cx.text_system().all_font_names();
                                                                         let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
                                                                         if current == *".SystemUIFont" || current.is_empty() || !names.contains(&current) {
@@ -1511,13 +1528,13 @@ impl AxAshell {
                                                                         } else if !using_system_maple && current == "Maple Mono NF CN" {
                                                                             format!("Maple Mono NF CN ({})", t!("software_builtin"))
                                                                         } else {
-                                                                            current
+                                                                            current.clone()
                                                                         }
                                                                     })
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
+                                                                        let current = current.clone();
                                                                         move |mut menu, window, cx| {
-                                                                            let current = view.read(cx).ui_font_family.to_string();
                                                                             let mut names = cx.text_system().all_font_names();
                                                                             menu = menu.min_w(200.).max_h(px(320.)).scrollable(true);
                                                                             menu = menu.item(
@@ -1562,23 +1579,23 @@ impl AxAshell {
                                                         t!("terminal_font_family").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, _window, cx| {
+                                                            let current = terminal_font_family.clone();
+                                                            move |_, _window, _cx| {
                                                                 Button::new("terminal-font-dropdown")
                                                                     .small()
                                                                     .icon(IconName::ChevronsUpDown)
                                                                     .label({
-                                                                        let current = view.read(cx).terminal_font_family.to_string();
                                                                         let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
                                                                         if !using_system_maple && current == "Maple Mono NF CN" {
                                                                             format!("Maple Mono NF CN ({})", t!("software_builtin"))
                                                                         } else {
-                                                                            current
+                                                                            current.clone()
                                                                         }
                                                                     })
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
+                                                                        let current = current.clone();
                                                                         move |mut menu, window, cx| {
-                                                                            let current = view.read(cx).terminal_font_family.to_string();
                                                                             let mut names = cx.text_system().all_font_names();
                                                                             menu = menu.min_w(200.).max_h(px(320.)).scrollable(true);
                                                                             let maple_font = "Maple Mono NF CN".to_string();
@@ -1616,9 +1633,9 @@ impl AxAshell {
                                                         t!("cursor_style").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, _window, cx| {
+                                                            let current = cursor_style;
+                                                            move |_, _window, _cx| {
                                                                 use crate::session::config::CursorStyle;
-                                                                let current = view.read(cx).cursor_style;
                                                                 Button::new("cursor-style-dropdown")
                                                                     .small()
                                                                     .icon(IconName::ChevronsUpDown)
@@ -1630,9 +1647,9 @@ impl AxAshell {
                                                                     })
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
-                                                                        move |mut menu, window, cx| {
+                                                                        let current = current;
+                                                                        move |mut menu, window, _cx| {
                                                                             use crate::session::config::CursorStyle;
-                                                                            let current = view.read(cx).cursor_style;
                                                                             menu = menu.min_w(160.).max_h(px(320.)).scrollable(true);
                                                                             for style in [
                                                                                 CursorStyle::Default,
@@ -1672,10 +1689,11 @@ impl AxAshell {
                                                         t!("right_click_copy_paste").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, window, cx| {
+                                                            let enabled = right_click_copy_paste;
+                                                            move |_, window, _cx| {
                                                                 Switch::new("right-click-copy-paste")
                                                                     .small()
-                                                                    .checked(view.read(cx).config.right_click_copy_paste())
+                                                                    .checked(enabled)
                                                                     .on_click(window.listener_for(&view, |this, checked, _, cx| {
                                                                         this.config.set_right_click_copy_paste(*checked);
                                                                         let _ = this.config.save();
@@ -1691,10 +1709,11 @@ impl AxAshell {
                                                         t!("keyword_highlight").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, window, cx| {
+                                                            let enabled = keyword_highlight;
+                                                            move |_, window, _cx| {
                                                                 Switch::new("keyword-highlight")
                                                                     .small()
-                                                                    .checked(view.read(cx).config.keyword_highlight())
+                                                                    .checked(enabled)
                                                                     .on_click(window.listener_for(&view, |this, checked, _, cx| {
                                                                         this.config.set_keyword_highlight(*checked);
                                                                         let _ = this.config.save();
@@ -1710,10 +1729,11 @@ impl AxAshell {
                                                         t!("lock_layout").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, window, cx| {
+                                                            let enabled = lock_layout;
+                                                            move |_, window, _cx| {
                                                                 Switch::new("lock-layout")
                                                                     .small()
-                                                                    .checked(view.read(cx).config.lock_layout())
+                                                                    .checked(enabled)
                                                                     .on_click(window.listener_for(&view, |this, checked, _, cx| {
                                                                         this.config.set_lock_layout(*checked);
                                                                         let _ = this.config.save();
@@ -1729,10 +1749,11 @@ impl AxAshell {
                                                         t!("show_monitoring_dashboard").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, window, cx| {
+                                                            let enabled = show_monitoring_dashboard;
+                                                            move |_, window, _cx| {
                                                                 Switch::new("show-monitoring-dashboard")
                                                                     .small()
-                                                                    .checked(view.read(cx).config.show_monitoring_dashboard())
+                                                                    .checked(enabled)
                                                                     .on_click(window.listener_for(&view, |this, checked, _, cx| {
                                                                         this.config.set_show_monitoring_dashboard(*checked);
                                                                         let _ = this.config.save();
@@ -1749,16 +1770,13 @@ impl AxAshell {
                                                         t!("monitoring_position").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, _window, cx| {
-                                                                let show_monitoring = view
-                                                                    .read(cx)
-                                                                    .config
-                                                                    .show_monitoring_dashboard();
+                                                            let show_monitoring = show_monitoring_dashboard;
+                                                            let pos = monitoring_position.clone();
+                                                            move |_, _window, _cx| {
                                                                 Button::new("monitoring-position-dropdown")
                                                                     .small()
                                                                     .icon(IconName::PanelLeftOpen)
                                                                     .label({
-                                                                        let pos = view.read(cx).config.monitoring_position().to_string();
                                                                         if pos == "Sidebar" {
                                                                             t!("position_sidebar").to_string()
                                                                         } else {
@@ -1768,8 +1786,8 @@ impl AxAshell {
                                                                     .disabled(!show_monitoring)
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
-                                                                        move |mut menu, window, cx| {
-                                                                            let pos = view.read(cx).config.monitoring_position().to_string();
+                                                                        let pos = pos.clone();
+                                                                        move |mut menu, window, _cx| {
                                                                             menu = menu.min_w(160.)
                                                                                 .item(
                                                                                     PopupMenuItem::new(t!("position_bottom").to_string())
@@ -1802,15 +1820,15 @@ impl AxAshell {
                                                         t!("language").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
-                                                            move |_, _window, cx| {
+                                                            let locale = current_locale.clone();
+                                                            move |_, _window, _cx| {
                                                                 Button::new("language-dropdown")
                                                                     .small()
                                                                     .icon(IconName::Globe)
                                                                     .label({
-                                                                        let current_locale = view.read(cx).config.locale().to_string();
-                                                                        if current_locale == "en" {
+                                                                        if locale == "en" {
                                                                             t!("english").to_string()
-                                                                        } else if current_locale == "zh-CN" {
+                                                                        } else if locale == "zh-CN" {
                                                                             t!("chinese").to_string()
                                                                         } else {
                                                                             t!("follow_system").to_string()
@@ -1818,8 +1836,8 @@ impl AxAshell {
                                                                     })
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
-                                                                        move |mut menu, window, cx| {
-                                                                            let current_locale = view.read(cx).config.locale().to_string();
+                                                                        let current_locale = locale.clone();
+                                                                        move |mut menu, window, _cx| {
                                                                             menu = menu.min_w(160.)
                                                                                 .item(
                                                                                     PopupMenuItem::new(t!("follow_system").to_string())
@@ -1871,6 +1889,533 @@ impl AxAshell {
                                         )
                                 )
                                 .page(
+                                    SettingPage::new(t!("settings_custom").to_string())
+                                        .icon(IconName::Settings)
+                                        .group(
+                                            SettingGroup::new()
+                                                .title(t!("settings_custom_theme").to_string())
+                                                .description(
+                                                    t!("settings_custom_config_hint").to_string(),
+                                                )
+                                                .item(SettingItem::render(|_, _window, _cx| {
+                                                    div()
+                                                        .text_sm()
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .child(t!("settings_custom_theme_mode").to_string())
+                                                }))
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("theme_mode").to_string(),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            let follow_system = follow_system_theme;
+                                                            let is_dark_mode = theme_mode_is_dark;
+                                                            move |_, _window, _cx| {
+                                                                Button::new("custom-theme-mode-dropdown")
+                                                                    .small()
+                                                                    .icon(if follow_system {
+                                                                        IconName::Sun
+                                                                    } else if is_dark_mode {
+                                                                        IconName::Moon
+                                                                    } else {
+                                                                        IconName::Sun
+                                                                    })
+                                                                    .label(if follow_system {
+                                                                        t!("follow_system").to_string()
+                                                                    } else if is_dark_mode {
+                                                                        t!("use_dark_mode").to_string()
+                                                                    } else {
+                                                                        t!("use_light_mode").to_string()
+                                                                    })
+                                                                    .dropdown_menu_with_anchor(
+                                                                        Anchor::BottomRight,
+                                                                        {
+                                                                            let view = view.clone();
+                                                                            move |mut menu, window, _cx| {
+                                                                                menu = menu.min_w(160.)
+                                                                                    .item(
+                                                                                        PopupMenuItem::new(t!("follow_system").to_string())
+                                                                                            .checked(follow_system)
+                                                                                            .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                                                                                this.set_follow_system_theme(true, window, cx)
+                                                                                            }))
+                                                                                    )
+                                                                                    .item(
+                                                                                        PopupMenuItem::new(t!("use_light_mode").to_string())
+                                                                                            .checked(!follow_system && !is_dark_mode)
+                                                                                            .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                                                                                this.switch_theme_mode(gpui_component::ThemeMode::Light, window, cx)
+                                                                                            }))
+                                                                                    )
+                                                                                    .item(
+                                                                                        PopupMenuItem::new(t!("use_dark_mode").to_string())
+                                                                                            .checked(!follow_system && is_dark_mode)
+                                                                                            .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                                                                                this.switch_theme_mode(gpui_component::ThemeMode::Dark, window, cx)
+                                                                                            }))
+                                                                                    );
+                                                                                menu
+                                                                            }
+                                                                        },
+                                                                    )
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description(
+                                                        "keys: follow_system_theme, theme_mode; default: follow system",
+                                                    ),
+                                                )
+                                                .item(SettingItem::render(|_, _window, _cx| {
+                                                    div()
+                                                        .pt_2()
+                                                        .text_sm()
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .child(t!("settings_custom_theme_presets").to_string())
+                                                }))
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("light_theme").to_string(),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            let current_theme = light_theme_name.clone();
+                                                            let custom_theme = custom_theme_name.clone();
+                                                            move |_, _window, _cx| {
+                                                                Button::new("custom-light-theme-dropdown")
+                                                                    .small()
+                                                                    .icon(IconName::Sun)
+                                                                    .label(current_theme.clone())
+                                                                    .dropdown_menu_with_anchor(
+                                                                        Anchor::BottomRight,
+                                                                        {
+                                                                            let view = view.clone();
+                                                                            let current_theme = current_theme.clone();
+                                                                            let custom_theme = custom_theme.clone();
+                                                                            move |mut menu, window, cx| {
+                                                                                let themes = gpui_component::ThemeRegistry::global(cx).sorted_themes();
+                                                                                let light_themes: Vec<_> = themes
+                                                                                    .into_iter()
+                                                                                    .filter(|t| !t.mode.is_dark())
+                                                                                    .map(|t| t.name.clone())
+                                                                                    .collect();
+                                                                                menu = menu.min_w(160.).max_h(px(320.)).scrollable(true);
+                                                                                for theme_name in light_themes {
+                                                                                    let checked = theme_name == current_theme;
+                                                                                    menu = menu.item(
+                                                                                        PopupMenuItem::new(theme_name.clone())
+                                                                                            .checked(checked)
+                                                                                            .on_click(window.listener_for(&view, move |this, _, window, cx| {
+                                                                                                this.apply_theme(theme_name.clone(), window, cx)
+                                                                                            }))
+                                                                                    );
+                                                                                }
+                                                                                menu = menu.separator().item(
+                                                                                    PopupMenuItem::new(custom_theme.clone())
+                                                                                        .checked(current_theme == custom_theme)
+                                                                                        .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                                                                            this.apply_custom_theme(gpui_component::ThemeMode::Light, window, cx)
+                                                                                        }))
+                                                                                );
+                                                                                menu
+                                                                            }
+                                                                        },
+                                                                    )
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description("key: light_theme_name; default: empty"),
+                                                )
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("dark_theme").to_string(),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            let current_theme = dark_theme_name.clone();
+                                                            let custom_theme = custom_theme_name.clone();
+                                                            move |_, _window, _cx| {
+                                                                Button::new("custom-dark-theme-dropdown")
+                                                                    .small()
+                                                                    .icon(IconName::Moon)
+                                                                    .label(current_theme.clone())
+                                                                    .dropdown_menu_with_anchor(
+                                                                        Anchor::BottomRight,
+                                                                        {
+                                                                            let view = view.clone();
+                                                                            let current_theme = current_theme.clone();
+                                                                            let custom_theme = custom_theme.clone();
+                                                                            move |mut menu, window, cx| {
+                                                                                let themes = gpui_component::ThemeRegistry::global(cx).sorted_themes();
+                                                                                let dark_themes: Vec<_> = themes
+                                                                                    .into_iter()
+                                                                                    .filter(|t| t.mode.is_dark())
+                                                                                    .map(|t| t.name.clone())
+                                                                                    .collect();
+                                                                                menu = menu.min_w(160.).max_h(px(320.)).scrollable(true);
+                                                                                for theme_name in dark_themes {
+                                                                                    let checked = theme_name == current_theme;
+                                                                                    menu = menu.item(
+                                                                                        PopupMenuItem::new(theme_name.clone())
+                                                                                            .checked(checked)
+                                                                                            .on_click(window.listener_for(&view, move |this, _, window, cx| {
+                                                                                                this.apply_theme(theme_name.clone(), window, cx)
+                                                                                            }))
+                                                                                    );
+                                                                                }
+                                                                                menu = menu.separator().item(
+                                                                                    PopupMenuItem::new(custom_theme.clone())
+                                                                                        .checked(current_theme == custom_theme)
+                                                                                        .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                                                                            this.apply_custom_theme(gpui_component::ThemeMode::Dark, window, cx)
+                                                                                        }))
+                                                                                );
+                                                                                menu
+                                                                            }
+                                                                        },
+                                                                    )
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description("key: dark_theme_name; default: empty"),
+                                                )
+                                                .item(
+                                                    SettingItem::new(
+                                                        format!(
+                                                            "{}{}",
+                                                            t!("title_bar_style"),
+                                                            t!("restart_hint")
+                                                        ),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            let current_style = title_bar_style;
+                                                            move |_, _window, _cx| {
+                                                                let supports_integrated =
+                                                                    cfg!(target_os = "macos");
+                                                                Button::new("custom-title-bar-style-dropdown")
+                                                                    .small()
+                                                                    .label(match current_style {
+                                                                        crate::session::config::TitleBarStyle::Native => t!("title_bar_native").to_string(),
+                                                                        crate::session::config::TitleBarStyle::Integrated => t!("title_bar_integrated").to_string(),
+                                                                    })
+                                                                    .dropdown_menu_with_anchor(Anchor::BottomRight, {
+                                                                        let view = view.clone();
+                                                                        move |mut menu, window, _cx| {
+                                                                            menu = menu.min_w(160.)
+                                                                                .item(
+                                                                                    PopupMenuItem::new(t!("title_bar_native").to_string())
+                                                                                        .checked(current_style == crate::session::config::TitleBarStyle::Native)
+                                                                                        .on_click(window.listener_for(&view, |this, _, _, cx| {
+                                                                                            this.config.set_title_bar_style(crate::session::config::TitleBarStyle::Native);
+                                                                                            let _ = this.config.save();
+                                                                                            cx.notify();
+                                                                                        }))
+                                                                                );
+                                                                            if supports_integrated {
+                                                                                menu = menu.item(
+                                                                                    PopupMenuItem::new(t!("title_bar_integrated").to_string())
+                                                                                        .checked(current_style == crate::session::config::TitleBarStyle::Integrated)
+                                                                                        .on_click(window.listener_for(&view, |this, _, _, cx| {
+                                                                                            this.config.set_title_bar_style(crate::session::config::TitleBarStyle::Integrated);
+                                                                                            let _ = this.config.save();
+                                                                                            cx.notify();
+                                                                                        }))
+                                                                                );
+                                                                            }
+                                                                            menu
+                                                                        }
+                                                                    })
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description("key: title_bar_style; default: integrated"),
+                                                )
+                                                .item(SettingItem::render(|_, _window, _cx| {
+                                                    div()
+                                                        .pt_2()
+                                                        .text_sm()
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .child(t!("settings_custom_theme_fonts").to_string())
+                                                }))
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("ui_font_size").to_string(),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            let current_ui_font_size = ui_font_size;
+                                                            move |_, window, _cx| {
+                                                                h_flex()
+                                                                    .items_center()
+                                                                    .gap_3()
+                                                                    .child(Button::new("custom-ui-font-size-down").small().label("-").on_click(window.listener_for(&view, |this, _, _, cx| this.change_ui_font_size(-1.0, cx))))
+                                                                    .child(div().min_w(px(64.)).text_center().child(format!("{:.0}px", current_ui_font_size)))
+                                                                    .child(Button::new("custom-ui-font-size-up").small().label("+").on_click(window.listener_for(&view, |this, _, _, cx| this.change_ui_font_size(1.0, cx))))
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description("key: ui_font_size; default: 14.0"),
+                                                )
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("terminal_font_size").to_string(),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            let current_terminal_font_size = terminal_font_size;
+                                                            move |_, window, _cx| {
+                                                                h_flex()
+                                                                    .items_center()
+                                                                    .gap_3()
+                                                                    .child(Button::new("custom-terminal-font-size-down").small().label("-").on_click(window.listener_for(&view, |this, _, _, cx| this.change_terminal_font_size(-1.0, cx))))
+                                                                    .child(div().min_w(px(64.)).text_center().child(format!("{:.0}px", current_terminal_font_size)))
+                                                                    .child(Button::new("custom-terminal-font-size-up").small().label("+").on_click(window.listener_for(&view, |this, _, _, cx| this.change_terminal_font_size(1.0, cx))))
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description("key: terminal_font_size; default: 18.0"),
+                                                )
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("ui_font_family").to_string(),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            let current = ui_font_family.clone();
+                                                            move |_, _window, cx| {
+                                                                Button::new("custom-ui-font-dropdown")
+                                                                    .small()
+                                                                    .icon(IconName::ChevronsUpDown)
+                                                                    .label({
+                                                                        let names = cx.text_system().all_font_names();
+                                                                        let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
+                                                                        if current == *".SystemUIFont" || current.is_empty() || !names.contains(&current) {
+                                                                            t!("system_default").to_string()
+                                                                        } else if !using_system_maple && current == "Maple Mono NF CN" {
+                                                                            format!("Maple Mono NF CN ({})", t!("software_builtin"))
+                                                                        } else {
+                                                                            current.clone()
+                                                                        }
+                                                                    })
+                                                                    .dropdown_menu_with_anchor(Anchor::BottomRight, {
+                                                                        let view = view.clone();
+                                                                        let current = current.clone();
+                                                                        move |mut menu, window, cx| {
+                                                                            let mut names = cx.text_system().all_font_names();
+                                                                            menu = menu.min_w(200.).max_h(px(320.)).scrollable(true);
+                                                                            menu = menu.item(
+                                                                                PopupMenuItem::new(t!("system_default").to_string())
+                                                                                    .checked(current == *".SystemUIFont" || current.is_empty())
+                                                                                    .on_click(window.listener_for(&view, move |this, _, window, cx| {
+                                                                                        this.change_ui_font_family(".SystemUIFont", window, cx);
+                                                                                    }))
+                                                                            );
+                                                                            let maple_font = "Maple Mono NF CN".to_string();
+                                                                            let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
+                                                                            if !using_system_maple && names.contains(&maple_font) {
+                                                                                names.retain(|n| n != &maple_font);
+                                                                                menu = menu.item(
+                                                                                    PopupMenuItem::new(format!("{} ({})", maple_font, t!("software_builtin")))
+                                                                                        .checked(current == maple_font)
+                                                                                        .on_click(window.listener_for(&view, move |this, _, window, cx| {
+                                                                                            this.change_ui_font_family("Maple Mono NF CN", window, cx);
+                                                                                        }))
+                                                                                ).separator();
+                                                                            }
+                                                                            for name in names {
+                                                                                let checked = name == current;
+                                                                                menu = menu.item(
+                                                                                    PopupMenuItem::new(name.clone())
+                                                                                        .checked(checked)
+                                                                                        .on_click(window.listener_for(&view, move |this, _, window, cx| {
+                                                                                            this.change_ui_font_family(&name, window, cx);
+                                                                                        }))
+                                                                                );
+                                                                            }
+                                                                            menu
+                                                                        }
+                                                                    })
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description(
+                                                        "key: ui_font_family; default: .SystemUIFont",
+                                                    ),
+                                                )
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("terminal_font_family").to_string(),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            let current = terminal_font_family.clone();
+                                                            move |_, _window, _cx| {
+                                                                Button::new("custom-terminal-font-dropdown")
+                                                                    .small()
+                                                                    .icon(IconName::ChevronsUpDown)
+                                                                    .label({
+                                                                        let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
+                                                                        if !using_system_maple && current == "Maple Mono NF CN" {
+                                                                            format!("Maple Mono NF CN ({})", t!("software_builtin"))
+                                                                        } else {
+                                                                            current.clone()
+                                                                        }
+                                                                    })
+                                                                    .dropdown_menu_with_anchor(Anchor::BottomRight, {
+                                                                        let view = view.clone();
+                                                                        let current = current.clone();
+                                                                        move |mut menu, window, cx| {
+                                                                            let mut names = cx.text_system().all_font_names();
+                                                                            menu = menu.min_w(200.).max_h(px(320.)).scrollable(true);
+                                                                            let maple_font = "Maple Mono NF CN".to_string();
+                                                                            let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE.load(std::sync::atomic::Ordering::Relaxed);
+                                                                            if !using_system_maple && names.contains(&maple_font) {
+                                                                                names.retain(|n| n != &maple_font);
+                                                                                menu = menu.item(
+                                                                                    PopupMenuItem::new(format!("{} ({})", maple_font, t!("software_builtin")))
+                                                                                        .checked(current == maple_font)
+                                                                                        .on_click(window.listener_for(&view, move |this, _, _window, cx| {
+                                                                                            this.change_terminal_font_family("Maple Mono NF CN", cx);
+                                                                                        }))
+                                                                                ).separator();
+                                                                            }
+                                                                            for name in names {
+                                                                                let checked = name == current;
+                                                                                menu = menu.item(
+                                                                                    PopupMenuItem::new(name.clone())
+                                                                                        .checked(checked)
+                                                                                        .on_click(window.listener_for(&view, move |this, _, _window, cx| {
+                                                                                            this.change_terminal_font_family(&name, cx);
+                                                                                        }))
+                                                                                );
+                                                                            }
+                                                                            menu
+                                                                        }
+                                                                    })
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description(
+                                                        "key: terminal_font_family; default: Maple Mono NF CN",
+                                                    ),
+                                                )
+                                                .item(SettingItem::render(|_, _window, _cx| {
+                                                    div()
+                                                        .pt_2()
+                                                        .text_sm()
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .child(t!("settings_custom_theme_overrides").to_string())
+                                                }))
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("custom_theme_name").to_string(),
+                                                        SettingField::render({
+                                                            let input = custom_theme_name_input.clone();
+                                                            move |_, _window, _cx| {
+                                                                Input::new(&input)
+                                                                    .w(px(180.))
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description(
+                                                        "key: custom_theme_name; default: Custom Theme",
+                                                    ),
+                                                )
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("custom_primary_color").to_string(),
+                                                        SettingField::render({
+                                                            let input = custom_primary_color_input.clone();
+                                                            move |_, _window, _cx| {
+                                                                Input::new(&input)
+                                                                    .w(px(160.))
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description(
+                                                        format!(
+                                                            "{} key: custom_primary_color; default: empty",
+                                                            t!("custom_color_hint")
+                                                        ),
+                                                    ),
+                                                )
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("custom_background_color").to_string(),
+                                                        SettingField::render({
+                                                            let input = custom_background_color_input.clone();
+                                                            move |_, _window, _cx| {
+                                                                Input::new(&input)
+                                                                    .w(px(160.))
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description(
+                                                        format!(
+                                                            "{} key: custom_background_color; default: empty",
+                                                            t!("custom_background_hint")
+                                                        ),
+                                                    ),
+                                                )
+                                                .item(
+                                                    SettingItem::new(
+                                                        t!("custom_font_brightness").to_string(),
+                                                        SettingField::render({
+                                                            let input = custom_font_brightness_input.clone();
+                                                            move |_, _window, _cx| {
+                                                                Input::new(&input)
+                                                                    .w(px(96.))
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
+                                                    )
+                                                    .description(
+                                                        format!(
+                                                            "{} key: custom_font_brightness; default: 1.0",
+                                                            t!("custom_font_brightness_hint")
+                                                        ),
+                                                    ),
+                                                )
+                                                .item(SettingItem::new(
+                                                    t!("save").to_string(),
+                                                    SettingField::render({
+                                                        let view = view_clone_for_custom.clone();
+                                                        move |_, window, _cx| {
+                                                            h_flex()
+                                                                .gap_2()
+                                                                .child(
+                                                                    Button::new("custom-appearance-save")
+                                                                        .primary()
+                                                                        .label(t!("save").to_string())
+                                                                        .on_click(window.listener_for(
+                                                                            &view,
+                                                                            |this, _, window, cx| {
+                                                                                this.save_custom_appearance(window, cx);
+                                                                            },
+                                                                        )),
+                                                                )
+                                                                .child(
+                                                                    Button::new("custom-appearance-reset")
+                                                                        .ghost()
+                                                                        .label(t!("reset").to_string())
+                                                                        .on_click(window.listener_for(
+                                                                            &view,
+                                                                            |this, _, window, cx| {
+                                                                                this.reset_custom_appearance(window, cx);
+                                                                            },
+                                                                        )),
+                                                                )
+                                                                .into_any_element()
+                                                        }
+                                                    }),
+                                                ))
+                                        )
+                                )
+                                .page(
                                     SettingPage::new(t!("settings_sync").to_string())
                                         .icon(IconName::Globe)
                                         .group(
@@ -1889,10 +2434,11 @@ impl AxAshell {
                                                     let s3_secret_key = sync_s3_secret_key_input.clone();
                                                     let s3_session_token = sync_s3_session_token_input.clone();
                                                     let encryption_password = sync_encryption_password_input.clone();
-                                                    move |_, window, cx| {
-                                                        let in_progress = view.read(cx).sync_in_progress;
-                                                        let status = view.read(cx).sync_status.clone();
-                                                        let is_s3 = view.read(cx).config.sync_backend() == "s3";
+                                                    let in_progress = sync_in_progress;
+                                                    let status = sync_status.clone();
+                                                    let is_s3 = sync_backend_is_s3;
+                                                    let muted_foreground = muted_foreground;
+                                                    move |_, window, _cx| {
                                                         v_flex()
                                                             .w_full()
                                                             .gap_3()
@@ -1928,14 +2474,14 @@ impl AxAshell {
                                                                 .child(v_flex().gap_1().child(div().text_sm().child(t!("sync_s3_secret_key").to_string())).child(Input::new(&s3_secret_key).w_full()))
                                                                 .child(v_flex().gap_1().child(div().text_sm().child(t!("sync_s3_session_token").to_string())).child(Input::new(&s3_session_token).w_full())))
                                                             .child(v_flex().gap_1().child(div().text_sm().child(t!("sync_encryption_password").to_string())).child(Input::new(&encryption_password).w_full()))
-                                                            .child(div().text_sm().text_color(cx.theme().muted_foreground).child(t!("sync_security_hint").to_string()))
+                                                            .child(div().text_sm().text_color(muted_foreground).child(t!("sync_security_hint").to_string()))
                                                             .child(
                                                                 h_flex()
                                                                     .gap_2()
                                                                     .child(Button::new("sync-download").small().disabled(in_progress).label(t!("sync_download").to_string()).on_click(window.listener_for(&view, |this, _, _, cx| this.download_sync_config(cx))))
                                                                     .child(Button::new("sync-upload").small().disabled(in_progress).label(t!("sync_upload").to_string()).on_click(window.listener_for(&view, |this, _, _, cx| this.upload_sync_config(cx)))),
                                                             )
-                                                            .child(div().text_sm().text_color(cx.theme().muted_foreground).child(status))
+                                                            .child(div().text_sm().text_color(muted_foreground).child(status.clone()))
                                                     }
                                                 }))
                                         )
@@ -1951,10 +2497,11 @@ impl AxAshell {
                                                         t!("enable_proxy").to_string(),
                                                         SettingField::render({
                                                             let view = view.clone();
-                                                            move |_, window, cx| {
+                                                            let enabled = use_proxy;
+                                                            move |_, window, _cx| {
                                                                 Switch::new("use-proxy")
                                                                     .small()
-                                                                    .checked(view.read(cx).config.use_proxy())
+                                                                    .checked(enabled)
                                                                     .on_click(window.listener_for(&view, |this, checked, _, cx| {
                                                                         this.config.set_use_proxy(*checked);
                                                                         let _ = this.config.save();
@@ -1970,10 +2517,11 @@ impl AxAshell {
                                                         t!("read_env_proxy").to_string(),
                                                         SettingField::render({
                                                             let view = view.clone();
-                                                            move |_, window, cx| {
+                                                            let enabled = read_env_proxy;
+                                                            move |_, window, _cx| {
                                                                 Switch::new("read-env-proxy")
                                                                     .small()
-                                                                    .checked(view.read(cx).config.read_env_proxy())
+                                                                    .checked(enabled)
                                                                     .on_click(window.listener_for(&view, |this, checked, _, cx| {
                                                                         this.config.set_read_env_proxy(*checked);
                                                                         let _ = this.config.save();
@@ -1986,12 +2534,12 @@ impl AxAshell {
                                                 )
                                                 .item(SettingItem::render({
                                                     let view = view.clone();
-                                                    let global_proxy_host_input = view.read(cx).global_proxy_host_input.clone();
-                                                    let global_proxy_port_input = view.read(cx).global_proxy_port_input.clone();
-                                                    let global_proxy_user_input = view.read(cx).global_proxy_user_input.clone();
-                                                    let global_proxy_password_input = view.read(cx).global_proxy_password_input.clone();
-                                                    move |_, window, cx| {
-                                                        let proxy_type = view.read(cx).global_proxy_type.clone();
+                                                    let global_proxy_host_input = global_proxy_host_input.clone();
+                                                    let global_proxy_port_input = global_proxy_port_input.clone();
+                                                    let global_proxy_user_input = global_proxy_user_input.clone();
+                                                    let global_proxy_password_input = global_proxy_password_input.clone();
+                                                    let proxy_type = global_proxy_type.clone();
+                                                    move |_, window, _cx| {
                                                         v_flex()
                                                             .w_full()
                                                             .gap_3()
@@ -2057,7 +2605,12 @@ impl AxAshell {
                                     let mut page = SettingPage::new(t!("settings_key_bindings").to_string())
                                         .icon(IconName::SquareTerminal)
                                         .default_open(true);
-                                    for group in crate::app::keybinding_recorder::KeybindingsPage::render_groups(&view, cx) {
+                                    for group in crate::app::keybinding_recorder::KeybindingsPage::render_groups(
+                                        &view,
+                                        &self.config,
+                                        self.recording_action.as_deref(),
+                                        self.keybind_error.as_ref(),
+                                    ) {
                                         page = page.group(group);
                                     }
                                     page
@@ -2100,10 +2653,6 @@ impl AxAshell {
                                                 }))
                                         )
                                 )
-                                )
-                        )
-                    }
-                })
-        });
+            )
     }
 }

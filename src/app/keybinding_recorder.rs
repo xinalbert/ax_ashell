@@ -1,5 +1,6 @@
 use gpui::{
-    Action as _, App, Entity, IntoElement, KeyBinding, KeyDownEvent, Keystroke, Unbind, prelude::*,
+    Action as _, App, Entity, IntoElement, KeyBinding, KeyDownEvent, Keystroke, Unbind,
+    prelude::*,
 };
 use gpui_component::{
     Sizable,
@@ -309,7 +310,12 @@ fn bind_workspace_actions(cx: &mut App, config: &ConfigStore) {
 }
 
 impl KeybindingsPage {
-    pub fn render_groups(view: &Entity<AxAshell>, cx: &mut App) -> Vec<SettingGroup> {
+    pub fn render_groups(
+        view: &Entity<AxAshell>,
+        config: &ConfigStore,
+        recording_action: Option<&str>,
+        keybind_error: Option<&(String, String)>,
+    ) -> Vec<SettingGroup> {
         let groups = [
             (
                 "settings_group_keybind_general",
@@ -359,25 +365,15 @@ impl KeybindingsPage {
                     .find(|a| a.id == action_id)
                     .expect("action exists");
 
-                let recording = view.read(cx).recording_action.as_deref() == Some(action.id);
-                let has_error = view
-                    .read(cx)
-                    .keybind_error
-                    .as_ref()
-                    .is_some_and(|(id, _)| id == action.id);
+                let recording = recording_action == Some(action.id);
+                let has_error = keybind_error.is_some_and(|(id, _)| id == action.id);
                 let error_msg = if has_error {
-                    view.read(cx)
-                        .keybind_error
-                        .as_ref()
-                        .map(|(_, msg)| msg.clone())
+                    keybind_error.map(|(_, msg)| msg.clone())
                 } else {
                     None
                 };
 
-                let keystroke = {
-                    let config = &view.read(cx).config;
-                    configured_keystroke(config, action.id).unwrap_or_default()
-                };
+                let keystroke = configured_keystroke(config, action.id).unwrap_or_default();
 
                 let btn_label = if recording {
                     t!("press_new_key").to_string()

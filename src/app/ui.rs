@@ -22,6 +22,7 @@ use rust_i18n::t;
 
 use crate::{
     AxAshell, PaneLayout,
+    app::WorkspacePage,
     app::constants::{COLLAPSED_SIDEBAR_WIDTH, SIDEBAR_WIDTH, TERMINAL_KEY_CONTEXT},
     sftp::format_mtime,
     sftp::ops::is_editable_text_file,
@@ -1618,9 +1619,9 @@ impl AxAshell {
                                     .ghost()
                                     .icon(IconName::Settings)
                                     .tooltip(t!("settings_open_settings").to_string())
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.show_settings_dialog(window, cx)
-                                    })),
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.open_settings_page(cx)),
+                                    ),
                             ),
                     )
                     .child(
@@ -1628,7 +1629,9 @@ impl AxAshell {
                             .text_size(rems(0.917))
                             .text_color(cx.theme().muted_foreground)
                             .child({
-                                if let Some(kind) = self.active_kind() {
+                                if self.workspace_page == WorkspacePage::Settings {
+                                    t!("settings").to_string()
+                                } else if let Some(kind) = self.active_kind() {
                                     match kind {
                                         TabKind::Local => t!("local_terminal").to_string(),
                                         TabKind::Ssh => {
@@ -2007,15 +2010,16 @@ impl AxAshell {
     }
 
     fn render_tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_tab_index = self
-            .active_tab
-            .as_ref()
-            .and_then(|active_id| self.tabs.iter().position(|tab| &tab.id == active_id));
         let active_group_index = self
             .active_group
             .as_ref()
             .and_then(|gid| self.tab_groups.iter().position(|g| g.id == *gid));
-        let selected = active_group_index.unwrap_or(active_tab_index.unwrap_or(0));
+        let selected = if self.workspace_page == WorkspacePage::Settings && self.settings_page_open
+        {
+            self.tab_groups.len()
+        } else {
+            active_group_index.unwrap_or(0)
+        };
         let groups_data: Vec<(String, String, Vec<String>)> = self
             .tab_groups
             .iter()
@@ -2120,6 +2124,50 @@ impl AxAshell {
                                         )
                                 },
                             ))
+                            .when(self.settings_page_open, |this| {
+                                this.child(
+                                    Tab::new()
+                                        .min_w(px(120.))
+                                        .prefix(div().w(px(5.)).h(px(32.)).bg(cx.theme().primary))
+                                        .child(
+                                            div()
+                                                .when(
+                                                    self.workspace_page == WorkspacePage::Settings,
+                                                    |this| {
+                                                        this.font_weight(FontWeight::BOLD)
+                                                            .text_color(cx.theme().primary)
+                                                            .text_base()
+                                                    },
+                                                )
+                                                .child(t!("settings").to_string()),
+                                        )
+                                        .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                            window.prevent_default();
+                                            cx.stop_propagation();
+                                        })
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            this.open_settings_page(cx);
+                                        }))
+                                        .suffix(
+                                            Button::new("settings-tab-close")
+                                                .ghost()
+                                                .xsmall()
+                                                .icon(IconName::Close)
+                                                .mr(px(5.))
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    |_, window, cx| {
+                                                        window.prevent_default();
+                                                        cx.stop_propagation();
+                                                    },
+                                                )
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.close_settings_page(cx);
+                                                })),
+                                        ),
+                                )
+                            })
                             .when(is_integrated, |this| {
                                 this.suffix(
                                     div()
@@ -2163,6 +2211,7 @@ impl AxAshell {
                             .rounded(px(999.))
                             .icon(IconName::PanelBottom)
                             .tooltip(t!("settings_split_pane_down").to_string())
+                            .disabled(self.workspace_page == WorkspacePage::Settings)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 window.prevent_default();
                                 cx.stop_propagation();
@@ -2176,13 +2225,16 @@ impl AxAshell {
                             .rounded(px(999.))
                             .icon(IconName::PanelRight)
                             .tooltip(t!("settings_split_pane_right").to_string())
+                            .disabled(self.workspace_page == WorkspacePage::Settings)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 window.prevent_default();
                                 cx.stop_propagation();
                                 this.split_current_pane("right", cx);
                             })),
                     )
-                    .child(self.render_search_button(cx)),
+                    .when(self.workspace_page != WorkspacePage::Settings, |this| {
+                        this.child(self.render_search_button(cx))
+                    }),
             )
     }
 
@@ -2194,6 +2246,7 @@ impl AxAshell {
         let has_active = self.active_tab.is_some();
         let pane_tree = self.pane_root.clone();
         let view = cx.entity();
+        let is_settings_page = self.workspace_page == WorkspacePage::Settings;
 
         div()
             .size_full()
@@ -2210,20 +2263,24 @@ impl AxAshell {
                         });
                     })
                     .overflow_hidden()
-                    .track_focus(&self.focus_handle)
-                    .key_context(TERMINAL_KEY_CONTEXT)
-                    .on_mouse_down(MouseButton::Left, cx.listener(Self::focus_terminal))
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(Self::on_terminal_right_click),
-                    )
-                    .on_mouse_move(cx.listener(Self::on_terminal_mouse_move))
-                    .on_mouse_up(MouseButton::Left, cx.listener(Self::on_terminal_mouse_up))
-                    .on_key_down(cx.listener(Self::on_terminal_key_down))
-                    .on_action(cx.listener(Self::on_terminal_tab_action))
-                    .on_action(cx.listener(Self::on_terminal_backtab_action))
-                    .on_scroll_wheel(cx.listener(Self::on_terminal_scroll))
-                    .child(if has_active {
+                    .when(!is_settings_page, |this| {
+                        this.track_focus(&self.focus_handle)
+                            .key_context(TERMINAL_KEY_CONTEXT)
+                            .on_mouse_down(MouseButton::Left, cx.listener(Self::focus_terminal))
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(Self::on_terminal_right_click),
+                            )
+                            .on_mouse_move(cx.listener(Self::on_terminal_mouse_move))
+                            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_terminal_mouse_up))
+                            .on_key_down(cx.listener(Self::on_terminal_key_down))
+                            .on_action(cx.listener(Self::on_terminal_tab_action))
+                            .on_action(cx.listener(Self::on_terminal_backtab_action))
+                            .on_scroll_wheel(cx.listener(Self::on_terminal_scroll))
+                    })
+                    .child(if is_settings_page {
+                        self.render_settings_page(window, cx).into_any_element()
+                    } else if has_active {
                         Self::render_pane_tree(self, &pane_tree, &[], cx).into_any_element()
                     } else {
                         self.render_home_page(cx).into_any_element()
@@ -2681,7 +2738,7 @@ impl Render for AxAshell {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .font_family(self.ui_font_family.clone())
-            .on_action(cx.listener(|this, _: &crate::OpenSettings, window, cx| this.show_settings_dialog(window, cx)))
+            .on_action(cx.listener(|this, _: &crate::OpenSettings, _, cx| this.open_settings_page(cx)))
             .on_action(cx.listener(|this, _: &crate::OpenSession, window, cx| this.show_selector_dialog(window, cx)))
             .on_action(cx.listener(|this, _: &crate::OpenTransfers, window, cx| this.show_transfers_dialog(window, cx)))
             .on_action(cx.listener(|this, _: &crate::NewSsh, window, cx| this.show_ssh_dialog(window, cx)))
