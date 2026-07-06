@@ -40,7 +40,7 @@ jobs:
             bin: ashell
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # GPUI needs these system libs on Linux to compile.
       - name: Install Linux GUI dependencies
@@ -146,7 +146,7 @@ jobs:
           fi
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: ${{ env.ASSET }}
@@ -158,12 +158,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all workflow artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
 
       - name: Attach to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/**/*
           generate_release_notes: true
@@ -176,14 +176,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Homebrew Tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: rust-kotlin/homebrew-taps
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
           path: tap
 
       - name: Download all macOS artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: macos-*
           path: dist
