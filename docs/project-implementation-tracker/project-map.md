@@ -3,47 +3,52 @@
 ## 项目概览
 
 - 用途：基于 Rust 和 GPUI 的 SSH / 本地终端桌面客户端
-- 主要入口：`src/main.rs`，`src/app/startup.rs`，`.github/workflows/release.yml`，`src/backend/ssh.rs`
+- 主要入口：`src/main.rs`，`src/app/mod.rs`，`src/app/ui.rs`，`src/app/dialogs.rs`
 
 ## 索引范围
 
 - 根目录：`<repo-root>`
-- 覆盖：`.github/workflows/release.yml`，`Cargo.toml`，`Cargo.lock`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`
-- 排除：`.git/`，`.cargo/registry/`，`.cargo/git/`，`target/`，`assets/`，`locales/`，生成产物与外部依赖源码缓存
+- 覆盖：`src/app/`，`src/session/`，`locales/`，`Cargo.toml`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`
+- 排除：`.git/`，`target/`，`assets/` 批量资源，构建产物与外部依赖缓存
 
 ## 目录地图
 
 | Path | Purpose | Open When | Notes |
 | --- | --- | --- | --- |
-| `.github/workflows/release.yml` | 跨平台构建、artifact 上传与 GitHub Release 发布 | 需要修改 tag 触发构建、release asset 上传或 cask 分发时 | 本轮重点恢复 GitHub Release 发布，继续停用 cask |
-| `Cargo.toml` | 仓库依赖、Rust 版本和包元数据 | 需要切换依赖来源、版本约束或 crate 功能时 | 当前不是本轮主要修改点 |
-| `Cargo.lock` | 实际锁定的依赖版本与来源 | 需要确认生效 commit、registry 包版本或依赖切换结果时 | 当前存在上轮依赖迁移后的未提交改动，需要避免误混入 |
-| `docs/project-env-audit/` | 项目环境当前态与历史 | 开工前预检或环境事实变化时 | 本轮需刷新为依赖迁移语境 |
-| `docs/project-implementation-tracker/` | 本轮实施计划、地图与变更历史 | 真实施工前后记录计划和结论时 | 本轮需刷新到 `alacritty_terminal` 官方化任务 |
+| `src/app/` | 主应用状态、设置页、工作区和 UI 渲染 | 需要改设置页、标题栏、侧边栏、主题、同步或主工作区行为时 | 本轮核心改动点在 `src/app/dialogs.rs` |
+| `src/session/` | 会话模型与持久化配置 | 需要新增、迁移或展示配置字段时 | 本轮读取 `ConfigFile` 字段和默认值，不计划修改存储结构 |
+| `locales/` | 中英文 UI 文案 | 设置项标题、分组标题或提示语变化时 | 本轮新增配置中心说明文案 |
+| `docs/project-implementation-tracker/` | 本轮实施计划、项目地图与变更历史 | 真实施工前后记录计划和结论时 | 本轮切到设置页 `Custom` 配置中心任务语境 |
 
 ## 关键文件
 
 | Path | Role | Key Symbols / Sections | Read For |
 | --- | --- | --- | --- |
-| `.github/workflows/release.yml` | 发布工作流入口 | `build`，`publish`，`cask` | 控制 artifact 与 Release asset 的边界，确保只恢复 GitHub Release |
-| `docs/project-implementation-tracker/current.md` | 本轮实施 current 态 | `当前目标`，`活动计划`，`验证` | 保证当前任务切换到 release workflow 收口 |
-| `docs/project-env-audit/current.md` | 当前环境与 CI 约束 | `测试环境`，`外部依赖` | 记录 `github.token` 与 `secrets.TAP_GITHUB_TOKEN` 的边界 |
+| `src/app/ui.rs` | 主工作区渲染和终端事件绑定 | `render_terminal_panel`，`WorkspacePage::Settings` | 修复设置页焦点、输入和终端事件抢占 |
+| `src/terminal/element.rs` | 终端网格渲染和颜色转换 | `color_to_hsla`，`ansi_index_color`，`named_color`，`cell_run_style` | 调整 terminal 前景色亮度应用范围 |
+| `src/app/dialogs.rs` | 设置页和弹窗渲染 | `render_settings_page`，`SettingPage`，`SettingGroup` | 调整设置页导航、Custom 页面、theme 字段布局和配置 key/default 展示 |
+| `src/app/theme.rs` | 主题应用与自定义覆盖 | `apply_theme_preferences`，`apply_custom_theme`，`save_custom_appearance` | 处理自定义主题选项、保存和覆盖色应用 |
+| `src/app/mod.rs` | 应用状态与输入状态 | `custom_theme_name_input`，`on_input_event` | 接入自定义主题名称输入与回车保存 |
+| `src/session/config.rs` | 配置存储与默认值 | `ConfigFile`，`Default for ConfigFile`，`ConfigStore` | 梳理配置文件字段、默认值和运行态字段 |
+| `locales/en.yml` | 英文 UI 文案 | `settings_custom_*`，`custom_*` | 补齐英文配置中心说明 |
+| `locales/zh-CN.yml` | 中文 UI 文案 | `settings_custom_*`，`custom_*` | 补齐中文配置中心说明 |
 
 ## 常用定位
 
-- `rg -n 'publish|cask|upload-artifact|download-artifact|action-gh-release|github.token|TAP_GITHUB_TOKEN' .github/workflows/release.yml`
+- `rg -n 'color_to_hsla|ansi_index_color|named_color|custom_font_brightness|cell_run_style' src/terminal src/app src/session`
 - `python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .`
 
 ## 忽略与未索引
 
-- `target/`、`.cargo/registry/`、`.cargo/git/` 未索引：属于构建产物或外部依赖缓存，不作为项目源码路由索引
-- `src/`、`assets/` 未索引：本轮只做 release workflow 收口，不涉及应用代码与资源
+- `assets/` 未索引：图标、字体和主题资源不是本轮设置页结构调整对象
+- `examples/`、`.cargo/` 未索引：本轮不改开发辅助命令
+- `target/` 未索引：属于构建产物
 
 ## 刷新规则
 
-- 刷新触发：发布链路、artifact/release 边界、本轮范围或关键 CI job 发生变化时刷新
-- 最近依据：`.github/workflows/release.yml`、`docs/project-env-audit/current.md` 与当前工作区状态的实读结果
+- 刷新触发：设置页入口、主 UI 页面态、焦点事件绑定、terminal 颜色转换、theme 配置字段、locales 文案或本轮任务范围发生变化时刷新
+- 最近依据：`src/terminal/element.rs`、`src/app/ui.rs`、`src/app/dialogs.rs`、`src/session/config.rs`、`src/app/theme.rs`、`locales/en.yml`、`locales/zh-CN.yml` 的实读结果
 
 ## 最后更新时间
 
-- 2026-07-06 17:43 CST
+- 2026-07-06 21:42 CST
