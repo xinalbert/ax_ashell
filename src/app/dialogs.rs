@@ -1378,7 +1378,12 @@ impl Ashell {
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
                                                             move |_, _window, cx| {
-                                                                let current_style = view.read(cx).config.title_bar_style();
+                                                                let current_style = view
+                                                                    .read(cx)
+                                                                    .config
+                                                                    .effective_title_bar_style();
+                                                                let supports_integrated =
+                                                                    cfg!(target_os = "macos");
                                                                 Button::new("title-bar-style-dropdown")
                                                                     .small()
                                                                     .label(match current_style {
@@ -1388,7 +1393,10 @@ impl Ashell {
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
                                                                         move |mut menu, window, cx| {
-                                                                            let current_style = view.read(cx).config.title_bar_style();
+                                                                            let current_style = view
+                                                                                .read(cx)
+                                                                                .config
+                                                                                .effective_title_bar_style();
                                                                             menu = menu.min_w(160.)
                                                                                 .item(
                                                                                     PopupMenuItem::new(t!("title_bar_native").to_string())
@@ -1398,8 +1406,9 @@ impl Ashell {
                                                                                             let _ = this.config.save();
                                                                                             cx.notify();
                                                                                         }))
-                                                                                )
-                                                                                .item(
+                                                                                );
+                                                                            if supports_integrated {
+                                                                                menu = menu.item(
                                                                                     PopupMenuItem::new(t!("title_bar_integrated").to_string())
                                                                                         .checked(current_style == crate::session::config::TitleBarStyle::Integrated)
                                                                                         .on_click(window.listener_for(&view, |this, _, _, cx| {

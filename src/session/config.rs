@@ -316,6 +316,14 @@ impl Default for ConfigFile {
     }
 }
 
+pub fn effective_title_bar_style(style: TitleBarStyle) -> TitleBarStyle {
+    if cfg!(target_os = "macos") {
+        style
+    } else {
+        TitleBarStyle::Native
+    }
+}
+
 pub struct ConfigStore {
     path: PathBuf,
     cache: ConfigFile,
@@ -638,8 +646,8 @@ impl ConfigStore {
         self.cache.terminal_font_family = family.to_string();
     }
 
-    pub fn title_bar_style(&self) -> TitleBarStyle {
-        self.cache.title_bar_style
+    pub fn effective_title_bar_style(&self) -> TitleBarStyle {
+        effective_title_bar_style(self.cache.title_bar_style)
     }
 
     pub fn set_title_bar_style(&mut self, style: TitleBarStyle) {

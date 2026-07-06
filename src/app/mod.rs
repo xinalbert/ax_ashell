@@ -661,7 +661,7 @@ impl Ashell {
             collapsed_saved_scroll_handle: gpui::ScrollHandle::new(),
             prev_monitoring_size: None,
             status: "ready".into(),
-            active_title_bar_style: config.title_bar_style(),
+            active_title_bar_style: config.effective_title_bar_style(),
             config,
             system_sampler,
             recording_action: None,

@@ -208,6 +208,7 @@ pub(crate) fn sync_macos_launch_environment() {}
 
 pub(crate) fn open_main_window(cx: &mut App) {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
+    let title_bar_style = config.effective_title_bar_style();
 
     let _ = crate::session::config::ENV_PROXY.get_or_init(|| {
         read_proxy_from_env().map(|(proxy_type, host, port, user, password)| {
@@ -230,12 +231,18 @@ pub(crate) fn open_main_window(cx: &mut App) {
 
     let mut window_options = WindowOptions::default();
 
-    if config.title_bar_style() == crate::session::config::TitleBarStyle::Integrated {
+    if title_bar_style == crate::session::config::TitleBarStyle::Integrated {
         window_options.titlebar = Some(gpui::TitlebarOptions {
             title: None,
             appears_transparent: true,
             traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
         });
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            // Use app-controlled drag zones so tab content inside the integrated titlebar
+            // does not fall back to platform-native window dragging.
+            window_options.is_movable = false;
+        }
     }
 
     #[cfg(not(target_os = "macos"))]

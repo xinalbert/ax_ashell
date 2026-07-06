@@ -30,6 +30,33 @@ use crate::{
 };
 
 impl Ashell {
+    fn bind_titlebar_drag<E>(this: E, cx: &mut Context<Self>) -> E
+    where
+        E: gpui::InteractiveElement + gpui::StatefulInteractiveElement,
+    {
+        this.on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, _, _| {
+                this.should_move_window = true;
+            }),
+        )
+        .on_mouse_up(
+            MouseButton::Left,
+            cx.listener(|this, _, _, _| {
+                this.should_move_window = false;
+            }),
+        )
+        .on_mouse_down_out(cx.listener(|this, _, _, _| {
+            this.should_move_window = false;
+        }))
+        .on_mouse_move(cx.listener(|this, _, window, _| {
+            if this.should_move_window {
+                this.should_move_window = false;
+                window.start_window_move();
+            }
+        }))
+    }
+
     fn render_home_page(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .w_full()
@@ -1977,119 +2004,6 @@ impl Ashell {
             )
     }
 
-    fn render_window_controls(
-        &self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let is_macos = cfg!(target_os = "macos");
-        let is_fullscreen = window.is_fullscreen();
-        
-        let is_active = cx.active_window() == Some(window.window_handle());
-
-        h_flex()
-            .group("window-controls")
-            .flex_none()
-            .items_center()
-            .px_3()
-            .gap_2()
-            .when(!is_macos || is_fullscreen, |this| {
-                this.child(
-                    h_flex()
-                        .id("window-close")
-                        .size(px(12.))
-                        .rounded_full()
-                        .bg(if is_active { hsla(3.0 / 360.0, 1.0, 0.67, 1.0) } else { hsla(0.0, 0.0, 0.8, 1.0) }) // Red or Inactive Grey
-                        .group_hover("window-controls", |s| s.bg(hsla(3.0 / 360.0, 1.0, 0.67, 1.0)))
-                        .when(!is_macos, |this| this.window_control_area(gpui::WindowControlArea::Close))
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.save_layout_state(window, cx);
-                            window.remove_window();
-                        }))
-                        .hover(|s| s.bg(hsla(3.0 / 360.0, 1.0, 0.55, 1.0)))
-                        .active(|s| s.bg(hsla(3.0 / 360.0, 1.0, 0.45, 1.0)))
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            h_flex()
-                                .items_center()
-                                .justify_center()
-                                .text_size(px(7.))
-                                .font_weight(FontWeight::BOLD)
-                                .line_height(relative(1.0))
-                                .text_color(hsla(3.0 / 360.0, 1.0, 0.15, 0.7))
-                                .opacity(0.0)
-                                .group_hover("window-controls", |s| s.opacity(1.0))
-                                .child("✕")
-                        ),
-                )
-                .child(
-                    h_flex()
-                        .id("window-minimize")
-                        .size(px(12.))
-                        .rounded_full()
-                        .bg(if is_active { hsla(39.0 / 360.0, 1.0, 0.59, 1.0) } else { hsla(0.0, 0.0, 0.8, 1.0) }) // Yellow or Inactive Grey
-                        .group_hover("window-controls", |s| s.bg(hsla(39.0 / 360.0, 1.0, 0.59, 1.0)))
-                        .when(!is_macos, |this| this.window_control_area(gpui::WindowControlArea::Min))
-                        .on_click(|_, window, _| window.minimize_window())
-                        .hover(|s| s.bg(hsla(39.0 / 360.0, 1.0, 0.49, 1.0)))
-                        .active(|s| s.bg(hsla(39.0 / 360.0, 1.0, 0.39, 1.0)))
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            h_flex()
-                                .items_center()
-                                .justify_center()
-                                .text_size(px(7.))
-                                .font_weight(FontWeight::BOLD)
-                                .line_height(relative(1.0))
-                                .text_color(hsla(39.0 / 360.0, 1.0, 0.15, 0.8))
-                                .opacity(0.0)
-                                .group_hover("window-controls", |s| s.opacity(1.0))
-                                .child("−")
-                        ),
-                )
-                .child(
-                    h_flex()
-                        .id("window-maximize")
-                        .size(px(12.))
-                        .rounded_full()
-                        .bg(if is_active { hsla(127.0 / 360.0, 0.68, 0.47, 1.0) } else { hsla(0.0, 0.0, 0.8, 1.0) }) // Green or Inactive Grey
-                        .group_hover("window-controls", |s| s.bg(hsla(127.0 / 360.0, 0.68, 0.47, 1.0)))
-                        .when(!is_macos, |this| this.window_control_area(gpui::WindowControlArea::Max))
-                        .on_click(|_, window, _| {
-                            if window.is_fullscreen() {
-                                window.toggle_fullscreen();
-                            } else {
-                                #[cfg(target_os = "macos")]
-                                window.titlebar_double_click();
-                                #[cfg(not(target_os = "macos"))]
-                                window.zoom_window();
-                            }
-                        })
-                        .hover(|s| s.bg(hsla(127.0 / 360.0, 0.68, 0.37, 1.0)))
-                        .active(|s| s.bg(hsla(127.0 / 360.0, 0.68, 0.27, 1.0)))
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            h_flex()
-                                .items_center()
-                                .justify_center()
-                                .text_size(px(7.))
-                                .font_weight(FontWeight::BOLD)
-                                .line_height(relative(1.0))
-                                .text_color(hsla(127.0 / 360.0, 1.0, 0.15, 0.8))
-                                .opacity(0.0)
-                                .group_hover("window-controls", |s| s.opacity(1.0))
-                                .child("+")
-                        ),
-                )
-            })
-            .when(is_macos, |this| {
-                this.when(!is_fullscreen, |this| this.w(px(80.)))
-            })
-    }
-
     fn render_tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let active_tab_index = self
             .active_tab
@@ -2127,9 +2041,6 @@ impl Ashell {
                     .flex_1()
                     .min_w(px(0.))
                     .h_full()
-                    .when(is_integrated, |this| {
-                        this.window_control_area(gpui::WindowControlArea::Drag)
-                    })
                     .overflow_x_hidden()
                     .child({
                         TabBar::new("ashell-tab-bar")
@@ -2174,7 +2085,12 @@ impl Ashell {
                                                 })
                                                 .child(label),
                                         )
+                                        .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                            window.prevent_default();
+                                            cx.stop_propagation();
+                                        })
                                         .on_click(cx.listener(move |this, _, window, cx| {
+                                            cx.stop_propagation();
                                             this.activate_group(gid.clone(), window, cx)
                                         }))
                                         .suffix(
@@ -2202,6 +2118,16 @@ impl Ashell {
                                         )
                                 },
                             ))
+                            .when(is_integrated, |this| {
+                                this.suffix(
+                                    div()
+                                        .id("tab-bar-drag-spacer")
+                                        .w(px(56.))
+                                        .h_full()
+                                        .flex_shrink_0()
+                                        .window_control_area(gpui::WindowControlArea::Drag),
+                                )
+                            })
                             .last_empty_space(div().w_3())
                             .w_full()
                             .h_full()
@@ -2209,6 +2135,10 @@ impl Ashell {
             )
             .child(
                 h_flex()
+                    .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                    })
                     .flex_none()
                     .items_center()
                     .gap_1()
@@ -2812,43 +2742,34 @@ impl Render for Ashell {
                         .h(px(34.))
                         .w_full()
                         .bg(cx.theme().tab_bar)
-                        .child(self.render_window_controls(window, cx))
+                        .when(cfg!(target_os = "macos") && !window.is_fullscreen(), |this| {
+                            this.child(
+                                Self::bind_titlebar_drag(
+                                    div()
+                                        .id("macos-traffic-light-spacer")
+                                        .flex_none()
+                                        .w(px(80.))
+                                        .h_full(),
+                                    cx,
+                                ),
+                            )
+                        })
                         .child(
-                            div()
-                                .id("tab-bar-drag")
-                                .flex_1()
-                                .min_w(px(0.))
-                                .h_full()
-                                .on_double_click(|_, window, _| {
-                                    #[cfg(target_os = "macos")]
-                                    window.titlebar_double_click();
-                                    #[cfg(not(target_os = "macos"))]
-                                    window.zoom_window();
-                                })
-                                .when(cfg!(target_os = "linux"), |this| {
-                                    this.on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|this, _, _, _| {
-                                            this.should_move_window = true;
-                                        }),
-                                    )
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|this, _, _, _| {
-                                            this.should_move_window = false;
-                                        }),
-                                    )
-                                    .on_mouse_down_out(cx.listener(|this, _, _, _| {
-                                        this.should_move_window = false;
-                                    }))
-                                    .on_mouse_move(cx.listener(|this, _, window, _| {
-                                        if this.should_move_window {
-                                            this.should_move_window = false;
-                                            window.start_window_move();
-                                        }
-                                    }))
-                                })
-                                .child(self.render_tab_bar(cx)),
+                            Self::bind_titlebar_drag(
+                                div()
+                                    .id("tab-bar-drag")
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .h_full()
+                                    .on_double_click(|_, window, _| {
+                                        #[cfg(target_os = "macos")]
+                                        window.titlebar_double_click();
+                                        #[cfg(not(target_os = "macos"))]
+                                        window.zoom_window();
+                                    })
+                                    .child(self.render_tab_bar(cx)),
+                                cx,
+                            ),
                         ),
                 )
             })
