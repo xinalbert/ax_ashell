@@ -11,7 +11,7 @@ use uuid::Uuid;
 use self::config::{AuthMethod, Session};
 
 use crate::{
-    Ashell, PaneLayout, SelectorEntry, TabGroup,
+    AxAshell, PaneLayout, SelectorEntry, TabGroup,
     app::constants::{
         DEFAULT_COLS, DEFAULT_ROWS,
     },
@@ -19,7 +19,7 @@ use crate::{
     terminal::{BackendCommand, RenderSnapshot, TabKind, TerminalTab},
 };
 
-impl Ashell {
+impl AxAshell {
     pub(crate) fn open_local(&mut self, cx: &mut Context<Self>) {
         let id = Uuid::new_v4().to_string();
         match local::spawn_local_terminal(

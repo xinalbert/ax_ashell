@@ -116,11 +116,11 @@ impl Config {
     fn help() -> &'static str {
         "\
 Usage:
-  cargo run --example dev_reload -- [options] [-- <ashell-args>]
-  cargo dev-reload [options] [-- <ashell-args>]
+  cargo run --example dev_reload -- [options] [-- <ax_ashell-args>]
+  cargo dev-reload [options] [-- <ax_ashell-args>]
 
 Options:
-  --release             Build and run target/release/ashell
+  --release             Build and run target/release/ax_ashell
   --debounce-ms <ms>    Debounce file events before rebuild (default: 400)
   --watch <path>        Additional or replacement watch path; may be repeated
   -h, --help            Show this help
@@ -201,7 +201,7 @@ impl DevReload {
 
     fn build_app(&self) -> Result<()> {
         let mut command = Command::new("cargo");
-        command.current_dir(&self.root).arg("build").arg("--bin").arg("ashell");
+        command.current_dir(&self.root).arg("build").arg("--bin").arg("ax_ashell");
         if self.config.release {
             command.arg("--release");
         }
@@ -255,7 +255,7 @@ impl DevReload {
             base = self.root.join(base);
         }
         let profile = if self.config.release { "release" } else { "debug" };
-        base.join(profile).join(format!("ashell{}", env::consts::EXE_SUFFIX))
+        base.join(profile).join(format!("ax_ashell{}", env::consts::EXE_SUFFIX))
     }
 }
 

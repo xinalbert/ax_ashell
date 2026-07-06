@@ -2,13 +2,30 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="ashell"
-BUNDLE_ID="dev.ashell.app"
+APP_NAME="ax_ashell"
+BUNDLE_ID="dev.ax_ashell.app"
 APP_DIR="$ROOT_DIR/target/release/${APP_NAME}.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+PACKAGE_VERSION="$(grep '^version = ' "$ROOT_DIR/Cargo.toml" | head -n 1 | cut -d '\"' -f 2)"
+PUBLIC_VERSION="$(python3 - "$PACKAGE_VERSION" <<'PY'
+import sys
+
+version = sys.argv[1].split("+", 1)[0]
+core, dash, suffix = version.partition("-")
+parts = core.split(".")
+if len(parts) == 3 and all(part.isdigit() for part in parts):
+    year, month, day = (int(part) for part in parts)
+    public = f"{year:04d}.{month:02d}.{day:02d}"
+    if dash and suffix:
+        public = f"{public}.{suffix}"
+    print(public)
+else:
+    print(version)
+PY
+)"
 
 cd "$ROOT_DIR"
 cargo build --release
@@ -17,7 +34,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$ROOT_DIR/target/release/$APP_NAME" "$MACOS_DIR/$APP_NAME"
 
-cp "$ROOT_DIR/assets/icons/ashell.icns" "$RESOURCES_DIR/ashell.icns"
+cp "$ROOT_DIR/assets/icons/terminal_icon_all_formats/terminal_icon.icns" "$RESOURCES_DIR/ax_ashell.icns"
 
 cat > "$CONTENTS_DIR/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -30,7 +47,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <key>CFBundleExecutable</key>
   <string>$APP_NAME</string>
   <key>CFBundleIconFile</key>
-  <string>ashell.icns</string>
+  <string>ax_ashell.icns</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -40,9 +57,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$PUBLIC_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$PACKAGE_VERSION</string>
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
   <key>NSHighResolutionCapable</key>

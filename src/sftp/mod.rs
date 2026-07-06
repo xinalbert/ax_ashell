@@ -1173,7 +1173,7 @@ async fn download_path_impl(
 
     if is_dir {
         let local_archive = local_dir.join(format!(
-            ".ashell-{}-{}.tar.gz",
+            ".ax_ashell-{}-{}.tar.gz",
             base_name(remote),
             Uuid::new_v4()
         ));
@@ -1251,7 +1251,7 @@ async fn download_remote_directory_archive(
     id: &str,
 ) -> Result<PathBuf> {
     let remote_archive = format!(
-        "/tmp/ashell-{}-{}.tar.gz",
+        "/tmp/ax_ashell-{}-{}.tar.gz",
         base_name(remote_dir),
         Uuid::new_v4()
     );

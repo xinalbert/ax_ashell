@@ -10,4 +10,37 @@ pub(crate) const TERMINAL_PADDING_X: f32 = 32.0;
 #[allow(dead_code)]
 pub(crate) const TERMINAL_PADDING_Y: f32 = 32.0;
 
-pub(crate) const TERMINAL_KEY_CONTEXT: &str = "AshellTerminal";
+pub(crate) const TERMINAL_KEY_CONTEXT: &str = "AxAshellTerminal";
+
+pub(crate) fn public_version_label() -> String {
+    format_public_version(env!("CARGO_PKG_VERSION"))
+}
+
+fn format_public_version(version: &str) -> String {
+    let version = version.split('+').next().unwrap_or(version);
+    let (core, suffix) = version
+        .split_once('-')
+        .map_or((version, None), |(core, suffix)| (core, Some(suffix)));
+
+    let mut parts = core.split('.');
+    let (Some(year), Some(month), Some(day), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return version.to_string();
+    };
+
+    let (Ok(year), Ok(month), Ok(day)) = (
+        year.parse::<u32>(),
+        month.parse::<u32>(),
+        day.parse::<u32>(),
+    ) else {
+        return version.to_string();
+    };
+
+    let mut public = format!("{year:04}.{month:02}.{day:02}");
+    if let Some(suffix) = suffix.filter(|suffix| !suffix.is_empty()) {
+        public.push('.');
+        public.push_str(suffix);
+    }
+    public
+}

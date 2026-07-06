@@ -200,7 +200,7 @@ pub(crate) enum DialogKind {
     NewSsh,
 }
 
-pub(crate) struct Ashell {
+pub(crate) struct AxAshell {
     pub(crate) focus_handle: FocusHandle,
     pub(crate) selector_focus_handle: FocusHandle,
     pub(crate) host_input: Entity<InputState>,
@@ -353,7 +353,7 @@ pub(crate) struct SftpContextMenuState {
     pub(crate) position: Point<Pixels>,
 }
 
-impl Ashell {
+impl AxAshell {
     fn transfer_source_title(&self, tab_id: &str) -> String {
         self.tabs
             .iter()
@@ -446,7 +446,7 @@ impl Ashell {
         });
         let sync_endpoint_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("https://dav.example.com/ashell/")
+                .placeholder("https://dav.example.com/ax_ashell/")
                 .default_value(config.sync_endpoint())
         });
         let sync_username_input = cx.new(|cx| {
@@ -476,7 +476,7 @@ impl Ashell {
         });
         let sync_s3_object_key_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("ashell-sync.json")
+                .placeholder("ax_ashell-sync.json")
                 .default_value(config.sync_s3_object_key())
         });
         let sync_s3_access_key_input = cx.new(|cx| {

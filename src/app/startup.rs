@@ -1,7 +1,7 @@
 use gpui::{App, AppContext as _, Bounds, WindowOptions, point, px, size};
 use gpui_component::Root;
 
-use crate::Ashell;
+use crate::AxAshell;
 use crate::session::config::ConfigStore;
 
 pub(crate) fn bind_workspace_keys(cx: &mut gpui::App) {
@@ -85,12 +85,12 @@ pub(crate) fn init_logging() {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
     let log_dir = directories::BaseDirs::new()
-        .map(|dirs| dirs.home_dir().join(".config").join("ashell").join("log"))
+        .map(|dirs| dirs.home_dir().join(".config").join("ax_ashell").join("log"))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
     std::fs::create_dir_all(&log_dir).ok();
 
-    let roller = LocalMinutelyRoller::new(log_dir.clone(), "ashell".to_string());
+    let roller = LocalMinutelyRoller::new(log_dir.clone(), "ax_ashell".to_string());
 
     let (non_blocking, _guard) = tracing_appender::non_blocking(roller);
     // Leak the guard so it lives for the entire duration of the app since GPUI's run might not return
@@ -253,7 +253,9 @@ pub(crate) fn open_main_window(cx: &mut App) {
     }
 
     #[cfg(not(target_os = "macos"))]
-    if let Ok(img) = image::load_from_memory(include_bytes!("../../assets/icons/ashell.png")) {
+    if let Ok(img) = image::load_from_memory(include_bytes!(
+        "../../assets/icons/terminal_icon_all_formats/terminal_icon_256.png"
+    )) {
         window_options.icon = Some(std::sync::Arc::new(img.into_rgba8()));
     }
 
@@ -307,9 +309,9 @@ pub(crate) fn open_main_window(cx: &mut App) {
 
     cx.open_window(window_options, |window, cx| {
         window.activate_window();
-        window.set_window_title("ashell");
+        window.set_window_title("ax_ashell");
         gpui_component::Theme::sync_system_appearance(Some(window), cx);
-        let view = cx.new(|cx| Ashell::new(window, cx));
+        let view = cx.new(|cx| AxAshell::new(window, cx));
 
         tracing::info!("[ui] main application window opened");
         let focus_handle = view.read(cx).focus_handle.clone();

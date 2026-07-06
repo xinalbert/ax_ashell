@@ -13,7 +13,7 @@ mod terminal;
 
 rust_i18n::i18n!("locales", fallback = "en");
 
-gpui::actions!(ashell_terminal, [TerminalTabKey, TerminalBacktabKey]);
+gpui::actions!(ax_ashell_terminal, [TerminalTabKey, TerminalBacktabKey]);
 
 pub(crate) use app::keybinding_recorder::{
     ClosePane, FocusPaneDown, FocusPaneLeft, FocusPaneRight, FocusPaneUp, NewSsh, OpenSearch,
@@ -22,7 +22,7 @@ pub(crate) use app::keybinding_recorder::{
 };
 
 pub(crate) use app::{
-    Ashell, PaneLayout, SelectorEntry, SftpContextMenuState, TabGroup,
+    AxAshell, PaneLayout, SelectorEntry, SftpContextMenuState, TabGroup,
 };
 
 fn main() {

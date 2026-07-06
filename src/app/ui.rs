@@ -21,7 +21,7 @@ use gpui_component::{
 use rust_i18n::t;
 
 use crate::{
-    Ashell, PaneLayout,
+    AxAshell, PaneLayout,
     app::constants::{COLLAPSED_SIDEBAR_WIDTH, SIDEBAR_WIDTH, TERMINAL_KEY_CONTEXT},
     sftp::format_mtime,
     sftp::ops::is_editable_text_file,
@@ -29,7 +29,7 @@ use crate::{
     terminal::{self, TabKind, TerminalTab},
 };
 
-impl Ashell {
+impl AxAshell {
     fn bind_titlebar_drag<E>(this: E, cx: &mut Context<Self>) -> E
     where
         E: gpui::InteractiveElement + gpui::StatefulInteractiveElement,
@@ -68,7 +68,7 @@ impl Ashell {
                 div()
                     .text_size(rems(2.333))
                     .font_weight(FontWeight::BOLD)
-                    .child("Ashell"),
+                    .child("AxAshell"),
             )
             .child(
                 div()
@@ -112,14 +112,14 @@ impl Ashell {
 
             cx.on_next_frame(
                 window,
-                move |_this: &mut crate::app::Ashell,
+                move |_this: &mut crate::app::AxAshell,
                       window: &mut gpui::Window,
-                      cx: &mut gpui::Context<crate::app::Ashell>| {
+                      cx: &mut gpui::Context<crate::app::AxAshell>| {
                     cx.on_next_frame(
                         window,
-                        move |this: &mut crate::app::Ashell,
+                        move |this: &mut crate::app::AxAshell,
                               window: &mut gpui::Window,
-                              cx: &mut gpui::Context<crate::app::Ashell>| {
+                              cx: &mut gpui::Context<crate::app::AxAshell>| {
                             this.body_panels.update(cx, |state, cx| {
                                 let sizes = state.sizes();
                                 let c_size_f32: f32 = sizes.iter().map(|s| s.as_f32()).sum();
@@ -1598,7 +1598,7 @@ impl Ashell {
                                     .font_weight(FontWeight::BOLD)
                                     .text_size(rems(1.667))
                                     .text_color(cx.theme().primary)
-                                    .child("Ashell"),
+                                    .child("AxAshell"),
                             )
                             .child(div().flex_1())
                             .child(
@@ -2045,7 +2045,7 @@ impl Ashell {
                     .h_full()
                     .overflow_x_hidden()
                     .child({
-                        TabBar::new("ashell-tab-bar")
+                        TabBar::new("ax_ashell-tab-bar")
                             .track_scroll(&self.tabs_scroll_handle)
                             .selected_index(selected)
                             .children(groups_data.iter().enumerate().map(
@@ -2236,10 +2236,10 @@ impl Ashell {
     }
 
     fn render_pane_tree(
-        this: &mut Ashell,
+        this: &mut AxAshell,
         layout: &PaneLayout,
         path: &[usize],
-        cx: &mut Context<Ashell>,
+        cx: &mut Context<AxAshell>,
     ) -> impl IntoElement {
         match layout {
             PaneLayout::Single(tab_id) => {
@@ -2516,7 +2516,7 @@ impl Ashell {
     }
 }
 
-impl Render for Ashell {
+impl Render for AxAshell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self
             .active_tab
@@ -2580,7 +2580,7 @@ impl Render for Ashell {
                 .unwrap_or(default_panel_height))
         };
 
-        let body_panel = v_resizable("ashell-body")
+        let body_panel = v_resizable("ax_ashell-body")
             .lock(self.config.lock_layout())
             .with_state(&self.body_panels)
             .child(resizable_panel().child(self.render_terminal_panel(window, cx)))
@@ -2667,7 +2667,7 @@ impl Render for Ashell {
                     .child(body_panel),
             );
 
-            h_resizable("ashell-workspace")
+            h_resizable("ax_ashell-workspace")
                 .lock(self.config.lock_layout())
                 .with_state(&self.workspace_panels)
                 .child(sidebar_area)
@@ -2676,7 +2676,7 @@ impl Render for Ashell {
         };
 
         v_flex()
-            .id("ashell-root")
+            .id("ax_ashell-root")
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)

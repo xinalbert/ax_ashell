@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=Ashell
+Name=AxAshell
 Comment=A GPUI Component based SSH and local terminal client
-Exec=ashell
-Icon=ashell
+Exec=ax_ashell
+Icon=ax_ashell
 Terminal=false
 Type=Application
 Categories=System;TerminalEmulator;Utility;
-StartupWMClass=ashell
+StartupWMClass=ax_ashell

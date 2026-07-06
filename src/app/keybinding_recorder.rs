@@ -9,10 +9,10 @@ use gpui_component::{
 };
 use rust_i18n::t;
 
-use crate::{Ashell, session::config::ConfigStore};
+use crate::{AxAshell, session::config::ConfigStore};
 
 gpui::actions!(
-    ashell_workspace,
+    ax_ashell_workspace,
     [
         OpenSettings,
         OpenSession,
@@ -309,7 +309,7 @@ fn bind_workspace_actions(cx: &mut App, config: &ConfigStore) {
 }
 
 impl KeybindingsPage {
-    pub fn render_groups(view: &Entity<Ashell>, cx: &mut App) -> Vec<SettingGroup> {
+    pub fn render_groups(view: &Entity<AxAshell>, cx: &mut App) -> Vec<SettingGroup> {
         let groups = [
             (
                 "settings_group_keybind_general",

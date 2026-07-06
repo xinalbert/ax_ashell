@@ -2,7 +2,7 @@ use anyhow::{Context as _, Result};
 use gpui::{App, Context, SharedString, Window, px};
 use gpui_component::{ActiveTheme as _, Theme, ThemeMode, ThemeRegistry};
 
-use crate::Ashell;
+use crate::AxAshell;
 
 pub(crate) const EMBEDDED_THEME_JSONS: &[&str] = &[
     include_str!("../../assets/themes/matrix.json"),
@@ -52,7 +52,7 @@ pub(crate) fn set_theme_font_names(theme: &mut Theme, ui_font_family: &str) {
     theme.mono_font_family = ui_font_family.into();
 }
 
-impl Ashell {
+impl AxAshell {
     pub(crate) fn switch_theme_mode(
         &mut self,
         mode: ThemeMode,

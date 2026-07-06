@@ -245,7 +245,7 @@ fn default_s3_region() -> String {
 }
 
 fn default_s3_object_key() -> String {
-    "ashell-sync.json".to_string()
+    "ax_ashell-sync.json".to_string()
 }
 
 fn default_follow_system_theme() -> bool {
@@ -412,7 +412,7 @@ impl ConfigStore {
         Ok(dirs
             .home_dir()
             .join(".config")
-            .join("ashell")
+            .join("ax_ashell")
             .join("sessions.json"))
     }
 
@@ -472,7 +472,7 @@ impl ConfigStore {
 
     pub fn sync_s3_object_key(&self) -> &str {
         if self.cache.sync_s3_object_key.is_empty() {
-            "ashell-sync.json"
+            "ax_ashell-sync.json"
         } else {
             &self.cache.sync_s3_object_key
         }
