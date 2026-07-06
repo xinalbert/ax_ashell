@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -7,9 +8,15 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use directories::BaseDirs;
 use russh::{
-    ChannelMsg, Disconnect,
+    AlgorithmKind, ChannelMsg, Disconnect, Error as RusshError, Preferred, cipher,
     client::{self, Handler},
-    keys::{HashAlg, PrivateKey, decode_secret_key, key::PrivateKeyWithHashAlg, load_secret_key},
+    kex,
+    keys::{
+        PrivateKey, decode_secret_key,
+        key::PrivateKeyWithHashAlg,
+        load_secret_key,
+        ssh_key::{Algorithm, HashAlg},
+    },
 };
 use tokio::sync::mpsc;
 
@@ -218,32 +225,78 @@ async fn connect_and_authenticate(
     session: &Session,
     events: &std::sync::mpsc::Sender<BackendEvent>,
 ) -> Result<russh::client::Handle<ClientHandler>> {
-    let config = Arc::new(client::Config {
-        inactivity_timeout: Some(std::time::Duration::from_secs(600)),
-        keepalive_interval: Some(std::time::Duration::from_secs(3)),
-        keepalive_max: 2,
-        ..Default::default()
-    });
     let addr = format!("{}:{}", session.host, session.port);
     tracing::info!(
         "[ssh] initiating tcp connection to {} (user: {})",
         addr,
         session.user
     );
-    let status_text = if let Some((ptype, phost, pport)) = crate::session::config::active_proxy(session) {
-        let pport_val = pport.unwrap_or_else(|| if ptype == "http" { 8080 } else { 1080 });
-        format!("connecting to {addr} via {} proxy {}:{}", ptype.to_uppercase(), phost, pport_val)
-    } else {
-        format!("opening tcp connection to {addr}")
-    };
+    let status_text =
+        if let Some((ptype, phost, pport)) = crate::session::config::active_proxy(session) {
+            let pport_val = pport.unwrap_or_else(|| if ptype == "http" { 8080 } else { 1080 });
+            format!(
+                "connecting to {addr} via {} proxy {}:{}",
+                ptype.to_uppercase(),
+                phost,
+                pport_val
+            )
+        } else {
+            format!("opening tcp connection to {addr}")
+        };
     let _ = events.send(BackendEvent::Status {
         tab_id: tab_id.to_string(),
         text: status_text,
     });
-    let stream = crate::session::config::connect_proxy(session).await?;
-    let mut handle = client::connect_stream(config, stream, ClientHandler)
-        .await
-        .with_context(|| format!("connect {addr} failed"))?;
+
+    let mut handle = match connect_with_mode(session, &addr, SshCompatibilityMode::Default).await {
+        Ok(handle) => handle,
+        Err(default_err) => {
+            let Some(default_details) = negotiation_error_details(&default_err) else {
+                return Err(default_err);
+            };
+            tracing::warn!(
+                "[ssh] default negotiation failed for {}@{}: {}",
+                session.user,
+                addr,
+                default_details
+            );
+            let short_reason = negotiation_error_short_reason(&default_err)
+                .unwrap_or_else(|| "algorithm mismatch".to_string());
+            let _ = events.send(BackendEvent::Status {
+                tab_id: tab_id.to_string(),
+                text: format!(
+                    "default SSH negotiation failed ({short_reason}), retrying legacy compatibility algorithms"
+                ),
+            });
+
+            match connect_with_mode(session, &addr, SshCompatibilityMode::Legacy).await {
+                Ok(handle) => {
+                    tracing::warn!(
+                        "[ssh] connected to {} using legacy SSH compatibility mode",
+                        addr
+                    );
+                    let _ = events.send(BackendEvent::Status {
+                        tab_id: tab_id.to_string(),
+                        text: format!("connected to {addr} using legacy SSH compatibility mode"),
+                    });
+                    handle
+                }
+                Err(legacy_err) => {
+                    let legacy_details = negotiation_error_details(&legacy_err)
+                        .unwrap_or_else(|| format!("{legacy_err:#}"));
+                    tracing::error!(
+                        "[ssh] legacy compatibility negotiation failed for {}@{}: {}",
+                        session.user,
+                        addr,
+                        legacy_details
+                    );
+                    return Err(anyhow!(
+                        "SSH negotiation failed. default mode: {default_details}. legacy compatibility mode: {legacy_details}"
+                    ));
+                }
+            }
+        }
+    };
 
     tracing::debug!("[ssh] tcp connected to {}", addr);
 
@@ -354,6 +407,128 @@ async fn connect_and_authenticate(
     });
 
     Ok(handle)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SshCompatibilityMode {
+    Default,
+    Legacy,
+}
+
+impl SshCompatibilityMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Legacy => "legacy compatibility",
+        }
+    }
+}
+
+async fn connect_with_mode(
+    session: &Session,
+    addr: &str,
+    mode: SshCompatibilityMode,
+) -> Result<russh::client::Handle<ClientHandler>> {
+    let stream = crate::session::config::connect_proxy(session).await?;
+    client::connect_stream(Arc::new(ssh_client_config(mode)), stream, ClientHandler)
+        .await
+        .with_context(|| format!("connect {addr} failed in {} mode", mode.label()))
+}
+
+fn ssh_client_config(mode: SshCompatibilityMode) -> client::Config {
+    let mut config = client::Config {
+        inactivity_timeout: Some(std::time::Duration::from_secs(600)),
+        keepalive_interval: Some(std::time::Duration::from_secs(3)),
+        keepalive_max: 2,
+        ..Default::default()
+    };
+    if mode == SshCompatibilityMode::Legacy {
+        config.preferred = legacy_ssh_preferred();
+    }
+    config
+}
+
+fn legacy_ssh_preferred() -> Preferred {
+    let mut preferred = Preferred::default();
+
+    let mut kex_order = preferred.kex.iter().cloned().collect::<Vec<_>>();
+    extend_unique(
+        &mut kex_order,
+        [
+            kex::ECDH_SHA2_NISTP256,
+            kex::ECDH_SHA2_NISTP384,
+            kex::ECDH_SHA2_NISTP521,
+            kex::DH_G14_SHA1,
+            kex::DH_G1_SHA1,
+        ],
+    );
+    preferred.kex = Cow::Owned(kex_order);
+
+    let mut key_order = preferred.key.iter().cloned().collect::<Vec<_>>();
+    extend_unique(&mut key_order, [Algorithm::Dsa]);
+    preferred.key = Cow::Owned(key_order);
+
+    let mut cipher_order = preferred.cipher.iter().cloned().collect::<Vec<_>>();
+    extend_unique(
+        &mut cipher_order,
+        [
+            cipher::AES_128_CBC,
+            cipher::AES_192_CBC,
+            cipher::AES_256_CBC,
+            cipher::TRIPLE_DES_CBC,
+        ],
+    );
+    preferred.cipher = Cow::Owned(cipher_order);
+
+    preferred
+}
+
+fn extend_unique<T>(items: &mut Vec<T>, extras: impl IntoIterator<Item = T>)
+where
+    T: PartialEq,
+{
+    for item in extras {
+        if !items.contains(&item) {
+            items.push(item);
+        }
+    }
+}
+
+fn negotiation_error_short_reason(err: &anyhow::Error) -> Option<String> {
+    match russh_error_from_anyhow(err)? {
+        RusshError::NoCommonAlgo { kind, .. } => Some(format!(
+            "no common {} algorithm",
+            algorithm_kind_label(kind)
+        )),
+        _ => None,
+    }
+}
+
+fn negotiation_error_details(err: &anyhow::Error) -> Option<String> {
+    match russh_error_from_anyhow(err)? {
+        RusshError::NoCommonAlgo { kind, ours, theirs } => Some(format!(
+            "no common {} algorithm; client offers [{}]; server offers [{}]",
+            algorithm_kind_label(kind),
+            ours.join(", "),
+            theirs.join(", ")
+        )),
+        _ => None,
+    }
+}
+
+fn russh_error_from_anyhow(err: &anyhow::Error) -> Option<&RusshError> {
+    err.chain()
+        .find_map(|cause| cause.downcast_ref::<RusshError>())
+}
+
+fn algorithm_kind_label(kind: &AlgorithmKind) -> &'static str {
+    match kind {
+        AlgorithmKind::Kex => "KEX",
+        AlgorithmKind::Key => "host key",
+        AlgorithmKind::Cipher => "cipher",
+        AlgorithmKind::Compression => "compression",
+        AlgorithmKind::Mac => "MAC",
+    }
 }
 
 fn load_session_private_key(session: &Session) -> Result<PrivateKey> {
