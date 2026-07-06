@@ -1020,12 +1020,12 @@ impl AxAshell {
             _ => return,
         };
         // Find current tab to clone its type/session
-        let current_tab = match self.tabs.iter().find(|t| t.id == current_id) {
-            Some(tab) => tab,
+        let (current_kind, current_session) = match self.tabs.iter().find(|t| t.id == current_id) {
+            Some(tab) => (tab.kind, tab.session.clone()),
             None => return,
         };
         let new_id = Uuid::new_v4().to_string();
-        let mut tab = match current_tab.kind {
+        let mut tab = match current_kind {
             TabKind::Local => {
                 match local::spawn_local_terminal(
                     new_id.clone(),
@@ -1047,7 +1047,7 @@ impl AxAshell {
                 }
             }
             TabKind::Ssh => {
-                let Some(session) = current_tab.session.clone() else {
+                let Some(session) = current_session else {
                     self.status = "cannot split: no session info".into();
                     cx.notify();
                     return;
