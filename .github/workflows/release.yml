@@ -157,15 +157,116 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout release history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Download all workflow artifacts
         uses: actions/download-artifact@v8
         with:
           path: dist
 
+      - name: Generate release highlights
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_tag="${GITHUB_REF_NAME}"
+          current_commit="$(git rev-list -n 1 "$current_tag")"
+          previous_tag="$(git describe --tags --abbrev=0 "${current_commit}^" 2>/dev/null || true)"
+
+          if [ -n "$previous_tag" ]; then
+            range="${previous_tag}..${current_tag}"
+            comparison_label="${previous_tag}...${current_tag}"
+          else
+            range="$current_tag"
+            comparison_label="$current_tag"
+          fi
+
+          mkdir -p release
+          body="release/body.md"
+          commits="release/commits.tsv"
+          seen_commits="release/seen-commits.txt"
+
+          git log --format='%h%x09%s' "$range" > "$commits"
+          : > "$seen_commits"
+
+          cat > "$body" <<EOF
+          ## Highlights
+
+          _Automatically selected from commits in \`${comparison_label}\`._
+
+          EOF
+
+          add_section() {
+            local title="$1"
+            local pattern="$2"
+            local limit="${3:-8}"
+            local tmp="release/${title// /_}.md"
+
+            awk -F '\t' -v pattern="$pattern" -v limit="$limit" -v seen_file="$seen_commits" '
+              BEGIN {
+                count = 0
+                while ((getline seen_commit < seen_file) > 0) {
+                  seen[seen_commit] = 1
+                }
+                close(seen_file)
+              }
+              tolower($2) ~ /implementation tracking|tracking records|project[- ]implementation|env audit/ {
+                next
+              }
+              !($1 in seen) && tolower($2) ~ pattern {
+                print "- `" $1 "` " $2
+                print $1 >> seen_file
+                seen[$1] = 1
+                count++
+                if (count >= limit) {
+                  exit
+                }
+              }
+            ' "$commits" > "$tmp"
+
+            if [ -s "$tmp" ]; then
+              printf '### %s\n\n' "$title" >> "$body"
+              cat "$tmp" >> "$body"
+              printf '\n\n' >> "$body"
+            fi
+          }
+
+          add_section "Settings and themes" 'settings|custom|theme|brightness|foreground|font'
+          add_section "App UI and assets" 'monitoring|titlebar|window|input|focus|icon|asset'
+          add_section "Terminal rendering" 'terminal url|url highlighting|ansi|truecolor|scrollback|split-screen'
+          add_section "SSH and compatibility" 'ssh|sftp|russh|legacy|fallback|algorithm|x11|xquartz'
+          add_section "Development workflow" 'dev-reload|reload|logging|rebuild|format|startup'
+          add_section "Release and packaging" 'release|workflow|artifact|publish|package|packaging|cask|version'
+          add_section "Dependency updates" 'upgrade|dependency|dependencies|crate|russh|alacritty|official'
+
+          if ! grep -q '^- `' "$body"; then
+            cat >> "$body" <<EOF
+          No high-signal commit keywords were detected. See the generated release notes below for the full changelog.
+
+          EOF
+          fi
+
+          cat >> "$body" <<EOF
+          ## Keyword Rules
+
+          - Settings and themes: \`settings\`, \`custom\`, \`theme\`, \`brightness\`, \`foreground\`, \`font\`
+          - App UI and assets: \`monitoring\`, \`titlebar\`, \`window\`, \`input\`, \`focus\`, \`icon\`, \`asset\`
+          - Terminal rendering: \`terminal url\`, \`url highlighting\`, \`ansi\`, \`truecolor\`, \`scrollback\`, \`split-screen\`
+          - SSH and compatibility: \`ssh\`, \`sftp\`, \`russh\`, \`legacy\`, \`fallback\`, \`algorithm\`, \`x11\`, \`xquartz\`
+          - Development workflow: \`dev-reload\`, \`reload\`, \`logging\`, \`rebuild\`, \`format\`, \`startup\`
+          - Release and packaging: \`release\`, \`workflow\`, \`artifact\`, \`publish\`, \`package\`, \`packaging\`, \`cask\`, \`version\`
+          - Dependencies: \`upgrade\`, \`dependency\`, \`dependencies\`, \`crate\`, \`russh\`, \`alacritty\`, \`official\`
+
+          EOF
+
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: dist/**/*
+          body_path: release/body.md
           generate_release_notes: true
           fail_on_unmatched_files: true
 
