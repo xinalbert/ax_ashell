@@ -34,6 +34,10 @@ cargo dev-reload
 
 By default it watches `src`, `assets`, `locales`, `Cargo.toml`, `Cargo.lock`, `build.rs`, and `.cargo`.
 
+In debug mode, `cargo dev-reload` writes dev-reload events, `cargo build` output, and the launched app's `stdout/stderr` to `target/debug/dev-reload-logs/session-<timestamp>/`; `cargo dev-reload --release` does not create these log files.
+
+If a later file change causes the rebuild to fail, `cargo dev-reload` keeps the currently running old process alive and continues watching instead of exiting immediately; only an initial startup build failure ends the command with an error.
+
 ## Packaging
 
 macOS `.app`:

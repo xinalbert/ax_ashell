@@ -34,6 +34,10 @@ cargo dev-reload
 
 默认监听 `src`、`assets`、`locales`、`Cargo.toml`、`Cargo.lock`、`build.rs` 和 `.cargo`。
 
+`cargo dev-reload` 在 debug 模式下会把 dev-reload 自身事件、`cargo build` 输出和被拉起应用的 `stdout/stderr` 落盘到 `target/debug/dev-reload-logs/session-<timestamp>/`；`cargo dev-reload --release` 不生成这些日志文件。
+
+若后续文件变更导致编译失败，`cargo dev-reload` 会保留当前正在运行的旧进程并继续监听，不会直接退出；只有初次启动就编译失败时才会返回错误结束。
+
 ## 打包
 
 macOS `.app`：
