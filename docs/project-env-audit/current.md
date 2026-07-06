@@ -32,7 +32,7 @@
 ## 环境变化检查
 
 - 是否发现变化：是
-- 变化摘要：运行环境事实未变，但当前任务已从监控仪表盘可见性切换到 SSH 老服务器兼容性，因此需要刷新 current 记录中的任务语境与验证重点
+- 变化摘要：运行环境事实未变，但当前任务已扩展到 `ax_ashell` 标识迁移、README 收口、日期版本展示策略与发布 workflow 收敛，因此需要刷新 current 记录中的任务语境、影响范围与验证重点
 - 受影响文件：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
 - 是否需要更新 `current.md` / `changes.md`：是
 
@@ -40,4 +40,4 @@
 
 - 状态：允许开工
 - 原因：项目边界明确，Cargo/Rust 工具链可用，问题可在仓库内独立修复
-- 开工前动作：完成 `docs/project-implementation-tracker/` 计划与地图更新，再修改 SSH 握手算法配置与错误诊断
+- 开工前动作：完成 `docs/project-implementation-tracker/` 计划与地图更新，再统一修改 crate 名、运行时文案、资源文件名、脚本和 CI 中的 `ax_ashell` 引用，收口双语 README 与日期版本策略，并停用依赖外部 token 的发布步骤

@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：为 SSH 连接增加老服务器算法兼容 fallback，并把 `No common algorithm` 的具体协商失败类型与双方算法列表暴露出来
-- 交付物：`russh` 客户端兼容旧服务器的算法配置、包含 `kind/ours/theirs` 的诊断日志与错误信息、编译验证结果、更新后的实施跟踪记录
+- 目标：将仓库内项目标识从 `ashell` 统一迁移到 `ax_ashell`，同步修正代码标识、包名、资源名、脚本、CI、用户可见文案以及 GitHub 仓库地址；停用当前不想启用的、依赖外部 token / 密钥的发布链路；并将 README 与用户可见版本规则收敛到日期版本策略
+- 交付物：统一后的 `ax_ashell` 代码/文档/资源引用、指向 `https://github.com/xinalbert/ax_ashell` 的 GitHub 链接、切换到 `terminal_icon_all_formats` 的图标来源、停用 `publish` / `cask` 后的 release workflow、双语 README、日期版本展示策略、编译验证结果、更新后的实施跟踪记录
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/backend/ssh.rs`，`Cargo.toml`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
-- 不在本轮范围内：GUI 布局、标题栏行为、监控仪表盘设置、SFTP 功能实现、终端渲染逻辑
+- 当前范围：`Cargo.toml`，`Cargo.lock`，`README.md`，`README.en.md`，`build.rs`，`assets/`，`.github/workflows/release.yml`，`scripts/package-macos-app.sh`，`examples/dev_reload.rs`，`src/` 中包含 `ax_ashell` 标识或版本展示的代码文件，仓库内指向旧 GitHub 地址的文档/脚本文件，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 不在本轮范围内：与改名无关的功能行为修复、SSH 协议兼容策略、监控仪表盘逻辑、标题栏交互逻辑重构
 
 ## 当前状态
 
@@ -22,37 +22,37 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 本轮 SSH 兼容性任务的范围、地图与 current 态刷新 | `python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py <repo-root>` | 已将 current 态和项目地图切换到 SSH 兼容性任务 |
-| P2 | completed | 老服务器算法 fallback 与协商失败诊断增强 | `cargo check` | 默认失败后自动切到 legacy compatibility；`No common algorithm` 会包含 `kind/ours/theirs` |
-| P3 | completed | 收口验证与记录更新 | `rustfmt --edition 2024 --config skip_children=true src/backend/ssh.rs && cargo check && python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .` | 格式化、编译和 tracking docs 校验均已通过 |
+| P1 | completed | 本轮改名任务的范围、current 态与项目地图刷新 | `python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py <repo-root>` | 已将 current 态切换到 `ashell -> ax_ashell` 标识迁移任务 |
+| P2 | completed | 代码、资源、脚本、CI 与文档中的 `ashell` 标识统一迁移到 `ax_ashell`，并将 GitHub 链接改到 `https://github.com/xinalbert/ax_ashell` | `rg -n --hidden --glob '!.git' 'github\\.com/rust-kotlin/ashell|\\bashell\\b|Ashell|ASHELL' .` | 需要同时处理文本替换、GitHub 链接更新与资源/文件名重命名 |
+| P3 | completed | 编译校验、README 收口、日期版本展示策略、停用依赖外部密钥的发布步骤、剩余引用扫描与跟踪文档收口 | `cargo check && rg -n 'secrets\\.|token:' .github/workflows && python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .` | 需要区分“对外日期版本展示”和“内部 semver 构建版本” |
 
 ## 已完成
 
 - 读取项目环境与实施跟踪 skill 约束，确认本轮需要先做环境预检与 plan-first 跟踪
 - 刷新 `docs/project-env-audit/` 与 `docs/project-implementation-tracker/` 到当前 contract
-- 确认现状：ashell 使用 `russh`，不是系统 `ssh`；当前连接层直接使用 `client::Config::default()`，因此只带默认首选算法，不会对老服务器做兼容 fallback
-- 确认 `russh` 实际内置了 `diffie-hellman-group14-sha1`、`diffie-hellman-group1-sha1`、`ecdh-sha2-nistp256`、`aes*-cbc`、`3des-cbc` 等老算法，但默认 `Preferred` 没把它们放进首选列表
-- 修改 `src/backend/ssh.rs`：默认先用当前安全算法集发起握手；若命中 `RusshError::NoCommonAlgo`，自动重连并启用 legacy compatibility 算法列表
-- 修改 `src/backend/ssh.rs`：legacy mode 追加 `ecdh-sha2-nistp*`、`diffie-hellman-group14-sha1`、`diffie-hellman-group1-sha1`、`aes*-cbc`、`3des-cbc` 以及 `ssh-dss`
-- 修改 `src/backend/ssh.rs`：把协商失败的 `kind/ours/theirs` 解包为更具体的日志与最终错误文本，便于判断是 KEX、host key、cipher 还是 MAC 没交集
-- 运行 `rustfmt`、`cargo check` 和 tracking docs 校验脚本，确认本轮修改可编译且跟踪文档满足 contract
+- 扫描仓库内 `ashell` / `Ashell` / `ASHELL` 与旧 GitHub 地址引用，确认范围覆盖 crate 名、结构体名、窗口标题、TERM_PROGRAM、同步文件名、资源文件名、打包脚本、GitHub Actions、README 文案与仓库链接
+- 确认存在需要同步重命名的资源文件：`assets/ax_ashell.desktop`、`assets/icons/ax_ashell.icns`、`assets/icons/ax_ashell.ico`、`assets/icons/ax_ashell.png`
+- 已将 Windows / macOS / Linux / 运行时图标来源切换到 `assets/icons/terminal_icon_all_formats/`
+- 已确认 `.github/workflows/release.yml` 中显式依赖外部密钥的是 Homebrew cask 发布使用的 `secrets.TAP_GITHUB_TOKEN`
+- 已将双语 README 精简为项目入口页，补充 fork 来源、当前仓库地址、发布状态与日期版本规则
+- 已将内部包版本起点切到 `2026.7.6`，并补充设置页 / macOS bundle 的对外日期版本展示映射
 
 ## 验证
 
-- 已完成：读取 `src/backend/ssh.rs`、`Cargo.toml` 以及 `russh` 源码中的默认 `Preferred`、可用 KEX / cipher / MAC 集合；确认本机 `cargo` 可用
-- 已完成：`rustfmt --edition 2024 --config skip_children=true src/backend/ssh.rs` 通过；`cargo check` 通过；`python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .` 通过
-- 未完成：未对真实老 SSH 服务器做联机验证；尚未确认目标服务器是否还需要更激进的 DSA / 认证兼容修补
+- 已完成：扫描 `Cargo.toml`、`README.md`、`src/`、`assets/`、`.github/workflows/release.yml` 与脚本中的现有 `ax_ashell` 标识及旧 GitHub 地址；确认本机 `cargo` 可用；`cargo check` 通过；`rg -n 'secrets\\.|token:' .github/workflows` 仅剩注释中的 `secrets.TAP_GITHUB_TOKEN`；tracking docs 校验通过
+- 未完成：未做 GUI 手工验证
 
 ## 风险与阻塞
 
-- 若远端服务器只支持极旧且不安全的组合，兼容模式需要在“能连上”和“不过度放宽默认安全边界”之间做取舍
-- 本轮可以增强 `NoCommonAlgo` 的可观测性，但无法在本地脱离目标服务器完全复现所有老旧 SSH 配置
-- 若服务器依赖的是 `ssh-dss` host key 或更特殊的认证路径，可能还需要第二轮兼容补丁
+- crate / bin 名、桌面入口、应用 bundle 名与资源文件路径存在联动，若替换不彻底会直接导致编译或打包失败
+- `AxAshell` 结构体名和 `ax_ashell` 字面量同时存在，必须区分大小写变体，避免误把其他标识改坏
+- 用户要求的 `YYYY.MM.DD.1` 不符合 Cargo semver，必须通过“对外日期显示 / 内部兼容版本”双层策略实现
+- 若未来重新启用 `publish` / `cask`，需要恢复对应 job，并重新配置 GitHub Release 与 Homebrew tap 所需权限 / token
 
 ## 下一步
 
-- 用目标老 SSH 服务器实测；如果仍失败，直接根据新日志里的 `kind/ours/theirs` 继续补第二轮兼容
+- 按功能边界拆分并提交本轮改动
 
 ## 最后更新时间
 
-- 2026-07-06 15:11 CST
+- 2026-07-06 17:21 CST
