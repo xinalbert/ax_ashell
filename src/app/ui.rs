@@ -1645,9 +1645,11 @@ impl Ashell {
                             }),
                     ),
             )
-            .when(self.config.monitoring_position() == "Sidebar", |this| {
-                this.child(self.render_sidebar_monitoring_panel(cx))
-            })
+            .when(
+                self.config.show_monitoring_dashboard()
+                    && self.config.monitoring_position() == "Sidebar",
+                |this| this.child(self.render_sidebar_monitoring_panel(cx)),
+            )
             .child(
                 Button::new("open-ssh-panel")
                     .primary()
@@ -2556,14 +2558,17 @@ impl Render for Ashell {
             }
         }
 
+        let show_bottom_monitoring = self.config.show_monitoring_dashboard()
+            && self.config.monitoring_position() == "Bottom";
+
         let monitoring_contents = v_flex()
             .size_full()
-            .when(self.config.monitoring_position() == "Bottom", |this| {
+            .when(show_bottom_monitoring, |this| {
                 this.child(self.render_monitoring_panel(window.viewport_size().width, cx))
             })
             .child(self.render_sftp_panel(window, cx));
 
-        let is_monitor_bottom = self.config.monitoring_position() == "Bottom";
+        let is_monitor_bottom = show_bottom_monitoring;
         let minimized_height = if is_monitor_bottom { 104. } else { 24. };
         let min_panel_height = if is_monitor_bottom { 260. } else { 180. };
         let default_panel_height = if is_monitor_bottom { 328. } else { 248. };

@@ -180,6 +180,8 @@ pub struct ConfigFile {
     pub lock_layout: bool,
     #[serde(default = "default_monitoring_position")]
     pub monitoring_position: String,
+    #[serde(default = "default_show_monitoring_dashboard")]
+    pub show_monitoring_dashboard: bool,
     #[serde(default)]
     pub sidebar_collapsed: bool,
     #[serde(default)]
@@ -232,6 +234,10 @@ fn default_global_proxy_type() -> String {
 
 fn default_monitoring_position() -> String {
     "Sidebar".to_string()
+}
+
+fn default_show_monitoring_dashboard() -> bool {
+    true
 }
 
 fn default_s3_region() -> String {
@@ -380,6 +386,12 @@ impl ConfigStore {
         if cache.sync_device_id.is_empty() {
             cache.sync_device_id = Uuid::new_v4().to_string();
         }
+        if cache.monitoring_position == "Hidden" {
+            cache.show_monitoring_dashboard = false;
+            cache.monitoring_position = default_monitoring_position();
+        } else if cache.monitoring_position != "Bottom" && cache.monitoring_position != "Sidebar" {
+            cache.monitoring_position = default_monitoring_position();
+        }
         Ok(Self { path, cache })
     }
 
@@ -523,15 +535,24 @@ impl ConfigStore {
     }
 
     pub fn monitoring_position(&self) -> &str {
-        if self.cache.monitoring_position.is_empty() {
-            "Sidebar"
+        if self.cache.monitoring_position == "Bottom" {
+            "Bottom"
         } else {
-            &self.cache.monitoring_position
+            "Sidebar"
         }
     }
 
     pub fn set_monitoring_position(&mut self, pos: &str) {
-        self.cache.monitoring_position = pos.to_string();
+        self.cache.monitoring_position =
+            if pos == "Bottom" { "Bottom" } else { "Sidebar" }.to_string();
+    }
+
+    pub fn show_monitoring_dashboard(&self) -> bool {
+        self.cache.show_monitoring_dashboard
+    }
+
+    pub fn set_show_monitoring_dashboard(&mut self, val: bool) {
+        self.cache.show_monitoring_dashboard = val;
     }
 
     pub fn terminal_font_size(&self) -> f32 {

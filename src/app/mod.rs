@@ -1030,6 +1030,9 @@ impl Ashell {
     }
 
     pub(crate) fn sample_system_if_due(&mut self) -> bool {
+        if !self.is_monitoring_visible() {
+            return false;
+        }
         if self.last_system_sample.elapsed() >= SystemSampler::interval() {
             self.last_system_sample = Instant::now();
             // Use system_tab_id (not active_tab) to decide remote vs local sampling
@@ -1073,6 +1076,9 @@ impl Ashell {
     }
 
     pub(crate) fn request_active_system_snapshot(&mut self) {
+        if !self.is_monitoring_visible() {
+            return;
+        }
         let Some(ref tab_id) = self.system_tab_id.clone() else {
             return;
         };
@@ -1091,6 +1097,17 @@ impl Ashell {
         self.remote_sample_in_flight = true;
         if let Ok(backend) = backend.lock() {
             backend.send(crate::terminal::BackendCommand::SampleMetrics);
+        }
+    }
+
+    pub(crate) fn is_monitoring_visible(&self) -> bool {
+        if !self.config.show_monitoring_dashboard() {
+            return false;
+        }
+        match self.config.monitoring_position() {
+            "Bottom" => true,
+            "Sidebar" => !self.sidebar_collapsed,
+            _ => false,
         }
     }
 

@@ -1696,10 +1696,34 @@ impl Ashell {
                                                 )
                                                 .item(
                                                     SettingItem::new(
+                                                        t!("show_monitoring_dashboard").to_string(),
+                                                        SettingField::render({
+                                                            let view = view_clone_for_general.clone();
+                                                            move |_, window, cx| {
+                                                                Switch::new("show-monitoring-dashboard")
+                                                                    .small()
+                                                                    .checked(view.read(cx).config.show_monitoring_dashboard())
+                                                                    .on_click(window.listener_for(&view, |this, checked, _, cx| {
+                                                                        this.config.set_show_monitoring_dashboard(*checked);
+                                                                        let _ = this.config.save();
+                                                                        cx.notify();
+                                                                    }))
+                                                                    .into_any_element()
+                                                            }
+                                                        })
+                                                    )
+                                                    .description(t!("show_monitoring_dashboard_hint").to_string())
+                                                )
+                                                .item(
+                                                    SettingItem::new(
                                                         t!("monitoring_position").to_string(),
                                                         SettingField::render({
                                                             let view = view_clone_for_general.clone();
                                                             move |_, _window, cx| {
+                                                                let show_monitoring = view
+                                                                    .read(cx)
+                                                                    .config
+                                                                    .show_monitoring_dashboard();
                                                                 Button::new("monitoring-position-dropdown")
                                                                     .small()
                                                                     .icon(IconName::PanelLeftOpen)
@@ -1707,12 +1731,11 @@ impl Ashell {
                                                                         let pos = view.read(cx).config.monitoring_position().to_string();
                                                                         if pos == "Sidebar" {
                                                                             t!("position_sidebar").to_string()
-                                                                        } else if pos == "Hidden" {
-                                                                            t!("position_hidden").to_string()
                                                                         } else {
                                                                             t!("position_bottom").to_string()
                                                                         }
                                                                     })
+                                                                    .disabled(!show_monitoring)
                                                                     .dropdown_menu_with_anchor(Anchor::BottomRight, {
                                                                         let view = view.clone();
                                                                         move |mut menu, window, cx| {
@@ -1732,15 +1755,6 @@ impl Ashell {
                                                                                         .checked(pos == "Sidebar")
                                                                                         .on_click(window.listener_for(&view, |this, _, _window, cx| {
                                                                                             this.config.set_monitoring_position("Sidebar");
-                                                                                            let _ = this.config.save();
-                                                                                            cx.notify();
-                                                                                        }))
-                                                                                )
-                                                                                .item(
-                                                                                    PopupMenuItem::new(t!("position_hidden").to_string())
-                                                                                        .checked(pos == "Hidden")
-                                                                                        .on_click(window.listener_for(&view, |this, _, _window, cx| {
-                                                                                            this.config.set_monitoring_position("Hidden");
                                                                                             let _ = this.config.save();
                                                                                             cx.notify();
                                                                                         }))
