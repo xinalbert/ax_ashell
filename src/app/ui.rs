@@ -1,8 +1,9 @@
+use crate::app::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui::{
     Context, ElementId, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     MouseButton, MouseDownEvent, ParentElement as _, PathBuilder, Pixels, Render,
-    StatefulInteractiveElement as _, Styled as _, Window, canvas, div, hsla, point,
-    prelude::FluentBuilder as _, px, relative, rems, uniform_list,
+    StatefulInteractiveElement as _, Styled as _, Window, canvas, div, point,
+    prelude::FluentBuilder as _, px, rems, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Disableable as _, ElementExt, Icon, IconName, InteractiveElementExt as _, Root,
@@ -17,7 +18,6 @@ use gpui_component::{
     tab::{Tab, TabBar},
     v_flex,
 };
-use crate::app::resizable::{h_resizable, resizable_panel, v_resizable};
 use rust_i18n::t;
 
 use crate::{
@@ -2266,7 +2266,10 @@ impl Ashell {
                 let font_size = px(this.terminal_font_size);
                 let line_height = px(this.terminal_line_height());
                 let cell_width = px(this.terminal_cell_width());
-                let is_url_hovered = this.hovered_url.as_ref().map_or(false, |hu| hu.tab_id == *tab_id);
+                let is_url_hovered = this
+                    .hovered_url
+                    .as_ref()
+                    .map_or(false, |hu| hu.tab_id == *tab_id);
                 let mut el = div()
                     .size_full()
                     .overflow_hidden()
@@ -2307,44 +2310,38 @@ impl Ashell {
                     .and_then(|tab| tab.disconnected_reason.clone());
                 if let Some(reason) = disconnected_reason {
                     let tab_id_for_reconnect = tab_id.clone();
-                    el = div()
-                        .size_full()
-                        .relative()
-                        .child(el)
-                        .child(
-                            div()
-                                .absolute()
-                                .bottom_0()
-                                .left_0()
-                                .right_0()
+                    el = div().size_full().relative().child(el).child(
+                        div().absolute().bottom_0().left_0().right_0().child(
+                            h_flex()
+                                .w_full()
+                                .items_center()
+                                .gap_2()
+                                .px_3()
+                                .py_1()
+                                .bg(cx.theme().danger.opacity(0.15))
                                 .child(
-                                    h_flex()
-                                        .w_full()
-                                        .items_center()
-                                        .gap_2()
-                                        .px_3()
-                                        .py_1()
-                                        .bg(cx.theme().danger.opacity(0.15))
+                                    div()
+                                        .text_size(rems(0.85))
+                                        .text_color(cx.theme().danger)
                                         .child(
-                                            div()
-                                                .text_size(rems(0.85))
-                                                .text_color(cx.theme().danger)
-                                                .child(t!("session_disconnected", "reason" = reason).to_string()),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_size(rems(0.85))
-                                                .text_color(cx.theme().muted_foreground)
-                                                .child(format!("— {}", t!("press_enter_to_reconnect"))),
-                                        )
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(move |this, _, _, cx| {
-                                                this.retry_disconnected_tab(&tab_id_for_reconnect, cx);
-                                            }),
+                                            t!("session_disconnected", "reason" = reason)
+                                                .to_string(),
                                         ),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(rems(0.85))
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(format!("— {}", t!("press_enter_to_reconnect"))),
+                                )
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.retry_disconnected_tab(&tab_id_for_reconnect, cx);
+                                    }),
                                 ),
-                        );
+                        ),
+                    );
                 }
                 let indicator_color = this
                     .tabs

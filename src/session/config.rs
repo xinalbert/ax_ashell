@@ -459,7 +459,11 @@ impl ConfigStore {
     }
 
     pub fn sync_s3_region(&self) -> &str {
-        if self.cache.sync_s3_region.is_empty() { "us-east-1" } else { &self.cache.sync_s3_region }
+        if self.cache.sync_s3_region.is_empty() {
+            "us-east-1"
+        } else {
+            &self.cache.sync_s3_region
+        }
     }
 
     pub fn sync_s3_bucket(&self) -> &str {
@@ -467,7 +471,11 @@ impl ConfigStore {
     }
 
     pub fn sync_s3_object_key(&self) -> &str {
-        if self.cache.sync_s3_object_key.is_empty() { "ashell-sync.json" } else { &self.cache.sync_s3_object_key }
+        if self.cache.sync_s3_object_key.is_empty() {
+            "ashell-sync.json"
+        } else {
+            &self.cache.sync_s3_object_key
+        }
     }
 
     pub fn set_sync_connection(&mut self, endpoint: String, username: String) {
@@ -796,8 +804,14 @@ impl ConfigStore {
     }
 }
 
-pub trait ProxyStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static {}
-impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static> ProxyStream for T {}
+pub trait ProxyStream:
+    tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static
+{
+}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static> ProxyStream
+    for T
+{
+}
 
 use std::sync::OnceLock;
 
@@ -826,7 +840,9 @@ pub async fn connect_proxy(session: &Session) -> Result<Box<dyn ProxyStream>> {
                 session.proxy_user.clone(),
                 session.proxy_password.clone(),
             )
-        } else if config.cache.read_env_proxy && ENV_PROXY.get().and_then(|opt| opt.as_ref()).is_some() {
+        } else if config.cache.read_env_proxy
+            && ENV_PROXY.get().and_then(|opt| opt.as_ref()).is_some()
+        {
             let env_p = ENV_PROXY.get().and_then(|opt| opt.as_ref()).unwrap();
             (
                 env_p.proxy_type.clone(),
@@ -844,10 +860,16 @@ pub async fn connect_proxy(session: &Session) -> Result<Box<dyn ProxyStream>> {
                 config.cache.global_proxy_password.clone(),
             )
         } else {
-            ("none".to_string(), String::new(), None, String::new(), String::new())
+            (
+                "none".to_string(),
+                String::new(),
+                None,
+                String::new(),
+                String::new(),
+            )
         }
     };
-    
+
     if proxy_type != "none" && (proxy_host.is_empty() || proxy_port.is_none()) {
         let addr = format!("{}:{}", target_host, target_port);
         let stream = tokio::net::TcpStream::connect(&addr).await?;
@@ -930,7 +952,9 @@ pub fn active_proxy(session: &Session) -> Option<(String, String, Option<u16>)> 
                 session.proxy_user.clone(),
                 session.proxy_password.clone(),
             )
-        } else if config.cache.read_env_proxy && ENV_PROXY.get().and_then(|opt| opt.as_ref()).is_some() {
+        } else if config.cache.read_env_proxy
+            && ENV_PROXY.get().and_then(|opt| opt.as_ref()).is_some()
+        {
             let env_p = ENV_PROXY.get().and_then(|opt| opt.as_ref()).unwrap();
             (
                 env_p.proxy_type.clone(),
@@ -948,10 +972,16 @@ pub fn active_proxy(session: &Session) -> Option<(String, String, Option<u16>)> 
                 config.cache.global_proxy_password.clone(),
             )
         } else {
-            ("none".to_string(), String::new(), None, String::new(), String::new())
+            (
+                "none".to_string(),
+                String::new(),
+                None,
+                String::new(),
+                String::new(),
+            )
         }
     };
-    
+
     if proxy_type != "none" && !proxy_host.is_empty() && proxy_port.is_some() {
         Some((proxy_type, proxy_host, proxy_port))
     } else {

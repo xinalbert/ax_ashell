@@ -164,7 +164,10 @@ impl Ashell {
                                     .child(Input::new(&passphrase_input).mask_toggle().tab_index(6))
                                 })
                                 .child(
-                                    div().text_sm().font_weight(FontWeight::BOLD).child(t!("proxy").to_string())
+                                    div()
+                                        .text_sm()
+                                        .font_weight(FontWeight::BOLD)
+                                        .child(t!("proxy").to_string()),
                                 )
                                 .child(
                                     h_flex()
@@ -172,49 +175,64 @@ impl Ashell {
                                         .child(
                                             Button::new("proxy-none")
                                                 .label(t!("proxy_none").to_string())
-                                                .when(proxy_type == "none", |button| button.primary())
+                                                .when(proxy_type == "none", |button| {
+                                                    button.primary()
+                                                })
                                                 .on_click(window.listener_for(
                                                     &view,
                                                     |this, _, _, cx| {
-                                                        this.set_ssh_proxy_type("none".to_string(), cx)
+                                                        this.set_ssh_proxy_type(
+                                                            "none".to_string(),
+                                                            cx,
+                                                        )
                                                     },
                                                 )),
                                         )
                                         .child(
                                             Button::new("proxy-socks5")
                                                 .label("SOCKS5")
-                                                .when(proxy_type == "socks5", |button| button.primary())
+                                                .when(proxy_type == "socks5", |button| {
+                                                    button.primary()
+                                                })
                                                 .on_click(window.listener_for(
                                                     &view,
                                                     |this, _, _, cx| {
-                                                        this.set_ssh_proxy_type("socks5".to_string(), cx)
+                                                        this.set_ssh_proxy_type(
+                                                            "socks5".to_string(),
+                                                            cx,
+                                                        )
                                                     },
                                                 )),
                                         )
                                         .child(
                                             Button::new("proxy-http")
                                                 .label("HTTP")
-                                                .when(proxy_type == "http", |button| button.primary())
+                                                .when(proxy_type == "http", |button| {
+                                                    button.primary()
+                                                })
                                                 .on_click(window.listener_for(
                                                     &view,
                                                     |this, _, _, cx| {
-                                                        this.set_ssh_proxy_type("http".to_string(), cx)
+                                                        this.set_ssh_proxy_type(
+                                                            "http".to_string(),
+                                                            cx,
+                                                        )
                                                     },
                                                 )),
-                                        )
+                                        ),
                                 )
                                 .when(show_proxy_fields, |this| {
                                     this.child(
                                         h_flex()
                                             .gap_2()
                                             .child(Input::new(&proxy_host_input).flex_1())
-                                            .child(Input::new(&proxy_port_input).w(px(96.)))
+                                            .child(Input::new(&proxy_port_input).w(px(96.))),
                                     )
                                     .child(
                                         h_flex()
                                             .gap_2()
                                             .child(Input::new(&proxy_user_input).flex_1())
-                                            .child(Input::new(&proxy_password_input).flex_1())
+                                            .child(Input::new(&proxy_password_input).flex_1()),
                                     )
                                 })
                                 .child(
@@ -224,11 +242,14 @@ impl Ashell {
                                         .child(
                                             Button::new("connect-ssh-cancel")
                                                 .label(t!("cancel").to_string())
-                                                .on_click(window.listener_for(&view, |this, _, window, cx| {
-                                                    this.active_dialog = None;
-                                                    window.close_dialog(cx);
-                                                    cx.notify();
-                                                })),
+                                                .on_click(window.listener_for(
+                                                    &view,
+                                                    |this, _, window, cx| {
+                                                        this.active_dialog = None;
+                                                        window.close_dialog(cx);
+                                                        cx.notify();
+                                                    },
+                                                )),
                                         )
                                         .child(
                                             Button::new("connect-ssh-confirm")
@@ -527,401 +548,409 @@ impl Ashell {
                     }
                 })
                 .content({
-                let view = view.clone();
-                move |content, window, cx| {
-                    let can_clear = view.read(cx).transfers.iter().any(|t| {
-                        !matches!(
-                            t.state,
-                            crate::terminal::TransferState::Running
-                                | crate::terminal::TransferState::Paused
-                        )
-                    });
+                    let view = view.clone();
+                    move |content, window, cx| {
+                        let can_clear = view.read(cx).transfers.iter().any(|t| {
+                            !matches!(
+                                t.state,
+                                crate::terminal::TransferState::Running
+                                    | crate::terminal::TransferState::Paused
+                            )
+                        });
 
-                    let clear_btn = if can_clear {
-                        Some(
-                            Button::new("clear_transfers_btn")
-                                .small()
-                                .ghost()
-                                .icon(IconName::Delete)
-                                .label(t!("clear_transfers").to_string())
-                                .on_click(window.listener_for(&view, |this, _, _, cx| {
-                                    this.transfers.retain(|t| {
-                                        matches!(
-                                            t.state,
-                                            crate::terminal::TransferState::Running
-                                                | crate::terminal::TransferState::Paused
-                                        )
-                                    });
-                                    this.config.set_transfers(this.transfers.clone());
-                                    cx.notify();
-                                })),
-                        )
-                    } else {
-                        None
-                    };
-
-                    let header = h_flex()
-                        .w_full()
-                        .justify_between()
-                        .items_center()
-                        .child(
-                            h_flex()
-                                .items_baseline()
-                                .child(
-                                    div()
-                                        .text_lg()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child(t!("transfers").to_string()),
-                                )
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .ml_2()
-                                        .child(t!("transfers_limit").to_string()),
-                                ),
-                        )
-                        .child(
-                            h_flex().gap_2().children(clear_btn).child(
-                                Button::new("close_dialog")
+                        let clear_btn = if can_clear {
+                            Some(
+                                Button::new("clear_transfers_btn")
                                     .small()
                                     .ghost()
-                                    .icon(IconName::Close)
-                                    .on_click(window.listener_for(&view, |this, _, window, cx| {
-                                        this.active_dialog = None;
-                                        window.close_dialog(cx);
+                                    .icon(IconName::Delete)
+                                    .label(t!("clear_transfers").to_string())
+                                    .on_click(window.listener_for(&view, |this, _, _, cx| {
+                                        this.transfers.retain(|t| {
+                                            matches!(
+                                                t.state,
+                                                crate::terminal::TransferState::Running
+                                                    | crate::terminal::TransferState::Paused
+                                            )
+                                        });
+                                        this.config.set_transfers(this.transfers.clone());
                                         cx.notify();
                                     })),
-                            ),
-                        );
-
-                    let mut transfers = view.read(cx).transfers.clone();
-                    transfers.sort_by_key(|t| match t.state {
-                        crate::terminal::TransferState::Running
-                        | crate::terminal::TransferState::Paused => 0,
-                        _ => 1,
-                    });
-
-                    if transfers.is_empty() {
-                        return content.child(
-                            v_flex().gap_2().child(header).child(
-                                div()
-                                    .p_4()
-                                    .text_center()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(t!("no_transfers_yet").to_string()),
-                            ),
-                        );
-                    }
-                    let list = v_flex().gap_2().children(transfers.into_iter().map(|t| {
-                        let (icon, _color) = match t.info.kind {
-                            crate::terminal::TransferType::Upload => {
-                                (IconName::ArrowUp, cx.theme().primary)
-                            }
-                            crate::terminal::TransferType::Download => {
-                                (IconName::ArrowDown, cx.theme().success)
-                            }
+                            )
+                        } else {
+                            None
                         };
 
-                        let (status_text, actions) = match t.state {
-                            crate::terminal::TransferState::Running => {
-                                let percent = t
-                                    .total
-                                    .map(|tot| {
-                                        (t.transferred as f64 / tot as f64 * 100.0)
-                                            .clamp(0.0, 100.0)
-                                    })
-                                    .unwrap_or(0.0);
-                                let txt = if let Some(tot) = t.total {
-                                    format!(
-                                        "{:.1}% ({}/{})",
-                                        percent,
-                                        format_bytes(t.transferred),
-                                        format_bytes(tot)
+                        let header = h_flex()
+                            .w_full()
+                            .justify_between()
+                            .items_center()
+                            .child(
+                                h_flex()
+                                    .items_baseline()
+                                    .child(
+                                        div()
+                                            .text_lg()
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .child(t!("transfers").to_string()),
                                     )
-                                } else {
-                                    match t.info.kind {
-                                        crate::terminal::TransferType::Upload => {
-                                            format!("{}...", t!("uploading"))
-                                        }
-                                        crate::terminal::TransferType::Download => {
-                                            format!("{}...", t!("downloading"))
-                                        }
-                                    }
-                                };
-                                let btn_pause =
-                                    Button::new(SharedString::from(format!("pause-{}", t.info.id)))
-                                        .ghost()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .ml_2()
+                                            .child(t!("transfers_limit").to_string()),
+                                    ),
+                            )
+                            .child(
+                                h_flex().gap_2().children(clear_btn).child(
+                                    Button::new("close_dialog")
                                         .small()
-                                        .icon(IconName::Pause)
-                                        .on_click(window.listener_for(&view, {
-                                            let id = t.info.id.clone();
-                                            move |this, _, _, _| {
-                                                if let Some(handle) = this.active_sftp_handle() {
-                                                    handle.pause_transfer(id.clone());
-                                                }
+                                        .ghost()
+                                        .icon(IconName::Close)
+                                        .on_click(window.listener_for(
+                                            &view,
+                                            |this, _, window, cx| {
+                                                this.active_dialog = None;
+                                                window.close_dialog(cx);
+                                                cx.notify();
+                                            },
+                                        )),
+                                ),
+                            );
+
+                        let mut transfers = view.read(cx).transfers.clone();
+                        transfers.sort_by_key(|t| match t.state {
+                            crate::terminal::TransferState::Running
+                            | crate::terminal::TransferState::Paused => 0,
+                            _ => 1,
+                        });
+
+                        if transfers.is_empty() {
+                            return content.child(
+                                v_flex().gap_2().child(header).child(
+                                    div()
+                                        .p_4()
+                                        .text_center()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(t!("no_transfers_yet").to_string()),
+                                ),
+                            );
+                        }
+                        let list = v_flex().gap_2().children(transfers.into_iter().map(|t| {
+                            let (icon, _color) = match t.info.kind {
+                                crate::terminal::TransferType::Upload => {
+                                    (IconName::ArrowUp, cx.theme().primary)
+                                }
+                                crate::terminal::TransferType::Download => {
+                                    (IconName::ArrowDown, cx.theme().success)
+                                }
+                            };
+
+                            let (status_text, actions) = match t.state {
+                                crate::terminal::TransferState::Running => {
+                                    let percent = t
+                                        .total
+                                        .map(|tot| {
+                                            (t.transferred as f64 / tot as f64 * 100.0)
+                                                .clamp(0.0, 100.0)
+                                        })
+                                        .unwrap_or(0.0);
+                                    let txt = if let Some(tot) = t.total {
+                                        format!(
+                                            "{:.1}% ({}/{})",
+                                            percent,
+                                            format_bytes(t.transferred),
+                                            format_bytes(tot)
+                                        )
+                                    } else {
+                                        match t.info.kind {
+                                            crate::terminal::TransferType::Upload => {
+                                                format!("{}...", t!("uploading"))
                                             }
-                                        }));
-                                let btn_cancel = Button::new(SharedString::from(format!(
-                                    "cancel-{}",
-                                    t.info.id
-                                )))
-                                .ghost()
-                                .small()
-                                .icon(IconName::Close)
-                                .on_click(window.listener_for(&view, {
-                                    let id = t.info.id.clone();
-                                    move |this, _, _, _| {
-                                        if let Some(handle) = this.active_sftp_handle() {
-                                            handle.cancel_transfer(id.clone());
+                                            crate::terminal::TransferType::Download => {
+                                                format!("{}...", t!("downloading"))
+                                            }
                                         }
-                                    }
-                                }));
-                                (txt, h_flex().gap_1().child(btn_pause).child(btn_cancel))
-                            }
-                            crate::terminal::TransferState::Paused => {
-                                let txt = t!("paused").to_string();
-                                let btn_resume = Button::new(SharedString::from(format!(
-                                    "resume-{}",
-                                    t.info.id
-                                )))
-                                .ghost()
-                                .small()
-                                .icon(IconName::Play)
-                                .on_click(window.listener_for(&view, {
-                                    let id = t.info.id.clone();
-                                    move |this, _, _, _| {
-                                        if let Some(handle) = this.active_sftp_handle() {
-                                            handle.resume_transfer(id.clone());
-                                        }
-                                    }
-                                }));
-                                let btn_cancel = Button::new(SharedString::from(format!(
-                                    "cancel-{}",
-                                    t.info.id
-                                )))
-                                .ghost()
-                                .small()
-                                .icon(IconName::Close)
-                                .on_click(window.listener_for(&view, {
-                                    let id = t.info.id.clone();
-                                    move |this, _, _, _| {
-                                        if let Some(handle) = this.active_sftp_handle() {
-                                            handle.cancel_transfer(id.clone());
-                                        }
-                                    }
-                                }));
-                                (txt, h_flex().gap_1().child(btn_resume).child(btn_cancel))
-                            }
-                            crate::terminal::TransferState::Interrupted(ref reason) => {
-                                let txt = format!("{}: {}", t!("interrupted"), reason);
-                                let btn_remove = Button::new(SharedString::from(format!(
-                                    "remove-{}",
-                                    t.info.id
-                                )))
-                                .ghost()
-                                .small()
-                                .icon(IconName::Close)
-                                .on_click(window.listener_for(&view, {
-                                    let id = t.info.id.clone();
-                                    move |this, _, _, cx| {
-                                        this.remove_transfer(&id, cx);
-                                    }
-                                }));
-                                (txt, h_flex().gap_1().child(btn_remove))
-                            }
-                            crate::terminal::TransferState::Completed => {
-                                let txt = t!("completed").to_string();
-                                let mut actions = h_flex().gap_1();
-                                if matches!(t.info.kind, crate::terminal::TransferType::Download) {
-                                    let btn_folder = Button::new(SharedString::from(format!(
-                                        "folder-{}",
+                                    };
+                                    let btn_pause = Button::new(SharedString::from(format!(
+                                        "pause-{}",
                                         t.info.id
                                     )))
                                     .ghost()
                                     .small()
-                                    .icon(IconName::Folder)
-                                    .on_click({
-                                        let target = t.info.target.clone();
-                                        move |_, _, _| {
-                                            let _ = std::process::Command::new("open")
-                                                .arg(&target)
-                                                .spawn();
+                                    .icon(IconName::Pause)
+                                    .on_click(window.listener_for(&view, {
+                                        let id = t.info.id.clone();
+                                        move |this, _, _, _| {
+                                            if let Some(handle) = this.active_sftp_handle() {
+                                                handle.pause_transfer(id.clone());
+                                            }
                                         }
-                                    });
-                                    actions = actions.child(btn_folder);
+                                    }));
+                                    let btn_cancel = Button::new(SharedString::from(format!(
+                                        "cancel-{}",
+                                        t.info.id
+                                    )))
+                                    .ghost()
+                                    .small()
+                                    .icon(IconName::Close)
+                                    .on_click(window.listener_for(&view, {
+                                        let id = t.info.id.clone();
+                                        move |this, _, _, _| {
+                                            if let Some(handle) = this.active_sftp_handle() {
+                                                handle.cancel_transfer(id.clone());
+                                            }
+                                        }
+                                    }));
+                                    (txt, h_flex().gap_1().child(btn_pause).child(btn_cancel))
                                 }
-                                let btn_remove = Button::new(SharedString::from(format!(
-                                    "remove-{}",
-                                    t.info.id
-                                )))
-                                .ghost()
-                                .small()
-                                .icon(IconName::Close)
-                                .on_click(window.listener_for(&view, {
-                                    let id = t.info.id.clone();
-                                    move |this, _, _, cx| {
-                                        this.remove_transfer(&id, cx);
-                                    }
-                                }));
-                                actions = actions.child(btn_remove);
-                                (txt, actions)
-                            }
-                            crate::terminal::TransferState::Failed(ref err) => {
-                                let txt = format!("{}: {}", t!("failed"), err);
-                                let btn_remove = Button::new(SharedString::from(format!(
-                                    "remove-{}",
-                                    t.info.id
-                                )))
-                                .ghost()
-                                .small()
-                                .icon(IconName::Close)
-                                .on_click(window.listener_for(&view, {
-                                    let id = t.info.id.clone();
-                                    move |this, _, _, cx| {
-                                        this.remove_transfer(&id, cx);
-                                    }
-                                }));
-                                (txt, h_flex().gap_1().child(btn_remove))
-                            }
-                            crate::terminal::TransferState::Zombie(ref reason) => {
-                                let txt = format!("{}: {}", t!("zombie"), reason);
-                                let btn_remove = Button::new(SharedString::from(format!(
-                                    "remove-{}",
-                                    t.info.id
-                                )))
-                                .ghost()
-                                .small()
-                                .icon(IconName::Close)
-                                .on_click(window.listener_for(&view, {
-                                    let id = t.info.id.clone();
-                                    move |this, _, _, cx| {
-                                        this.remove_transfer(&id, cx);
-                                    }
-                                }));
-                                (txt, h_flex().gap_1().child(btn_remove))
-                            }
-                        };
-
-                        let percent = match t.state {
-                            crate::terminal::TransferState::Completed => 100.0,
-                            _ => t
-                                .total
-                                .map(|tot| t.transferred as f64 / tot as f64 * 100.0)
-                                .unwrap_or(0.0),
-                        };
-
-                        v_flex()
-                            .gap_1()
-                            .p_2()
-                            .rounded_md()
-                            .border_1()
-                            .border_color(cx.theme().border)
-                            .bg(cx.theme().muted)
-                            .child(
-                                h_flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        Button::new(SharedString::from(format!(
-                                            "icon-{}",
+                                crate::terminal::TransferState::Paused => {
+                                    let txt = t!("paused").to_string();
+                                    let btn_resume = Button::new(SharedString::from(format!(
+                                        "resume-{}",
+                                        t.info.id
+                                    )))
+                                    .ghost()
+                                    .small()
+                                    .icon(IconName::Play)
+                                    .on_click(window.listener_for(&view, {
+                                        let id = t.info.id.clone();
+                                        move |this, _, _, _| {
+                                            if let Some(handle) = this.active_sftp_handle() {
+                                                handle.resume_transfer(id.clone());
+                                            }
+                                        }
+                                    }));
+                                    let btn_cancel = Button::new(SharedString::from(format!(
+                                        "cancel-{}",
+                                        t.info.id
+                                    )))
+                                    .ghost()
+                                    .small()
+                                    .icon(IconName::Close)
+                                    .on_click(window.listener_for(&view, {
+                                        let id = t.info.id.clone();
+                                        move |this, _, _, _| {
+                                            if let Some(handle) = this.active_sftp_handle() {
+                                                handle.cancel_transfer(id.clone());
+                                            }
+                                        }
+                                    }));
+                                    (txt, h_flex().gap_1().child(btn_resume).child(btn_cancel))
+                                }
+                                crate::terminal::TransferState::Interrupted(ref reason) => {
+                                    let txt = format!("{}: {}", t!("interrupted"), reason);
+                                    let btn_remove = Button::new(SharedString::from(format!(
+                                        "remove-{}",
+                                        t.info.id
+                                    )))
+                                    .ghost()
+                                    .small()
+                                    .icon(IconName::Close)
+                                    .on_click(window.listener_for(&view, {
+                                        let id = t.info.id.clone();
+                                        move |this, _, _, cx| {
+                                            this.remove_transfer(&id, cx);
+                                        }
+                                    }));
+                                    (txt, h_flex().gap_1().child(btn_remove))
+                                }
+                                crate::terminal::TransferState::Completed => {
+                                    let txt = t!("completed").to_string();
+                                    let mut actions = h_flex().gap_1();
+                                    if matches!(
+                                        t.info.kind,
+                                        crate::terminal::TransferType::Download
+                                    ) {
+                                        let btn_folder = Button::new(SharedString::from(format!(
+                                            "folder-{}",
                                             t.info.id
                                         )))
-                                        .icon(icon)
                                         .ghost()
                                         .small()
-                                        .disabled(true),
+                                        .icon(IconName::Folder)
+                                        .on_click({
+                                            let target = t.info.target.clone();
+                                            move |_, _, _| {
+                                                let _ = std::process::Command::new("open")
+                                                    .arg(&target)
+                                                    .spawn();
+                                            }
+                                        });
+                                        actions = actions.child(btn_folder);
+                                    }
+                                    let btn_remove = Button::new(SharedString::from(format!(
+                                        "remove-{}",
+                                        t.info.id
+                                    )))
+                                    .ghost()
+                                    .small()
+                                    .icon(IconName::Close)
+                                    .on_click(window.listener_for(&view, {
+                                        let id = t.info.id.clone();
+                                        move |this, _, _, cx| {
+                                            this.remove_transfer(&id, cx);
+                                        }
+                                    }));
+                                    actions = actions.child(btn_remove);
+                                    (txt, actions)
+                                }
+                                crate::terminal::TransferState::Failed(ref err) => {
+                                    let txt = format!("{}: {}", t!("failed"), err);
+                                    let btn_remove = Button::new(SharedString::from(format!(
+                                        "remove-{}",
+                                        t.info.id
+                                    )))
+                                    .ghost()
+                                    .small()
+                                    .icon(IconName::Close)
+                                    .on_click(window.listener_for(&view, {
+                                        let id = t.info.id.clone();
+                                        move |this, _, _, cx| {
+                                            this.remove_transfer(&id, cx);
+                                        }
+                                    }));
+                                    (txt, h_flex().gap_1().child(btn_remove))
+                                }
+                                crate::terminal::TransferState::Zombie(ref reason) => {
+                                    let txt = format!("{}: {}", t!("zombie"), reason);
+                                    let btn_remove = Button::new(SharedString::from(format!(
+                                        "remove-{}",
+                                        t.info.id
+                                    )))
+                                    .ghost()
+                                    .small()
+                                    .icon(IconName::Close)
+                                    .on_click(window.listener_for(&view, {
+                                        let id = t.info.id.clone();
+                                        move |this, _, _, cx| {
+                                            this.remove_transfer(&id, cx);
+                                        }
+                                    }));
+                                    (txt, h_flex().gap_1().child(btn_remove))
+                                }
+                            };
+
+                            let percent = match t.state {
+                                crate::terminal::TransferState::Completed => 100.0,
+                                _ => t
+                                    .total
+                                    .map(|tot| t.transferred as f64 / tot as f64 * 100.0)
+                                    .unwrap_or(0.0),
+                            };
+
+                            v_flex()
+                                .gap_1()
+                                .p_2()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(cx.theme().border)
+                                .bg(cx.theme().muted)
+                                .child(
+                                    h_flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .child(
+                                            Button::new(SharedString::from(format!(
+                                                "icon-{}",
+                                                t.info.id
+                                            )))
+                                            .icon(icon)
+                                            .ghost()
+                                            .small()
+                                            .disabled(true),
+                                        )
+                                        .child(
+                                            v_flex()
+                                                .flex_1()
+                                                .min_w(px(0.))
+                                                .overflow_hidden()
+                                                .child(
+                                                    div()
+                                                        .text_size(px(12.))
+                                                        .font_weight(FontWeight::SEMIBOLD)
+                                                        .text_color(cx.theme().foreground)
+                                                        .overflow_hidden()
+                                                        .child(t.info.name.clone()),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(px(10.))
+                                                        .text_color(cx.theme().muted_foreground)
+                                                        .overflow_hidden()
+                                                        .child(format!(
+                                                            "{}: {}",
+                                                            t!("session"),
+                                                            t.tab_title
+                                                        )),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(px(11.))
+                                                        .text_color(cx.theme().muted_foreground)
+                                                        .child(status_text.clone()),
+                                                ),
+                                        )
+                                        .child(actions),
+                                )
+                                .when(
+                                    matches!(
+                                        t.state,
+                                        crate::terminal::TransferState::Running
+                                            | crate::terminal::TransferState::Paused
+                                    ),
+                                    |this| {
+                                        this.child(
+                                            Progress::new(format!("progress-{}", t.info.id))
+                                                .with_size(px(4.))
+                                                .value(percent as f32)
+                                                .color(cx.theme().primary)
+                                                .w_full(),
+                                        )
+                                    },
+                                )
+                        }));
+
+                        let scroll_handle = window
+                            .use_keyed_state("transfers-scroll", cx, |_, _| {
+                                gpui::ScrollHandle::default()
+                            })
+                            .read(cx)
+                            .clone();
+
+                        content.child(
+                            v_flex().gap_2().child(header).child(
+                                div()
+                                    .w_full()
+                                    .relative()
+                                    .child(
+                                        div()
+                                            .w_full()
+                                            .max_h(px(400.))
+                                            .flex_col()
+                                            .id("transfers-scroll-view")
+                                            .track_scroll(&scroll_handle)
+                                            .overflow_y_scroll()
+                                            .pr(px(14.))
+                                            .child(list),
                                     )
                                     .child(
-                                        v_flex()
-                                            .flex_1()
-                                            .min_w(px(0.))
-                                            .overflow_hidden()
+                                        div()
+                                            .absolute()
+                                            .top_0()
+                                            .right_0()
+                                            .bottom_0()
+                                            .w(px(16.))
                                             .child(
-                                                div()
-                                                    .text_size(px(12.))
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .text_color(cx.theme().foreground)
-                                                    .overflow_hidden()
-                                                    .child(t.info.name.clone()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(10.))
-                                                    .text_color(cx.theme().muted_foreground)
-                                                    .overflow_hidden()
-                                                    .child(format!(
-                                                        "{}: {}",
-                                                        t!("session"),
-                                                        t.tab_title
-                                                    )),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(11.))
-                                                    .text_color(cx.theme().muted_foreground)
-                                                    .child(status_text.clone()),
+                                                Scrollbar::vertical(&scroll_handle)
+                                                    .scrollbar_show(ScrollbarShow::Always),
                                             ),
-                                    )
-                                    .child(actions),
-                            )
-                            .when(
-                                matches!(
-                                    t.state,
-                                    crate::terminal::TransferState::Running
-                                        | crate::terminal::TransferState::Paused
-                                ),
-                                |this| {
-                                    this.child(
-                                        Progress::new(format!("progress-{}", t.info.id))
-                                            .with_size(px(4.))
-                                            .value(percent as f32)
-                                            .color(cx.theme().primary)
-                                            .w_full(),
-                                    )
-                                },
-                            )
-                    }));
-
-                    let scroll_handle = window
-                        .use_keyed_state("transfers-scroll", cx, |_, _| {
-                            gpui::ScrollHandle::default()
-                        })
-                        .read(cx)
-                        .clone();
-
-                    content.child(
-                        v_flex().gap_2().child(header).child(
-                            div()
-                                .w_full()
-                                .relative()
-                                .child(
-                                    div()
-                                        .w_full()
-                                        .max_h(px(400.))
-                                        .flex_col()
-                                        .id("transfers-scroll-view")
-                                        .track_scroll(&scroll_handle)
-                                        .overflow_y_scroll()
-                                        .pr(px(14.))
-                                        .child(list),
-                                )
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .top_0()
-                                        .right_0()
-                                        .bottom_0()
-                                        .w(px(16.))
-                                        .child(
-                                            Scrollbar::vertical(&scroll_handle)
-                                                .scrollbar_show(ScrollbarShow::Always),
-                                        ),
-                                ),
-                        ),
-                    )
-                }
-            })
+                                    ),
+                            ),
+                        )
+                    }
+                })
         });
     }
     pub(crate) fn show_delete_confirm_dialog(
@@ -2006,11 +2035,11 @@ impl Ashell {
                                                                         let port = port_str.trim().parse::<u16>().ok();
                                                                         let user = this.global_proxy_user_input.read(cx).value().trim().to_string();
                                                                         let password = this.global_proxy_password_input.read(cx).value().to_string();
-                                                                        
+
                                                                         if host.is_empty() || port.is_none() {
                                                                             return;
                                                                         }
-                                                                        
+
                                                                         this.config.set_global_proxy_type(this.global_proxy_type.clone());
                                                                         this.config.set_global_proxy_host(host);
                                                                         this.config.set_global_proxy_port(port);
