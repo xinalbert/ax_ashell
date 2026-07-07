@@ -254,6 +254,22 @@
 - 验证结果：格式化、编译检查、13 个 Rust 测试和 tracking docs 校验均通过；仅保留既有 `block v0.1.6` future-incompat warning
 - 风险/待办：GUI 最终交互效果仍需本机手工确认；折叠态当前未增加组重命名入口，避免窄栏过挤
 
+## 2026-07-07 刷新环境记录到 custom 主题注册化任务
+
+- 目的：在进入 custom theme 从运行时 override 迁移到真实 registry/save 流程前，确认当前项目环境、验证命令和本轮外部依赖边界
+- 改动范围：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查 `Cargo.toml`、`src/app/theme.rs`、`src/app/dialogs.rs`、`src/app/mod.rs`、`src/session/config.rs`、`src/terminal/element.rs` 与 `gpui-component` theme registry/schema；确认主技术栈和依赖版本未变，只将 current 记录切换到 custom theme 注册化任务语境
+- 验证结果：确认本轮不需要联网和外部服务；实施验证命令收敛为 `rustfmt --edition 2024 --config skip_children=true src/app/theme.rs src/app/mod.rs src/app/dialogs.rs src/session/config.rs src/terminal/element.rs src/main.rs`、`cargo check`、`cargo test` 和 tracking docs 校验
+- 风险/待办：GUI 手工验证仍需本机确认；同名 custom theme 保存时需要避免当前会话继续吃旧 registry 缓存
+
+## 2026-07-07 完成 custom 主题注册化任务的本机验证
+
+- 目的：在 custom theme 注册化、可视编辑和 theme list 持久化实现完成后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`src/app/theme.rs`，`src/app/mod.rs`，`src/app/dialogs.rs`，`src/session/config.rs`，`src/terminal/element.rs`，`src/main.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行 `rustfmt --edition 2024 --config skip_children=true src/app/theme.rs src/app/mod.rs src/app/dialogs.rs src/session/config.rs src/terminal/element.rs src/main.rs`、`cargo check`、`cargo test` 与 tracking docs 校验；确认本轮改动只影响本地 theme registry / 配置持久化 / 设置页 UI，不涉及依赖版本、外部服务或联网步骤
+- 验证结果：格式化、编译检查、13 个 Rust 测试和 tracking docs 校验均通过；`General` 页主题下拉现只依赖 registry 列表；`Custom` 页保存链路已能写出真实 theme file 并立即应用当前 draft；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 最终交互效果仍需本机手工确认；当前改名保存行为会保留旧 custom theme 作为历史条目，如后续需要“重命名覆盖”语义需再补清理策略
+
 ## 2026-07-07 完成设置页焦点修复的本机验证
 
 - 目的：修正设置页快捷键录制焦点逻辑导致普通输入框无法输入的问题
