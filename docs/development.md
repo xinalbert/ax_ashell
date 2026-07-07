@@ -42,6 +42,7 @@ cargo run --example dev_reload --
 - 属于重启式开发重载，不是状态保持型 hot reload
 - 默认监听 `src`、`assets`、`locales`、`Cargo.toml`、`Cargo.lock`、`build.rs` 和 `.cargo`
 - 文件变化后会重新构建并重启应用
+- 在 macOS 上会以独立的开发 app bundle 启动，避免和已运行的 release `.app` 共用应用身份或抢错输入焦点
 - `--release` 可切换到 `target/release/ax_ashell`
 
 调试模式下还会额外写日志到：

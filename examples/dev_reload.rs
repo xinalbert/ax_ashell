@@ -26,6 +26,10 @@ const DEFAULT_WATCH_PATHS: &[&str] = &[
     ".cargo",
 ];
 
+const INSTANCE_KIND_ENV: &str = "AX_ASHELL_INSTANCE_KIND";
+const INSTANCE_APP_ID_ENV: &str = "AX_ASHELL_APP_ID";
+const DEV_RELOAD_INSTANCE_KIND: &str = "dev-reload";
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("[dev-reload] {err:#}");
@@ -181,7 +185,9 @@ struct DebugLogs {
     runner: SharedLogFile,
     build_stdout: SharedLogFile,
     build_stderr: SharedLogFile,
+    #[cfg(not(target_os = "macos"))]
     app_stdout: SharedLogFile,
+    #[cfg(not(target_os = "macos"))]
     app_stderr: SharedLogFile,
 }
 
@@ -204,7 +210,9 @@ impl DebugLogs {
             runner: SharedLogFile::create(session_dir.join("dev-reload.log"))?,
             build_stdout: SharedLogFile::create(session_dir.join("cargo-build.stdout.log"))?,
             build_stderr: SharedLogFile::create(session_dir.join("cargo-build.stderr.log"))?,
+            #[cfg(not(target_os = "macos"))]
             app_stdout: SharedLogFile::create(session_dir.join("ax_ashell.stdout.log"))?,
+            #[cfg(not(target_os = "macos"))]
             app_stderr: SharedLogFile::create(session_dir.join("ax_ashell.stderr.log"))?,
         };
         logs.runner.write_line(format!(
@@ -363,40 +371,75 @@ impl DevReload {
 
     fn start_app(&mut self) -> Result<()> {
         let executable = self.binary_path();
-        let mut command = Command::new(&executable);
-        command.current_dir(&self.root);
-        command.args(&self.config.app_args);
-        command.stdin(Stdio::inherit());
-        if self.logs.is_some() {
-            command.stdout(Stdio::piped());
-            command.stderr(Stdio::piped());
-        } else {
+        #[cfg(target_os = "macos")]
+        {
+            let bundle = prepare_macos_app_bundle(&self.root, &executable, self.profile_name())?;
+            let mut command = Command::new("open");
+            command.current_dir(&self.root);
+            command.arg("-n");
+            command.arg("-a").arg(&bundle.bundle_dir);
+            if !self.config.app_args.is_empty() {
+                command.arg("--args");
+                command.args(&self.config.app_args);
+            }
+            command.stdin(Stdio::null());
             command.stdout(Stdio::inherit());
             command.stderr(Stdio::inherit());
+            self.log_runner(format!("[dev-reload] launch command: {command:?}"));
+
+            let child = command
+                .spawn()
+                .with_context(|| format!("start {}", bundle.bundle_dir.display()))?;
+            self.log_runner(format!(
+                "[dev-reload] started {}",
+                bundle.bundle_dir.display()
+            ));
+            self.child = Some(child);
+            return Ok(());
         }
 
-        let mut child = command
-            .spawn()
-            .with_context(|| format!("start {}", executable.display()))?;
-        if let Some(logs) = &self.logs {
-            let stdout = child.stdout.take();
-            let stderr = child.stderr.take();
-            spawn_stream_tee(
-                stdout,
-                io::stdout(),
-                logs.app_stdout.clone(),
-                "ax_ashell:stdout",
+        #[cfg(not(target_os = "macos"))]
+        {
+            let mut command = Command::new(&executable);
+            command.current_dir(&self.root);
+            command.args(&self.config.app_args);
+            command.env(INSTANCE_KIND_ENV, DEV_RELOAD_INSTANCE_KIND);
+            command.env(
+                INSTANCE_APP_ID_ENV,
+                format!("dev.ax_ashell.dev_reload.{}", self.profile_name()),
             );
-            spawn_stream_tee(
-                stderr,
-                io::stderr(),
-                logs.app_stderr.clone(),
-                "ax_ashell:stderr",
-            );
+            command.stdin(Stdio::inherit());
+            if self.logs.is_some() {
+                command.stdout(Stdio::piped());
+                command.stderr(Stdio::piped());
+            } else {
+                command.stdout(Stdio::inherit());
+                command.stderr(Stdio::inherit());
+            }
+
+            let mut child = command
+                .spawn()
+                .with_context(|| format!("start {}", executable.display()))?;
+            if let Some(logs) = &self.logs {
+                let stdout = child.stdout.take();
+                let stderr = child.stderr.take();
+                spawn_stream_tee(
+                    stdout,
+                    io::stdout(),
+                    logs.app_stdout.clone(),
+                    "ax_ashell:stdout",
+                );
+                spawn_stream_tee(
+                    stderr,
+                    io::stderr(),
+                    logs.app_stderr.clone(),
+                    "ax_ashell:stderr",
+                );
+            }
+            self.log_runner(format!("[dev-reload] started {}", executable.display()));
+            self.child = Some(child);
+            Ok(())
         }
-        self.log_runner(format!("[dev-reload] started {}", executable.display()));
-        self.child = Some(child);
-        Ok(())
     }
 
     fn stop_child(&mut self) -> Result<()> {
@@ -404,15 +447,37 @@ impl DevReload {
             return Ok(());
         };
 
-        if child.try_wait().context("poll child process")?.is_some() {
+        #[cfg(target_os = "macos")]
+        {
+            let executable = self.binary_path();
+            let bundle = macos_bundle_paths(&executable, self.profile_name())?;
+            let _ = child.try_wait();
+            let _ = quit_macos_bundle_app(&bundle);
+            for _ in 0..30 {
+                if !bundle_process_is_running(&bundle)? {
+                    self.log_runner("[dev-reload] stopped running app");
+                    return Ok(());
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            let _ = force_kill_macos_bundle_app(&bundle);
+            let _ = child.kill();
+            let _ = child.wait();
+            self.log_runner("[dev-reload] stopped running app");
             return Ok(());
         }
 
-        // Stop first, then rebuild, to avoid executable replacement issues on Windows.
-        child.kill().context("stop running app")?;
-        let _ = child.wait();
-        self.log_runner("[dev-reload] stopped running app");
-        Ok(())
+        #[cfg(not(target_os = "macos"))]
+        {
+            if child.try_wait().context("poll child process")?.is_some() {
+                return Ok(());
+            }
+            // Stop first, then rebuild, to avoid executable replacement issues on Windows.
+            child.kill().context("stop running app")?;
+            let _ = child.wait();
+            self.log_runner("[dev-reload] stopped running app");
+            Ok(())
+        }
     }
 
     fn binary_path(&self) -> PathBuf {
@@ -432,6 +497,14 @@ impl DevReload {
             .join(format!("ax_ashell{}", env::consts::EXE_SUFFIX))
     }
 
+    fn profile_name(&self) -> &'static str {
+        if self.config.release {
+            "release"
+        } else {
+            "debug"
+        }
+    }
+
     fn log_runner(&self, message: impl AsRef<str>) {
         let message = message.as_ref();
         eprintln!("{message}");
@@ -439,6 +512,199 @@ impl DevReload {
             let _ = logs.runner.write_line(message);
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+struct MacOsBundlePaths {
+    bundle_dir: PathBuf,
+    bundled_executable: PathBuf,
+    bundle_id: String,
+}
+
+#[cfg(target_os = "macos")]
+fn macos_bundle_paths(executable: &Path, profile: &str) -> Result<MacOsBundlePaths> {
+    let executable_name = executable
+        .file_name()
+        .context("resolve executable file name")?;
+    let executable_dir = executable
+        .parent()
+        .context("resolve executable directory")?;
+    let bundle_dir = executable_dir.join("ax_ashell-dev.app");
+    let bundled_executable = bundle_dir
+        .join("Contents")
+        .join("MacOS")
+        .join(executable_name);
+    Ok(MacOsBundlePaths {
+        bundle_dir,
+        bundled_executable,
+        bundle_id: format!("dev.ax_ashell.dev_reload.{profile}"),
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_macos_app_bundle(
+    root: &Path,
+    executable: &Path,
+    profile: &str,
+) -> Result<MacOsBundlePaths> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let bundle = macos_bundle_paths(executable, profile)?;
+    let bundle_dir = bundle.bundle_dir.clone();
+    let contents_dir = bundle_dir.join("Contents");
+    let macos_dir = contents_dir.join("MacOS");
+    let resources_dir = contents_dir.join("Resources");
+    let bundled_executable = bundle.bundled_executable.clone();
+
+    fs::create_dir_all(&macos_dir)
+        .with_context(|| format!("create macOS bundle directory {}", macos_dir.display()))?;
+    fs::create_dir_all(&resources_dir).with_context(|| {
+        format!(
+            "create macOS resources directory {}",
+            resources_dir.display()
+        )
+    })?;
+
+    fs::copy(executable, &bundled_executable).with_context(|| {
+        format!(
+            "copy executable into dev bundle {}",
+            bundled_executable.display()
+        )
+    })?;
+
+    let permissions = fs::metadata(executable)
+        .with_context(|| format!("read metadata for {}", executable.display()))?
+        .permissions();
+    fs::set_permissions(&bundled_executable, permissions).with_context(|| {
+        format!(
+            "set executable permissions for bundled binary {}",
+            bundled_executable.display()
+        )
+    })?;
+
+    let icon_source = root.join("assets/icons/terminal_icon_all_formats/terminal_icon.icns");
+    let icon_target = resources_dir.join("ax_ashell.icns");
+    if icon_source.exists() {
+        fs::copy(&icon_source, &icon_target)
+            .with_context(|| format!("copy icon into dev bundle {}", icon_target.display()))?;
+    }
+
+    let bundle_display_name = format!("ax_ashell dev ({profile})");
+    let info_plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>{bundle_display_name}</string>
+  <key>CFBundleExecutable</key>
+  <string>ax_ashell</string>
+  <key>CFBundleIconFile</key>
+  <string>ax_ashell.icns</string>
+  <key>CFBundleIdentifier</key>
+  <string>{bundle_id}</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>{bundle_display_name}</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSEnvironment</key>
+  <dict>
+    <key>{INSTANCE_KIND_ENV}</key>
+    <string>{DEV_RELOAD_INSTANCE_KIND}</string>
+    <key>{INSTANCE_APP_ID_ENV}</key>
+    <string>{bundle_id}</string>
+  </dict>
+  <key>LSMinimumSystemVersion</key>
+  <string>12.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
+"#,
+        bundle_id = bundle.bundle_id,
+    );
+    fs::write(contents_dir.join("Info.plist"), info_plist).with_context(|| {
+        format!(
+            "write dev bundle Info.plist {}",
+            contents_dir.join("Info.plist").display()
+        )
+    })?;
+    fs::write(contents_dir.join("PkgInfo"), b"APPL????").with_context(|| {
+        format!(
+            "write dev bundle PkgInfo {}",
+            contents_dir.join("PkgInfo").display()
+        )
+    })?;
+
+    let mut bundled_permissions = fs::metadata(&bundled_executable)
+        .with_context(|| format!("read bundled metadata {}", bundled_executable.display()))?
+        .permissions();
+    bundled_permissions.set_mode(0o755);
+    fs::set_permissions(&bundled_executable, bundled_permissions).with_context(|| {
+        format!(
+            "ensure bundled executable bit for {}",
+            bundled_executable.display()
+        )
+    })?;
+
+    Ok(bundle)
+}
+
+#[cfg(target_os = "macos")]
+fn quit_macos_bundle_app(bundle: &MacOsBundlePaths) -> Result<()> {
+    let status = Command::new("osascript")
+        .arg("-e")
+        .arg(format!(
+            r#"tell application id "{}" to quit"#,
+            bundle.bundle_id
+        ))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("quit macOS bundle app")?;
+    if status.success() {
+        Ok(())
+    } else {
+        bail!("osascript quit failed with status {status}");
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn force_kill_macos_bundle_app(bundle: &MacOsBundlePaths) -> Result<()> {
+    let status = Command::new("pkill")
+        .arg("-f")
+        .arg(&bundle.bundled_executable)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("force kill macOS bundle app")?;
+    if status.success() || matches!(status.code(), Some(1)) {
+        Ok(())
+    } else {
+        bail!("pkill failed with status {status}");
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn bundle_process_is_running(bundle: &MacOsBundlePaths) -> Result<bool> {
+    let status = Command::new("pgrep")
+        .arg("-f")
+        .arg(&bundle.bundled_executable)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("check macOS bundle app process")?;
+    Ok(status.success())
 }
 
 fn summarize_events(events: &[Event]) -> String {

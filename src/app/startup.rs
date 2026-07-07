@@ -5,6 +5,42 @@ use gpui_component::Root;
 use crate::AxAshell;
 use crate::session::config::ConfigStore;
 
+const INSTANCE_KIND_ENV: &str = "AX_ASHELL_INSTANCE_KIND";
+const INSTANCE_APP_ID_ENV: &str = "AX_ASHELL_APP_ID";
+const DEV_RELOAD_INSTANCE_KIND: &str = "dev-reload";
+
+fn current_instance_kind() -> Option<String> {
+    std::env::var(INSTANCE_KIND_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn current_window_title() -> &'static str {
+    if matches!(
+        current_instance_kind().as_deref(),
+        Some(DEV_RELOAD_INSTANCE_KIND)
+    ) {
+        "ax_ashell [dev]"
+    } else {
+        "ax_ashell"
+    }
+}
+
+fn current_window_app_id() -> Option<String> {
+    std::env::var(INSTANCE_APP_ID_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn should_force_app_activation() -> bool {
+    matches!(
+        current_instance_kind().as_deref(),
+        Some(DEV_RELOAD_INSTANCE_KIND)
+    )
+}
+
 pub(crate) fn bind_workspace_keys(cx: &mut gpui::App) {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
     crate::app::keybinding_recorder::bind_workspace_keys_from_config(cx, &config);
@@ -306,6 +342,7 @@ pub(crate) fn open_main_window(cx: &mut App) {
     });
 
     let mut window_options = WindowOptions::default();
+    window_options.app_id = current_window_app_id();
 
     if title_bar_style == crate::session::config::TitleBarStyle::Integrated {
         window_options.titlebar = Some(gpui::TitlebarOptions {
@@ -377,14 +414,21 @@ pub(crate) fn open_main_window(cx: &mut App) {
     }
 
     cx.open_window(window_options, |window, cx| {
-        window.activate_window();
-        window.set_window_title("ax_ashell");
+        window.set_window_title(current_window_title());
         gpui_component::Theme::sync_system_appearance(Some(window), cx);
         let view = cx.new(|cx| AxAshell::new(window, cx));
 
         tracing::info!("[ui] main application window opened");
         let focus_handle = view.read(cx).focus_handle.clone();
-        window.focus(&focus_handle, cx);
+        let deferred_focus_handle = focus_handle.clone();
+        let should_activate = should_force_app_activation();
+        window.defer(cx, move |window, cx| {
+            if should_activate {
+                cx.activate(true);
+            }
+            window.activate_window();
+            window.focus(&deferred_focus_handle, cx);
+        });
 
         let view_clone = view.clone();
         window.on_window_should_close(cx, move |window: &mut gpui::Window, cx: &mut gpui::App| {
