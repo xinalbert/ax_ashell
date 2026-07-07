@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：继续收紧终端关键词高亮的匹配语义，将当前子串命中改为边界感知的完整 token 匹配，减少 `OK`、`UP`、`ERR`、`READ` 这类短词误报
-- 交付物：边界感知的关键词 matcher、覆盖完整命中与误报回归场景的最小测试、更新后的实施跟踪记录
+- 目标：补齐收起侧边栏的 SAVED 分组视图，让折叠态也先显示组并支持点击展开组内 SSH
+- 交付物：收起态分组渲染、折叠栏组展开交互、必要的文档修订与跟踪记录
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/terminal/element.rs`，`src/terminal/highlight.rs`，`src/terminal/mod.rs`，`src/app/search.rs`，`src/session/config.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
-- 不在本轮范围内：关键词词表本身、搜索算法、主题配色、终端后端协议、GUI 手工联调之外的跨平台行为调整
+- 当前范围：`src/app/ui.rs`，`src/session/mod.rs`，`docs/user-guide.md`，`docs/user-guide.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 不在本轮范围内：会话模型字段、同步协议的加密/传输机制、SFTP 面板、会话选择器分组化、跨设备历史迁移工具和 GUI 手工截图验证
 
 ## 当前状态
 
@@ -22,37 +22,37 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 刷新当前任务的跟踪文档、边界和实现计划 | 源码检查，tracking docs 内容检查 | 本轮主改动点从 `src/terminal/element.rs` 切到 `src/terminal/highlight.rs` |
-| P2 | completed | 将关键词匹配从子串命中改为边界感知完整 token 匹配 | `cargo test keyword_highlight`，`cargo check` | `_` 已按 token 内字符处理，不再命中标识符内部 |
-| P3 | completed | 为完整命中、标识符内部、短词误报和多词短语补最小测试 | `cargo test keyword_highlight` | HTTP code / IP / URL / port 的专用 matcher 保持不变 |
-| P4 | completed | 完成格式化、编译和 tracking docs 校验并回写结果 | `rustfmt`，`cargo check`，tracking docs 校验 | 本地验证与 tracking docs 校验已完成，未单独做 GUI 手工联调 |
+| P1 | completed | 读取现有 tracking docs、环境记录和折叠侧栏实现，确认本轮修订边界 | `docs/` contract 自检，源码走查 | 已确认问题只在 `render_collapsed_sidebar` |
+| P2 | completed | 让折叠侧栏改为先显示组并复用现有 `expanded_saved_groups` 展开组内会话 | `cargo check` | 已消除“展开态分组、折叠态平铺”的双轨行为 |
+| P3 | completed | 同步更新用户文档、格式化、编译和 tracking docs 校验 | `rustfmt`，`cargo check`，`cargo test`，tracking docs 校验 | GUI 手工验证仍不在本轮自动执行 |
 
 ## 已完成
 
-- 复查 `src/terminal/highlight.rs`、`src/terminal/mod.rs`、`src/terminal/element.rs`、`src/app/search.rs` 与 `src/session/config.rs`，确认当前关键词高亮是在渲染末端无条件覆盖前景色
-- 确认搜索高亮在 `src/terminal/element.rs` 中晚于关键词高亮合并，因此默认具备更高优先级
-- 确认 `alacritty_terminal::term::cell::Cell` 的默认前景/背景分别为 `NamedColor::Foreground` / `NamedColor::Background`，可直接用于“原生颜色是否已存在”的判定
-- 修改 `src/terminal/element.rs`，将搜索高亮和关键词高亮拆分为两条覆盖路径：搜索高亮仍最高优先，关键词高亮仅对可见前景/背景仍为默认色的 cell 生效
-- 新增 `keyword_highlight_allowed` 及对应单元测试，覆盖默认 cell、显式前景色、显式背景色和 `INVERSE` 反色四类场景
-- 复核 `src/terminal/highlight.rs` 当前 `highlight_keywords()`，确认它仍是大小写无关的裸子串匹配，是本轮误报的直接来源
-- 修改 `src/terminal/highlight.rs`，为关键词匹配补充 token 边界判定；当前默认将 `_` 视为 token 内字符，避免命中 `my_ERROR`、`ERRNO`、`upstream` 这类标识符或单词内部
-- 新增 `src/terminal/highlight.rs` 的 4 个 matcher 回归测试，覆盖独立 token、标识符内部、短词边界和多词短语四类场景
+- 复查 `src/session/config.rs`、`src/session/mod.rs`、`src/app/dialogs.rs`、`src/app/ui.rs`、`src/app/config_sync.rs` 和 `src/sync/mod.rs`，确认当前 saved session 仍是平铺 `sessions`，同步 payload 也直接复用 `Session`
+- 收敛实现路径为“给 `Session` 直接增加 `group_name` 字段”，避免另建顶层 `groups[]` 与额外同步替换逻辑
+- 确认当前项目已有可复用的 dropdown menu 模式，适合给 SSH 表单加载已有组名
+- 已完成上一轮 SAVED 展开态分组、SSH 表单组选项和组重命名能力
+- 已确认本轮新增诉求只针对折叠侧栏 `render_collapsed_sidebar`，无需再改 `Session` 模型和同步载荷
+- 已修改 `src/app/ui.rs`，让折叠侧栏也先显示组卡片，并复用现有 `expanded_saved_groups` 点击展开组内 SSH
+- 已为折叠态组卡片补上文件夹图标、组名缩写和 tooltip；组内会话继续保留点击连接、tooltip 和右键菜单
+- 已更新 `docs/user-guide.md`、`docs/user-guide.en.md` 与 `docs/project-implementation-tracker/project-map.md`，补充折叠态分组说明
 
 ## 验证
 
-- 已完成：源码链路检查；默认 `Cell` 结构确认；`rustfmt --edition 2024 src/terminal/highlight.rs`；`cargo test keyword_highlight`；`cargo check`；`python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .`
-- 未完成：GUI 手工目视确认未单独执行
+- 已完成：tracking docs 与环境记录复查；折叠侧栏和分组 helper 源码走查；`rustfmt --edition 2024 --config skip_children=true src/app/ui.rs`；`cargo check`；`cargo test`；`python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .`
+- 未完成：GUI 手工验证未单独执行
 
 ## 风险与阻塞
 
-- 本轮“原生高亮”以终端 cell 的可见前景/背景颜色和 `INVERSE` 标志为代理，不额外解析 underline-only 或其他非颜色样式
-- 本轮若把 `_` 视为边界，会重新允许 `my_ERROR` 这类标识符内部命中；当前实现计划相反，先把 `_` 当成 token 内字符以优先降低误报
-- 暂无已知阻塞；若后续用户希望恢复对部分日志风格如 `my_ERROR` 的命中，需要单独引入可配置边界策略
+- 折叠侧栏宽度有限，组头和组内会话都需要依赖缩写和 tooltip 承载信息
+- 当前最稳妥路径是复用现有 `expanded_saved_groups` 状态做窄栏展开，而不是新增第二套折叠态状态机
+- 组重命名入口仍保留在展开态组头，折叠态未额外塞入重命名交互，以避免窄栏过挤
+- 暂无已知阻塞；若用户后续要求会话选择器也按组展示，需要再补 selector 逻辑
 
 ## 下一步
 
-- 如需兼顾 `my_ERROR` 这类日志风格，可后续把 `_` 是否算边界做成可配置策略，或按关键词类别做差异化匹配
+- 如需继续扩展，可下一步补折叠态组重命名入口、会话选择器分组化或组排序能力
 
 ## 最后更新时间
 
-- 2026-07-07 11:42 CST
+- 2026-07-07 12:35 CST

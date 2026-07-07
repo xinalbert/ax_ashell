@@ -10,7 +10,7 @@ pub mod ui;
 
 use std::{
     cell::{Cell, RefCell},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::Range,
     rc::Rc,
     sync::mpsc,
@@ -211,6 +211,7 @@ pub(crate) struct AxAshell {
     pub(crate) selector_focus_handle: FocusHandle,
     pub(crate) host_input: Entity<InputState>,
     pub(crate) session_name_input: Entity<InputState>,
+    pub(crate) session_group_input: Entity<InputState>,
     pub(crate) port_input: Entity<InputState>,
     pub(crate) user_input: Entity<InputState>,
     pub(crate) password_input: Entity<InputState>,
@@ -271,6 +272,7 @@ pub(crate) struct AxAshell {
     pub(crate) tabs_scroll_handle: gpui::ScrollHandle,
     pub(crate) selector_scroll_handle: gpui::ScrollHandle,
     pub(crate) saved_scroll_handle: gpui::ScrollHandle,
+    pub(crate) saved_group_name_input: Entity<InputState>,
     pub(crate) connection_scroll_handle: gpui::ScrollHandle,
     pub(crate) connection_progress: Option<ConnectionProgress>,
     pub(crate) pending_sftp_path_sync: Option<String>,
@@ -301,6 +303,8 @@ pub(crate) struct AxAshell {
     pub(crate) system_sampler: SystemSampler,
     pub(crate) recording_action: Option<String>,
     pub(crate) active_dialog: Option<DialogKind>,
+    pub(crate) renaming_saved_group: Option<String>,
+    pub(crate) expanded_saved_groups: HashSet<String>,
     pub(crate) workspace_page: WorkspacePage,
     pub(crate) settings_page_open: bool,
     /// Error message when a recorded keybinding conflicts with another
@@ -391,6 +395,8 @@ impl AxAshell {
         let host_input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("host")));
         let session_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("name (optional)"));
+        let session_group_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("session_group_optional")));
         let port_input = cx.new(|cx| InputState::new(window, cx).default_value("22"));
         let user_input = cx.new(|cx| InputState::new(window, cx).default_value("root"));
         let password_input = cx.new(|cx| {
@@ -535,10 +541,13 @@ impl AxAshell {
                 .placeholder("1.0")
                 .default_value(format!("{:.2}", config.custom_font_brightness()))
         });
+        let saved_group_name_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("group_name")));
 
         let _subscriptions = vec![
             cx.subscribe_in(&host_input, window, Self::on_input_event),
             cx.subscribe_in(&session_name_input, window, Self::on_input_event),
+            cx.subscribe_in(&session_group_input, window, Self::on_input_event),
             cx.subscribe_in(&port_input, window, Self::on_input_event),
             cx.subscribe_in(&user_input, window, Self::on_input_event),
             cx.subscribe_in(&password_input, window, Self::on_input_event),
@@ -572,6 +581,7 @@ impl AxAshell {
             cx.subscribe_in(&custom_primary_color_input, window, Self::on_input_event),
             cx.subscribe_in(&custom_background_color_input, window, Self::on_input_event),
             cx.subscribe_in(&custom_font_brightness_input, window, Self::on_input_event),
+            cx.subscribe_in(&saved_group_name_input, window, Self::on_input_event),
         ];
 
         let (events_tx, events_rx) = mpsc::channel();
@@ -622,6 +632,7 @@ impl AxAshell {
             selector_focus_handle: cx.focus_handle(),
             host_input,
             session_name_input,
+            session_group_input,
             port_input,
             user_input,
             password_input,
@@ -686,6 +697,7 @@ impl AxAshell {
             tabs_scroll_handle: gpui::ScrollHandle::new(),
             selector_scroll_handle: gpui::ScrollHandle::new(),
             saved_scroll_handle: gpui::ScrollHandle::new(),
+            saved_group_name_input,
             connection_scroll_handle: gpui::ScrollHandle::new(),
             connection_progress: None,
             pending_sftp_path_sync: Some("/".into()),
@@ -725,6 +737,8 @@ impl AxAshell {
             system_sampler,
             recording_action: None,
             active_dialog: None,
+            renaming_saved_group: None,
+            expanded_saved_groups: HashSet::new(),
             workspace_page: WorkspacePage::Terminal,
             settings_page_open: false,
             keybind_error: None,
@@ -858,6 +872,18 @@ impl AxAshell {
                 }
                 window.prevent_default();
                 cx.stop_propagation();
+            }
+        } else if input == &self.saved_group_name_input {
+            match event {
+                InputEvent::PressEnter { .. } => {
+                    self.commit_saved_group_rename(cx);
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+                InputEvent::Blur => {
+                    self.commit_saved_group_rename(cx);
+                }
+                _ => {}
             }
         } else if input == &self.custom_theme_name_input
             || input == &self.custom_primary_color_input

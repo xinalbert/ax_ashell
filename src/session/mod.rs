@@ -1,8 +1,8 @@
 pub mod config;
 
 use gpui::{
-    AppContext as _, Context, Entity, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    SharedString, Window, px,
+    AppContext as _, Context, Entity, Focusable as _, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, SharedString, Window, px,
 };
 use gpui_component::{Theme, WindowExt as _, input::InputState};
 use rust_i18n::t;
@@ -60,6 +60,10 @@ fn mask_session_host(host: &str) -> String {
     mask_session_part(trimmed)
 }
 
+fn normalize_session_group_name(value: &str) -> String {
+    value.trim().to_string()
+}
+
 impl AxAshell {
     pub(crate) fn open_local(&mut self, cx: &mut Context<Self>) {
         let id = Uuid::new_v4().to_string();
@@ -100,6 +104,7 @@ impl AxAshell {
     pub(crate) fn connect_ssh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         tracing::info!("[ui] user initiating new ssh connection from form");
         let session_name = self.session_name_input.read(cx).value().trim().to_string();
+        let group_name = normalize_session_group_name(&self.session_group_input.read(cx).value());
         let host = self.host_input.read(cx).value().trim().to_string();
         let port = self
             .port_input
@@ -154,6 +159,7 @@ impl AxAshell {
             }
         };
         session.name = name;
+        session.group_name = group_name;
         if let Some(id) = existing_id {
             session.id = id;
         }
@@ -195,6 +201,7 @@ impl AxAshell {
         self.editing_session_id = None;
         self.ssh_auth_method = AuthMethod::Password;
         Self::set_input_value(&self.session_name_input, "", window, cx);
+        Self::set_input_value(&self.session_group_input, "", window, cx);
         Self::set_input_value(&self.host_input, "", window, cx);
         Self::set_input_value(&self.port_input, "22", window, cx);
         Self::set_input_value(&self.user_input, "root", window, cx);
@@ -218,6 +225,12 @@ impl AxAshell {
         self.editing_session_id = Some(session.id.clone());
         self.ssh_auth_method = session.auth;
         Self::set_input_value(&self.session_name_input, session.name.clone(), window, cx);
+        Self::set_input_value(
+            &self.session_group_input,
+            session.group_name.clone(),
+            window,
+            cx,
+        );
         Self::set_input_value(&self.host_input, session.host.clone(), window, cx);
         Self::set_input_value(&self.port_input, session.port.to_string(), window, cx);
         Self::set_input_value(&self.user_input, session.user.clone(), window, cx);
@@ -622,6 +635,8 @@ impl AxAshell {
             session.user,
             session.host
         );
+        self.expanded_saved_groups
+            .insert(normalize_session_group_name(&session.group_name));
         let id = Uuid::new_v4().to_string();
         let backend = ssh::spawn_ssh_terminal(
             self.runtime.handle(),
@@ -688,7 +703,22 @@ impl AxAshell {
     }
 
     pub(crate) fn remove_saved_session(&mut self, session_id: String, cx: &mut Context<Self>) {
+        let removed_group_name = self
+            .config
+            .get(&session_id)
+            .map(|session| normalize_session_group_name(&session.group_name))
+            .unwrap_or_default();
         self.config.remove(&session_id);
+        if !removed_group_name.is_empty()
+            && !self.config.sessions().iter().any(|session| {
+                normalize_session_group_name(&session.group_name) == removed_group_name
+            })
+        {
+            self.expanded_saved_groups.remove(&removed_group_name);
+            if self.renaming_saved_group.as_deref() == Some(removed_group_name.as_str()) {
+                self.renaming_saved_group = None;
+            }
+        }
         if let Err(err) = self.config.save() {
             tracing::warn!("failed to save config: {err:#}");
         }
@@ -1110,6 +1140,114 @@ impl AxAshell {
             .and_then(|id| self.tabs.iter().find(|tab| &tab.id == id))
             .and_then(|tab| tab.session.as_ref())
             .map(|session| session.id.as_str())
+    }
+
+    pub(crate) fn saved_session_groups(&self) -> Vec<(String, Vec<Session>)> {
+        let mut groups: Vec<(String, Vec<Session>)> = Vec::new();
+        for session in self.config.sessions().iter().cloned() {
+            let group_name = normalize_session_group_name(&session.group_name);
+            if let Some((_, entries)) = groups
+                .iter_mut()
+                .find(|(existing_group_name, _)| *existing_group_name == group_name)
+            {
+                entries.push(session);
+            } else {
+                groups.push((group_name, vec![session]));
+            }
+        }
+        groups
+    }
+
+    pub(crate) fn saved_group_names(&self) -> Vec<String> {
+        let mut group_names = Vec::new();
+        for session in self.config.sessions() {
+            let group_name = normalize_session_group_name(&session.group_name);
+            if group_name.is_empty() || group_names.iter().any(|name| name == &group_name) {
+                continue;
+            }
+            group_names.push(group_name);
+        }
+        group_names
+    }
+
+    pub(crate) fn display_group_name(group_name: &str) -> String {
+        if group_name.trim().is_empty() {
+            t!("ungrouped_group").to_string()
+        } else {
+            group_name.trim().to_string()
+        }
+    }
+
+    pub(crate) fn toggle_saved_group(&mut self, group_name: String, cx: &mut Context<Self>) {
+        if !self.expanded_saved_groups.insert(group_name.clone()) {
+            self.expanded_saved_groups.remove(&group_name);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn begin_saved_group_rename(
+        &mut self,
+        group_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let group_name = normalize_session_group_name(&group_name);
+        if group_name.is_empty() {
+            return;
+        }
+        self.renaming_saved_group = Some(group_name.clone());
+        self.expanded_saved_groups.insert(group_name.clone());
+        Self::set_input_value(&self.saved_group_name_input, group_name, window, cx);
+        let input = self.saved_group_name_input.clone();
+        window.defer(cx, move |window, cx| {
+            window.focus(&input.read(cx).focus_handle(cx), cx);
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_saved_group_rename(&mut self, cx: &mut Context<Self>) {
+        self.renaming_saved_group = None;
+        cx.notify();
+    }
+
+    pub(crate) fn commit_saved_group_rename(&mut self, cx: &mut Context<Self>) {
+        let Some(old_group_name) = self.renaming_saved_group.clone() else {
+            return;
+        };
+        let new_group_name =
+            normalize_session_group_name(&self.saved_group_name_input.read(cx).value());
+        if new_group_name.is_empty() {
+            self.cancel_saved_group_rename(cx);
+            return;
+        }
+        if new_group_name == old_group_name {
+            self.cancel_saved_group_rename(cx);
+            return;
+        }
+
+        let mut sessions = self.config.sessions().to_vec();
+        let mut changed = false;
+        for session in sessions.iter_mut() {
+            if normalize_session_group_name(&session.group_name) == old_group_name {
+                session.group_name = new_group_name.clone();
+                changed = true;
+            }
+        }
+        if !changed {
+            self.cancel_saved_group_rename(cx);
+            return;
+        }
+
+        self.config.replace_sessions(sessions);
+        if let Err(err) = self.config.save() {
+            tracing::warn!("failed to save config: {err:#}");
+        }
+        self.renaming_saved_group = None;
+        if self.expanded_saved_groups.remove(&old_group_name) {
+            self.expanded_saved_groups.insert(new_group_name);
+        }
+        self.status = t!("group_renamed").into();
+        cx.notify();
     }
 
     pub(crate) fn session_detail(&self, session: &Session) -> String {

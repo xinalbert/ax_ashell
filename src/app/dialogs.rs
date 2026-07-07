@@ -28,6 +28,7 @@ impl AxAshell {
 
         let view = cx.entity();
         let session_name_input = self.session_name_input.clone();
+        let session_group_input = self.session_group_input.clone();
         let host_input = self.host_input.clone();
         let focus_host_input = host_input.clone();
         let port_input = self.port_input.clone();
@@ -58,6 +59,7 @@ impl AxAshell {
                 .content({
                     let view = view.clone();
                     let session_name_input = session_name_input.clone();
+                    let session_group_input = session_group_input.clone();
                     let host_input = host_input.clone();
                     let port_input = port_input.clone();
                     let user_input = user_input.clone();
@@ -74,16 +76,104 @@ impl AxAshell {
                         let is_editing = view.read(cx).editing_session_id.is_some();
                         let proxy_type = view.read(cx).ssh_proxy_type.clone();
                         let show_proxy_fields = proxy_type != "none";
+                        let saved_group_names = view.read(cx).saved_group_names();
+                        let current_group_name =
+                            session_group_input.read(cx).value().trim().to_string();
                         content.child(
                             v_flex()
                                 .gap_3()
                                 .child(Input::new(&session_name_input).tab_index(0))
-                                .child(Input::new(&host_input).tab_index(1))
                                 .child(
                                     h_flex()
                                         .gap_2()
-                                        .child(Input::new(&port_input).w(px(96.)).tab_index(2))
-                                        .child(Input::new(&user_input).flex_1().tab_index(3)),
+                                        .child(
+                                            Input::new(&session_group_input)
+                                                .flex_1()
+                                                .tab_index(1),
+                                        )
+                                        .child(
+                                            Button::new("ssh-group-dropdown")
+                                                .small()
+                                                .icon(IconName::ChevronsUpDown)
+                                                .label(t!("choose_group").to_string())
+                                                .disabled(saved_group_names.is_empty())
+                                                .dropdown_menu_with_anchor(
+                                                    Anchor::BottomRight,
+                                                    {
+                                                        let view = view.clone();
+                                                        let saved_group_names =
+                                                            saved_group_names.clone();
+                                                        let current_group_name =
+                                                            current_group_name.clone();
+                                                        move |mut menu, window, _cx| {
+                                                            menu = menu
+                                                                .min_w(180.)
+                                                                .max_h(px(320.))
+                                                                .scrollable(true)
+                                                                .item(
+                                                                    PopupMenuItem::new(
+                                                                        t!("ungrouped_group")
+                                                                            .to_string(),
+                                                                    )
+                                                                    .checked(
+                                                                        current_group_name
+                                                                            .is_empty(),
+                                                                    )
+                                                                    .on_click(
+                                                                        window.listener_for(
+                                                                            &view,
+                                                                            |this, _, window, cx| {
+                                                                                Self::set_input_value(
+                                                                                    &this.session_group_input,
+                                                                                    "",
+                                                                                    window,
+                                                                                    cx,
+                                                                                );
+                                                                            },
+                                                                        ),
+                                                                    ),
+                                                                );
+                                                            if !saved_group_names.is_empty() {
+                                                                menu = menu.separator();
+                                                            }
+                                                            for group_name in &saved_group_names {
+                                                                let checked =
+                                                                    current_group_name
+                                                                        == *group_name;
+                                                                let group_name =
+                                                                    group_name.clone();
+                                                                menu = menu.item(
+                                                                    PopupMenuItem::new(
+                                                                        group_name.clone(),
+                                                                    )
+                                                                    .checked(checked)
+                                                                    .on_click(
+                                                                        window.listener_for(
+                                                                            &view,
+                                                                            move |this, _, window, cx| {
+                                                                                Self::set_input_value(
+                                                                                    &this.session_group_input,
+                                                                                    group_name.clone(),
+                                                                                    window,
+                                                                                    cx,
+                                                                                );
+                                                                            },
+                                                                        ),
+                                                                    ),
+                                                                );
+                                                            }
+                                                            menu
+                                                        }
+                                                    },
+                                                ),
+                                        ),
+                                )
+                                .child(Input::new(&host_input).tab_index(2))
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .child(Input::new(&port_input).w(px(96.)).tab_index(3))
+                                        .child(Input::new(&user_input).flex_1().tab_index(4)),
                                 )
                                 .child(
                                     h_flex()
@@ -119,7 +209,7 @@ impl AxAshell {
                                 )
                                 .when(is_password, |this| {
                                     this.child(
-                                        Input::new(&password_input).mask_toggle().tab_index(4),
+                                        Input::new(&password_input).mask_toggle().tab_index(5),
                                     )
                                 })
                                 .when(!is_password, |this| {
@@ -140,7 +230,7 @@ impl AxAshell {
                                                         ),
                                                     )
                                                     .child(
-                                                        Input::new(&key_path_input).tab_index(4),
+                                                        Input::new(&key_path_input).tab_index(5),
                                                     ),
                                             )
                                             .child(
@@ -160,8 +250,8 @@ impl AxAshell {
                                                     )),
                                             ),
                                     )
-                                    .child(Input::new(&key_inline_input).h(px(128.)).tab_index(5))
-                                    .child(Input::new(&passphrase_input).mask_toggle().tab_index(6))
+                                    .child(Input::new(&key_inline_input).h(px(128.)).tab_index(6))
+                                    .child(Input::new(&passphrase_input).mask_toggle().tab_index(7))
                                 })
                                 .child(
                                     div()

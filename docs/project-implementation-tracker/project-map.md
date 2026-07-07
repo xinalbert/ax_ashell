@@ -3,51 +3,52 @@
 ## 项目概览
 
 - 用途：基于 Rust 和 GPUI 的 SSH / 本地终端桌面客户端
-- 主要入口：`src/main.rs`，`src/app/startup.rs`，`src/app/ui.rs`，`src/terminal/mod.rs`
+- 主要入口：`src/main.rs`，`src/app/startup.rs`，`src/app/ui.rs`，`src/session/mod.rs`
 
 ## 索引范围
 
 - 根目录：`<repo-root>`
-- 覆盖：`examples/`，`src/app/`，`src/backend/`，`src/terminal/`，`docs/`，`Cargo.toml`，`.cargo/`
+- 覆盖：`src/app/`，`src/session/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`
 - 排除：`.git/`，`target/`，`assets/` 批量资源，构建产物与外部依赖缓存
 
 ## 目录地图
 
 | Path | Purpose | Open When | Notes |
 | --- | --- | --- | --- |
-| `src/terminal/` | 终端渲染、关键词高亮、输入与快照缓存 | 调整关键词高亮、URL/IP/端口识别、终端前景色覆盖规则时 | 当前核心改动点已切到 `src/terminal/highlight.rs` 的关键词 matcher，`src/terminal/element.rs` 继续负责原生颜色避让 |
-| `src/app/` | 应用级搜索、窗口与工作区 UI | 需要确认搜索高亮优先级、当前 tab/viewport 映射或 UI 接线时 | 本轮只读 `src/app/search.rs` 以确认搜索高亮继续压过关键词高亮 |
-| `src/session/` | 配置持久化和设置项出口 | 调整关键词高亮开关或相关配置读取时 | 本轮只读 `src/session/config.rs` 确认 `keyword_highlight` 开关逻辑未变 |
-| `docs/` | 环境审计与实施跟踪记录 | 切换当前任务语境、记录实现计划和验证结果时 | 本轮需要刷新 `project-map.md`、`current.md` 与环境记录 |
-| `Cargo.toml` / `.cargo/config.toml` | Rust 版本、依赖和 cargo alias | 确认构建/测试命令边界时 | 当前以 `cargo check` 和本地测试为主，不涉及依赖变更 |
+| `src/session/` | SSH 会话模型、表单保存、连接入口 | 改 saved session 持久化字段、表单回填、会话重命名和连接行为时 | 本轮主数据模型和会话分组 helper 在这里落地 |
+| `src/app/` | 侧栏、设置页、弹窗和工作区 UI | 调整 SAVED 区布局、组展开/重命名交互、SSH 新建/编辑弹窗时 | `ui.rs` 负责 SAVED 区渲染，`dialogs.rs` 负责 SSH 表单，`mod.rs` 持有输入与界面状态 |
+| `src/sync/` | 会话配置加密同步 payload | 判断新增会话字段是否会自动进入同步上传/下载时 | 本轮预计不改传输逻辑，只依赖 `Session` 序列化扩展 |
+| `locales/` | 中英文界面文案 | 新增组相关 label、按钮和提示文案时 | 需要同步 `en.yml` 和 `zh-CN.yml` |
+| `docs/` | 用户文档、环境审计和实施跟踪 | 记录本轮分组功能、验证边界和使用方式时 | 本轮需刷新环境记录、project tracker 和 user guide |
 
 ## 关键文件
 
 | Path | Role | Key Symbols / Sections | Read For |
 | --- | --- | --- | --- |
-| `src/terminal/element.rs` | 终端文本最终渲染层 | `cell_run_style`，`is_default_bg`，`color_to_hsla` | 修改关键词高亮覆盖条件，并保留搜索高亮优先级 |
-| `src/terminal/highlight.rs` | 关键词/IP/端口/URL 匹配规则 | `highlight_cells`，`highlight_keywords`，`highlight_http_codes` | 修改关键词边界判定，收紧短词误报，同时保持 HTTP code / IP / URL / port 的专用 matcher |
-| `src/terminal/mod.rs` | 终端视口快照与高亮缓存 | `RenderCell`，`RenderSnapshot`，`render_snapshot` | 确认关键词高亮缓存基于当前 viewport cells |
-| `src/app/search.rs` | 搜索命中高亮与定位 | `search_highlight_map`，`perform_search` | 保证搜索高亮继续覆盖关键词高亮 |
-| `src/session/config.rs` | 关键词高亮配置出口 | `keyword_highlight`，`set_keyword_highlight` | 确认开关和默认值不需变更 |
+| `src/session/config.rs` | 会话序列化和本地 `sessions.json` 持久化 | `Session`，`ConfigFile.sessions`，`ConfigStore::sessions/upsert/remove/save` | 给会话增加 `group_name` 字段并保持向后兼容 |
+| `src/session/mod.rs` | SSH 表单提交、saved session helper 和连接动作 | `connect_ssh`，`reset_ssh_form`，`load_session_into_form`，`session_detail` | 读取/保存组名，生成分组视图和组重命名 helper |
+| `src/app/mod.rs` | UI 状态和输入事件路由 | `AxAshell` fields，`DialogKind`，`on_input_event` | 新增组输入框、组重命名输入和展开态状态 |
+| `src/app/dialogs.rs` | 新建/编辑 SSH 弹窗 | `show_ssh_dialog` | 给 SSH 表单增加组输入与已有组下拉加载 |
+| `src/app/ui.rs` | 左侧 SAVED 区和折叠侧栏渲染 | `render_sidebar`，`render_collapsed_sidebar` | 展开态和折叠态都按组渲染 SAVED，会话卡片交互和组重命名都在这里接线 |
+| `docs/user-guide.md` / `docs/user-guide.en.md` | 用户使用说明 | `### 新建 SSH 会话`，`配置同步` | 补充 SAVED 分组和组选择行为说明 |
 
 ## 常用定位
 
-- `rg -n 'keyword_highlight|highlight_cells|search_highlight_map|color_to_hsla' src`
-- `rg -n 'NamedColor::Foreground|NamedColor::Background|Flags::INVERSE' src/terminal`
+- `rg -n 'Session|sessions\\(|upsert\\(|group_name|connect_ssh|load_session_into_form' src/session src/app`
+- `rg -n 'saved|saved session|copy_connection_info|clone|edit|delete' src/app/ui.rs src/app/dialogs.rs`
 - `cargo check`
 
 ## 忽略与未索引
 
-- `examples/` 未索引：本轮不涉及 `dev-reload`、示例程序或启动链路
-- `src/backend/` 未索引：本轮不改 PTY/SSH 后端协议，只改渲染层高亮覆盖策略
-- `assets/`、`target/` 未索引：本轮不涉及主题资源或构建产物
+- `src/backend/` 未索引：本轮不改 SSH/PTTY 后端协议或连接实现
+- `src/terminal/` 未索引：本轮不改终端渲染和输入逻辑
+- `assets/`、`target/` 未索引：本轮不涉及静态资源或构建产物
 
 ## 刷新规则
 
-- 刷新触发：高亮渲染逻辑、搜索高亮优先级、终端配置开关、关键入口文件或本轮任务范围发生变化时刷新
-- 最近依据：`src/terminal/highlight.rs`，`src/terminal/element.rs`，`src/terminal/mod.rs`，`src/app/search.rs`，`src/session/config.rs` 的实读结果
+- 刷新触发：saved session 结构、SAVED 侧栏布局、SSH 表单字段、同步载荷边界或用户文档范围发生变化时刷新
+- 最近依据：`src/session/config.rs`，`src/session/mod.rs`，`src/app/mod.rs`，`src/app/dialogs.rs`，`src/app/ui.rs`，`src/app/config_sync.rs`，`src/sync/mod.rs` 的实读结果
 
 ## 最后更新时间
 
-- 2026-07-07 11:37 CST
+- 2026-07-07 12:35 CST

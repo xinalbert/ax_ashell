@@ -58,6 +58,18 @@ impl AxAshell {
         }))
     }
 
+    fn collapsed_sidebar_abbrev(label: &str) -> String {
+        let compact: Vec<char> = label.chars().filter(|ch| !ch.is_whitespace()).collect();
+        let Some(first) = compact.first().copied() else {
+            return "?".to_string();
+        };
+        if first > '\u{2E7F}' {
+            first.to_string()
+        } else {
+            compact.into_iter().take(2).collect()
+        }
+    }
+
     fn render_home_page(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .w_full()
@@ -1573,8 +1585,9 @@ impl AxAshell {
     }
 
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let sessions = self.config.sessions().to_vec();
+        let session_groups = self.saved_session_groups();
         let active_session_id = self.active_session_id().map(ToOwned::to_owned);
+        let renaming_saved_group = self.renaming_saved_group.clone();
 
         v_flex()
             .gap_4()
@@ -1686,154 +1699,339 @@ impl AxAshell {
                                     .track_scroll(&self.saved_scroll_handle)
                                     .overflow_y_scroll()
                                     .gap_2()
-                                    .children(sessions.into_iter().enumerate().map(
-                                        |(ix, session)| {
-                                            let connect_id = session.id.clone();
-                                            let edit_id = session.id.clone();
-                                            let delete_id = session.id.clone();
-                                            let is_active = active_session_id.as_deref()
-                                                == Some(session.id.as_str());
-                                            let name = session.name.clone();
-                                            let detail = self.session_detail(&session);
-                                            let full_detail = self.session_connection_info(&session);
-                                            let tooltip_detail = full_detail.clone();
-                                            let menu_detail = full_detail.clone();
-                                            div()
-                                                .id(("saved-connect", ix))
+                                    .children(session_groups.into_iter().enumerate().map(
+                                        |(group_ix, (group_name, sessions))| {
+                                            let display_group_name =
+                                                Self::display_group_name(&group_name);
+                                            let is_renaming = renaming_saved_group.as_deref()
+                                                == Some(group_name.as_str());
+                                            let is_expanded = is_renaming
+                                                || self
+                                                    .expanded_saved_groups
+                                                    .contains(group_name.as_str());
+                                            let is_group_active = sessions.iter().any(|session| {
+                                                active_session_id.as_deref()
+                                                    == Some(session.id.as_str())
+                                            });
+                                            let group_key = group_name.clone();
+                                            let rename_group_name = group_name.clone();
+                                            let group_count = sessions.len();
+                                            v_flex()
                                                 .w_full()
-                                                .p_2()
-                                                .rounded_md()
-                                                .border_1()
-                                                .border_color(if is_active {
-                                                    cx.theme().primary
-                                                } else {
-                                                    cx.theme().border
-                                                })
-                                                .bg(if is_active {
-                                                    cx.theme().tab_active
-                                                } else {
-                                                    cx.theme().muted
-                                                })
-                                                .cursor_pointer()
-                                                .hover(|this| this.bg(cx.theme().secondary))
-                                                .on_mouse_down(
-                                                    MouseButton::Left,
-                                                    cx.listener(move |this, _, _, cx| {
-                                                        this.connect_saved_session(
-                                                            connect_id.clone(),
-                                                            cx,
-                                                        )
-                                                    }),
-                                                )
-                                                .tooltip({
-                                                    let tooltip_text = tooltip_detail.clone();
-                                                    move |window, cx| {
-                                                        gpui_component::tooltip::Tooltip::new(
-                                                            tooltip_text.clone(),
-                                                        )
-                                                        .build(window, cx)
-                                                    }
-                                                })
-                                                .context_menu({
-                                                    let view = cx.entity();
-                                                    move |menu, window, _| {
-                                                        let copy_value = menu_detail.clone();
-                                                        let edit_value = edit_id.clone();
-                                                        let clone_value = edit_id.clone();
-                                                        let delete_value = delete_id.clone();
-                                                        menu.item(
-                                                            PopupMenuItem::new(
-                                                                t!("copy_connection_info")
-                                                                    .to_string(),
-                                                            )
-                                                            .on_click(window.listener_for(
-                                                                &view,
-                                                                move |_, _, _, cx| {
-                                                                    cx.write_to_clipboard(
-                                                                        gpui::ClipboardItem::new_string(
-                                                                            copy_value.clone(),
-                                                                        ),
-                                                                    );
-                                                                },
-                                                            )),
-                                                        )
-                                                        .item(
-                                                            PopupMenuItem::new(
-                                                                t!("clone").to_string(),
-                                                            )
-                                                            .on_click(window.listener_for(
-                                                                &view,
-                                                                move |this, _, window, cx| {
-                                                                    this.clone_saved_session(
-                                                                        clone_value.clone(),
-                                                                        window,
-                                                                        cx,
-                                                                    )
-                                                                },
-                                                            )),
-                                                        )
-                                                        .item(
-                                                            PopupMenuItem::new(
-                                                                t!("edit").to_string(),
-                                                            )
-                                                            .on_click(window.listener_for(
-                                                                &view,
-                                                                move |this, _, window, cx| {
-                                                                    this.edit_saved_session(
-                                                                        edit_value.clone(),
-                                                                        window,
-                                                                        cx,
-                                                                    )
-                                                                },
-                                                            )),
-                                                        )
-                                                        .item(
-                                                            PopupMenuItem::new(
-                                                                t!("delete").to_string(),
-                                                            )
-                                                            .on_click(window.listener_for(
-                                                                &view,
-                                                                move |this, _, _, cx| {
-                                                                    this.remove_saved_session(
-                                                                        delete_value.clone(),
-                                                                        cx,
-                                                                    )
-                                                                },
-                                                            )),
-                                                        )
-                                                    }
-                                                })
+                                                .gap_2()
                                                 .child(
-                                                    h_flex()
+                                                    div()
+                                                        .id(format!("saved-group-{group_ix}"))
                                                         .w_full()
-                                                        .min_w(px(0.))
-                                                        .gap_2()
-                                                        .items_center()
-                                                        .child(
-                                                            div()
-                                                                .max_w(px(180.))
-                                                                .min_w(px(0.))
-                                                                .overflow_hidden()
-                                                                .text_ellipsis()
-                                                                .whitespace_nowrap()
-                                                                .text_size(rems(1.0))
-                                                                .font_weight(FontWeight::SEMIBOLD)
-                                                                .child(name),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .flex_1()
-                                                                .min_w(px(0.))
-                                                                .overflow_hidden()
-                                                                .text_ellipsis()
-                                                                .whitespace_nowrap()
-                                                                .text_size(rems(0.917))
-                                                                .text_color(
-                                                                    cx.theme().muted_foreground,
+                                                        .p_2()
+                                                        .rounded_md()
+                                                        .border_1()
+                                                        .border_color(if is_group_active {
+                                                            cx.theme().primary
+                                                        } else {
+                                                            cx.theme().border
+                                                        })
+                                                        .bg(if is_group_active {
+                                                            cx.theme().tab_active
+                                                        } else {
+                                                            cx.theme().muted
+                                                        })
+                                                        .when(!is_renaming, |this| {
+                                                            this.cursor_pointer()
+                                                                .hover(|this| {
+                                                                    this.bg(cx.theme().secondary)
+                                                                })
+                                                                .on_mouse_down(
+                                                                    MouseButton::Left,
+                                                                    cx.listener(
+                                                                        move |this, _, _, cx| {
+                                                                            this.toggle_saved_group(
+                                                                                group_key.clone(),
+                                                                                cx,
+                                                                            )
+                                                                        },
+                                                                    ),
                                                                 )
-                                                                .child(detail),
+                                                        })
+                                                        .child(
+                                                            h_flex()
+                                                                .w_full()
+                                                                .items_center()
+                                                                .gap_2()
+                                                                .child(
+                                                                    Icon::new(if is_expanded {
+                                                                        IconName::ChevronUp
+                                                                    } else {
+                                                                        IconName::ChevronDown
+                                                                    })
+                                                                    .with_size(Size::Small)
+                                                                    .text_color(
+                                                                        cx.theme().muted_foreground,
+                                                                    ),
+                                                                )
+                                                                .child(
+                                                                    if is_renaming {
+                                                                        Input::new(
+                                                                            &self.saved_group_name_input,
+                                                                        )
+                                                                        .flex_1()
+                                                                        .into_any_element()
+                                                                    } else {
+                                                                        div()
+                                                                            .flex_1()
+                                                                            .min_w(px(0.))
+                                                                            .overflow_hidden()
+                                                                            .text_ellipsis()
+                                                                            .whitespace_nowrap()
+                                                                            .text_size(rems(1.0))
+                                                                            .font_weight(
+                                                                                FontWeight::SEMIBOLD,
+                                                                            )
+                                                                            .child(
+                                                                                display_group_name,
+                                                                            )
+                                                                            .into_any_element()
+                                                                    },
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .text_size(rems(0.833))
+                                                                        .text_color(
+                                                                            cx.theme()
+                                                                                .muted_foreground,
+                                                                        )
+                                                                        .child(format!(
+                                                                            "{}",
+                                                                            group_count
+                                                                        )),
+                                                                )
+                                                                .when(
+                                                                    !group_name.is_empty()
+                                                                        && !is_renaming,
+                                                                    |this| {
+                                                                        this.child(
+                                                                            Button::new(format!(
+                                                                                "saved-group-rename-{group_ix}"
+                                                                            ))
+                                                                            .ghost()
+                                                                            .xsmall()
+                                                                            .label(
+                                                                                t!("rename")
+                                                                                    .to_string(),
+                                                                            )
+                                                                            .on_mouse_down(
+                                                                                MouseButton::Left,
+                                                                                |_, window, cx| {
+                                                                                    window
+                                                                                        .prevent_default();
+                                                                                    cx.stop_propagation();
+                                                                                },
+                                                                            )
+                                                                            .on_click(
+                                                                                cx.listener(
+                                                                                    move |this, _, window, cx| {
+                                                                                        window
+                                                                                            .prevent_default();
+                                                                                        cx.stop_propagation();
+                                                                                        this.begin_saved_group_rename(
+                                                                                            rename_group_name
+                                                                                                .clone(),
+                                                                                            window,
+                                                                                            cx,
+                                                                                        );
+                                                                                    },
+                                                                                ),
+                                                                            ),
+                                                                        )
+                                                                    },
+                                                                ),
                                                         ),
                                                 )
+                                                .when(is_expanded, |this| {
+                                                    this.child(
+                                                        v_flex()
+                                                            .w_full()
+                                                            .pl_4()
+                                                            .gap_2()
+                                                            .children(sessions.into_iter().enumerate().map(
+                                                                |(session_ix, session)| {
+                                                                    let connect_id =
+                                                                        session.id.clone();
+                                                                    let edit_id =
+                                                                        session.id.clone();
+                                                                    let delete_id =
+                                                                        session.id.clone();
+                                                                    let is_active = active_session_id
+                                                                        .as_deref()
+                                                                        == Some(session.id.as_str());
+                                                                    let name = session.name.clone();
+                                                                    let detail =
+                                                                        self.session_detail(&session);
+                                                                    let full_detail = self
+                                                                        .session_connection_info(
+                                                                            &session,
+                                                                        );
+                                                                    let tooltip_detail =
+                                                                        full_detail.clone();
+                                                                    let menu_detail =
+                                                                        full_detail.clone();
+                                                                    div()
+                                                                        .id(format!(
+                                                                            "saved-connect-{group_ix}-{session_ix}"
+                                                                        ))
+                                                                        .w_full()
+                                                                        .p_2()
+                                                                        .rounded_md()
+                                                                        .border_1()
+                                                                        .border_color(if is_active {
+                                                                            cx.theme().primary
+                                                                        } else {
+                                                                            cx.theme().border
+                                                                        })
+                                                                        .bg(if is_active {
+                                                                            cx.theme().tab_active
+                                                                        } else {
+                                                                            cx.theme().muted
+                                                                        })
+                                                                        .cursor_pointer()
+                                                                        .hover(|this| {
+                                                                            this.bg(cx.theme().secondary)
+                                                                        })
+                                                                        .on_mouse_down(
+                                                                            MouseButton::Left,
+                                                                            cx.listener(
+                                                                                move |this, _, _, cx| {
+                                                                                    this.connect_saved_session(
+                                                                                        connect_id
+                                                                                            .clone(),
+                                                                                        cx,
+                                                                                    )
+                                                                                },
+                                                                            ),
+                                                                        )
+                                                                        .tooltip({
+                                                                            let tooltip_text =
+                                                                                tooltip_detail.clone();
+                                                                            move |window, cx| {
+                                                                                gpui_component::tooltip::Tooltip::new(
+                                                                                    tooltip_text
+                                                                                        .clone(),
+                                                                                )
+                                                                                .build(window, cx)
+                                                                            }
+                                                                        })
+                                                                        .context_menu({
+                                                                            let view = cx.entity();
+                                                                            move |menu, window, _| {
+                                                                                let copy_value =
+                                                                                    menu_detail.clone();
+                                                                                let edit_value =
+                                                                                    edit_id.clone();
+                                                                                let clone_value =
+                                                                                    edit_id.clone();
+                                                                                let delete_value =
+                                                                                    delete_id.clone();
+                                                                                menu.item(
+                                                                                    PopupMenuItem::new(
+                                                                                        t!("copy_connection_info")
+                                                                                            .to_string(),
+                                                                                    )
+                                                                                    .on_click(window.listener_for(
+                                                                                        &view,
+                                                                                        move |_, _, _, cx| {
+                                                                                            cx.write_to_clipboard(
+                                                                                                gpui::ClipboardItem::new_string(
+                                                                                                    copy_value.clone(),
+                                                                                                ),
+                                                                                            );
+                                                                                        },
+                                                                                    )),
+                                                                                )
+                                                                                .item(
+                                                                                    PopupMenuItem::new(
+                                                                                        t!("clone")
+                                                                                            .to_string(),
+                                                                                    )
+                                                                                    .on_click(window.listener_for(
+                                                                                        &view,
+                                                                                        move |this, _, window, cx| {
+                                                                                            this.clone_saved_session(
+                                                                                                clone_value.clone(),
+                                                                                                window,
+                                                                                                cx,
+                                                                                            )
+                                                                                        },
+                                                                                    )),
+                                                                                )
+                                                                                .item(
+                                                                                    PopupMenuItem::new(
+                                                                                        t!("edit")
+                                                                                            .to_string(),
+                                                                                    )
+                                                                                    .on_click(window.listener_for(
+                                                                                        &view,
+                                                                                        move |this, _, window, cx| {
+                                                                                            this.edit_saved_session(
+                                                                                                edit_value.clone(),
+                                                                                                window,
+                                                                                                cx,
+                                                                                            )
+                                                                                        },
+                                                                                    )),
+                                                                                )
+                                                                                .item(
+                                                                                    PopupMenuItem::new(
+                                                                                        t!("delete")
+                                                                                            .to_string(),
+                                                                                    )
+                                                                                    .on_click(window.listener_for(
+                                                                                        &view,
+                                                                                        move |this, _, _, cx| {
+                                                                                            this.remove_saved_session(
+                                                                                                delete_value.clone(),
+                                                                                                cx,
+                                                                                            )
+                                                                                        },
+                                                                                    )),
+                                                                                )
+                                                                            }
+                                                                        })
+                                                                        .child(
+                                                                            h_flex()
+                                                                                .w_full()
+                                                                                .min_w(px(0.))
+                                                                                .gap_2()
+                                                                                .items_center()
+                                                                                .child(
+                                                                                    div()
+                                                                                        .max_w(px(180.))
+                                                                                        .min_w(px(0.))
+                                                                                        .overflow_hidden()
+                                                                                        .text_ellipsis()
+                                                                                        .whitespace_nowrap()
+                                                                                        .text_size(rems(1.0))
+                                                                                        .font_weight(FontWeight::SEMIBOLD)
+                                                                                        .child(name),
+                                                                                )
+                                                                                .child(
+                                                                                    div()
+                                                                                        .flex_1()
+                                                                                        .min_w(px(0.))
+                                                                                        .overflow_hidden()
+                                                                                        .text_ellipsis()
+                                                                                        .whitespace_nowrap()
+                                                                                        .text_size(rems(0.917))
+                                                                                        .text_color(
+                                                                                            cx.theme()
+                                                                                                .muted_foreground,
+                                                                                        )
+                                                                                        .child(detail),
+                                                                                ),
+                                                                        )
+                                                                },
+                                                            )),
+                                                    )
+                                                })
                                         },
                                     )),
                             )
@@ -1860,7 +2058,7 @@ impl AxAshell {
     }
 
     fn render_collapsed_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let sessions = self.config.sessions().to_vec();
+        let session_groups = self.saved_session_groups();
         let active_session_id = self.active_session_id().map(ToOwned::to_owned);
 
         v_flex()
@@ -1909,147 +2107,257 @@ impl AxAshell {
                             .overflow_y_scroll()
                             .gap_2()
                             .items_center()
-                            .children(sessions.into_iter().enumerate().map(|(ix, session)| {
-                                let connect_id = session.id.clone();
-                                let is_active =
-                                    active_session_id.as_deref() == Some(session.id.as_str());
-                                let name = session.name.clone();
+                            .children(session_groups.into_iter().enumerate().map(
+                                |(group_ix, (group_name, sessions))| {
+                                    let display_group_name = Self::display_group_name(&group_name);
+                                    let group_abbrev =
+                                        Self::collapsed_sidebar_abbrev(&display_group_name);
+                                    let group_tooltip =
+                                        format!("{} ({})", display_group_name, sessions.len());
+                                    let is_expanded =
+                                        self.expanded_saved_groups.contains(group_name.as_str());
+                                    let is_group_active = sessions.iter().any(|session| {
+                                        active_session_id.as_deref()
+                                            == Some(session.id.as_str())
+                                    });
+                                    let toggle_group_name = group_name.clone();
 
-                                // Abbreviate: first 1 char for CJK, first 2 chars for Latin
-                                let abbrev = {
-                                    let mut chars = name.chars();
-                                    if let Some(first) = chars.next() {
-                                        if first > '\u{2E7F}' {
-                                            // CJK character range — show 1 char
-                                            first.to_string()
-                                        } else {
-                                            // Latin / ASCII — show first 2 chars
-                                            let mut s = first.to_string();
-                                            if let Some(second) = chars.next() {
-                                                s.push(second);
-                                            }
-                                            s
-                                        }
-                                    } else {
-                                        "?".to_string()
-                                    }
-                                };
-
-                                let edit_id = session.id.clone();
-                                let delete_id = session.id.clone();
-                                let full_detail = self.session_connection_info(&session);
-                                let tooltip_detail = full_detail.clone();
-                                let menu_detail = full_detail.clone();
-                                div()
-                                    .id(("collapsed-saved", ix))
-                                    .w(px(36.))
-                                    .h(px(36.))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(if is_active {
-                                        cx.theme().primary
-                                    } else {
-                                        cx.theme().border
-                                    })
-                                    .bg(if is_active {
-                                        cx.theme().tab_active
-                                    } else {
-                                        cx.theme().muted
-                                    })
-                                    .cursor_pointer()
-                                    .hover(|this| this.bg(cx.theme().secondary))
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(move |this, _, _, cx| {
-                                            this.connect_saved_session(connect_id.clone(), cx)
-                                        }),
-                                    )
-                                    .tooltip({
-                                        let tooltip_text = tooltip_detail.clone();
-                                        move |window, cx| {
-                                            gpui_component::tooltip::Tooltip::new(
-                                                tooltip_text.clone(),
-                                            )
-                                            .build(window, cx)
-                                        }
-                                    })
-                                    .context_menu({
-                                        let view = cx.entity();
-                                        move |menu, window, _| {
-                                            let copy_value = menu_detail.clone();
-                                            let edit_value = edit_id.clone();
-                                            let clone_value = edit_id.clone();
-                                            let delete_value = delete_id.clone();
-                                            menu.item(
-                                                PopupMenuItem::new(
-                                                    t!("copy_connection_info").to_string(),
+                                    v_flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .child(
+                                            div()
+                                                .id(format!("collapsed-saved-group-{group_ix}"))
+                                                .w(px(36.))
+                                                .h(px(36.))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .rounded_md()
+                                                .border_1()
+                                                .border_color(if is_group_active || is_expanded {
+                                                    cx.theme().primary
+                                                } else {
+                                                    cx.theme().border
+                                                })
+                                                .bg(if is_group_active {
+                                                    cx.theme().tab_active
+                                                } else if is_expanded {
+                                                    cx.theme().secondary
+                                                } else {
+                                                    cx.theme().muted
+                                                })
+                                                .cursor_pointer()
+                                                .hover(|this| this.bg(cx.theme().secondary))
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    cx.listener(move |this, _, _, cx| {
+                                                        this.toggle_saved_group(
+                                                            toggle_group_name.clone(),
+                                                            cx,
+                                                        )
+                                                    }),
                                                 )
-                                                .on_click(window.listener_for(
-                                                    &view,
-                                                    move |_, _, _, cx| {
-                                                        cx.write_to_clipboard(
-                                                            gpui::ClipboardItem::new_string(
-                                                                copy_value.clone(),
-                                                            ),
-                                                        );
-                                                    },
-                                                )),
-                                            )
-                                            .item(
-                                                PopupMenuItem::new(t!("clone").to_string())
-                                                    .on_click(window.listener_for(
-                                                        &view,
-                                                        move |this, _, window, cx| {
-                                                            this.clone_saved_session(
-                                                                clone_value.clone(),
-                                                                window,
-                                                                cx,
-                                                            )
+                                                .tooltip({
+                                                    let tooltip_text = group_tooltip.clone();
+                                                    move |window, cx| {
+                                                        gpui_component::tooltip::Tooltip::new(
+                                                            tooltip_text.clone(),
+                                                        )
+                                                        .build(window, cx)
+                                                    }
+                                                })
+                                                .child(
+                                                    v_flex()
+                                                        .items_center()
+                                                        .justify_center()
+                                                        .gap(px(1.))
+                                                        .child(
+                                                            Icon::new(IconName::Folder)
+                                                                .with_size(Size::Small)
+                                                                .text_color(if is_group_active
+                                                                    || is_expanded
+                                                                {
+                                                                    cx.theme().primary
+                                                                } else {
+                                                                    cx.theme().muted_foreground
+                                                                }),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_size(rems(0.625))
+                                                                .font_weight(FontWeight::BOLD)
+                                                                .text_color(if is_group_active
+                                                                    || is_expanded
+                                                                {
+                                                                    cx.theme().primary
+                                                                } else {
+                                                                    cx.theme().foreground
+                                                                })
+                                                                .child(group_abbrev),
+                                                        ),
+                                                ),
+                                        )
+                                        .when(is_expanded, |this| {
+                                            this.child(
+                                                v_flex().items_center().gap_1().children(
+                                                    sessions.into_iter().enumerate().map(
+                                                        |(session_ix, session)| {
+                                                            let connect_id = session.id.clone();
+                                                            let edit_id = session.id.clone();
+                                                            let delete_id = session.id.clone();
+                                                            let is_active = active_session_id
+                                                                .as_deref()
+                                                                == Some(session.id.as_str());
+                                                            let abbrev = Self::collapsed_sidebar_abbrev(
+                                                                &session.name,
+                                                            );
+                                                            let full_detail = self
+                                                                .session_connection_info(&session);
+                                                            let tooltip_detail =
+                                                                full_detail.clone();
+                                                            let menu_detail = full_detail.clone();
+
+                                                            div()
+                                                                .id(format!(
+                                                                    "collapsed-saved-group-{group_ix}-session-{session_ix}"
+                                                                ))
+                                                                .w(px(28.))
+                                                                .h(px(28.))
+                                                                .flex()
+                                                                .items_center()
+                                                                .justify_center()
+                                                                .rounded_md()
+                                                                .border_1()
+                                                                .border_color(if is_active {
+                                                                    cx.theme().primary
+                                                                } else {
+                                                                    cx.theme().border
+                                                                })
+                                                                .bg(if is_active {
+                                                                    cx.theme().tab_active
+                                                                } else {
+                                                                    cx.theme().background
+                                                                })
+                                                                .cursor_pointer()
+                                                                .hover(|this| {
+                                                                    this.bg(cx.theme().secondary)
+                                                                })
+                                                                .on_mouse_down(
+                                                                    MouseButton::Left,
+                                                                    cx.listener(
+                                                                        move |this, _, _, cx| {
+                                                                            this.connect_saved_session(
+                                                                                connect_id.clone(),
+                                                                                cx,
+                                                                            )
+                                                                        },
+                                                                    ),
+                                                                )
+                                                                .tooltip({
+                                                                    let tooltip_text =
+                                                                        tooltip_detail.clone();
+                                                                    move |window, cx| {
+                                                                        gpui_component::tooltip::Tooltip::new(
+                                                                            tooltip_text.clone(),
+                                                                        )
+                                                                        .build(window, cx)
+                                                                    }
+                                                                })
+                                                                .context_menu({
+                                                                    let view = cx.entity();
+                                                                    move |menu, window, _| {
+                                                                        let copy_value =
+                                                                            menu_detail.clone();
+                                                                        let edit_value =
+                                                                            edit_id.clone();
+                                                                        let clone_value =
+                                                                            edit_id.clone();
+                                                                        let delete_value =
+                                                                            delete_id.clone();
+                                                                        menu.item(
+                                                                            PopupMenuItem::new(
+                                                                                t!("copy_connection_info")
+                                                                                    .to_string(),
+                                                                            )
+                                                                            .on_click(window.listener_for(
+                                                                                &view,
+                                                                                move |_, _, _, cx| {
+                                                                                    cx.write_to_clipboard(
+                                                                                        gpui::ClipboardItem::new_string(
+                                                                                            copy_value.clone(),
+                                                                                        ),
+                                                                                    );
+                                                                                },
+                                                                            )),
+                                                                        )
+                                                                        .item(
+                                                                            PopupMenuItem::new(
+                                                                                t!("clone")
+                                                                                    .to_string(),
+                                                                            )
+                                                                            .on_click(window.listener_for(
+                                                                                &view,
+                                                                                move |this, _, window, cx| {
+                                                                                    this.clone_saved_session(
+                                                                                        clone_value.clone(),
+                                                                                        window,
+                                                                                        cx,
+                                                                                    )
+                                                                                },
+                                                                            )),
+                                                                        )
+                                                                        .item(
+                                                                            PopupMenuItem::new(
+                                                                                t!("edit")
+                                                                                    .to_string(),
+                                                                            )
+                                                                            .on_click(window.listener_for(
+                                                                                &view,
+                                                                                move |this, _, window, cx| {
+                                                                                    this.edit_saved_session(
+                                                                                        edit_value.clone(),
+                                                                                        window,
+                                                                                        cx,
+                                                                                    )
+                                                                                },
+                                                                            )),
+                                                                        )
+                                                                        .item(
+                                                                            PopupMenuItem::new(
+                                                                                t!("delete")
+                                                                                    .to_string(),
+                                                                            )
+                                                                            .on_click(window.listener_for(
+                                                                                &view,
+                                                                                move |this, _, _, cx| {
+                                                                                    this.remove_saved_session(
+                                                                                        delete_value.clone(),
+                                                                                        cx,
+                                                                                    )
+                                                                                },
+                                                                            )),
+                                                                        )
+                                                                    }
+                                                                })
+                                                                .child(
+                                                                    div()
+                                                                        .text_size(rems(0.708))
+                                                                        .font_weight(FontWeight::BOLD)
+                                                                        .text_color(if is_active {
+                                                                            cx.theme().primary
+                                                                        } else {
+                                                                            cx.theme().foreground
+                                                                        })
+                                                                        .child(abbrev),
+                                                                )
                                                         },
-                                                    )),
+                                                    ),
+                                                ),
                                             )
-                                            .item(
-                                                PopupMenuItem::new(t!("edit").to_string())
-                                                    .on_click(window.listener_for(
-                                                        &view,
-                                                        move |this, _, window, cx| {
-                                                            this.edit_saved_session(
-                                                                edit_value.clone(),
-                                                                window,
-                                                                cx,
-                                                            )
-                                                        },
-                                                    )),
-                                            )
-                                            .item(
-                                                PopupMenuItem::new(t!("delete").to_string())
-                                                    .on_click(window.listener_for(
-                                                        &view,
-                                                        move |this, _, _, cx| {
-                                                            this.remove_saved_session(
-                                                                delete_value.clone(),
-                                                                cx,
-                                                            )
-                                                        },
-                                                    )),
-                                            )
-                                        }
-                                    })
-                                    .child(
-                                        div()
-                                            .text_size(rems(0.833))
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_color(if is_active {
-                                                cx.theme().primary
-                                            } else {
-                                                cx.theme().foreground
-                                            })
-                                            .child(abbrev),
-                                    )
-                            })),
+                                        })
+                                },
+                            )),
                     )
                     .child(
                         div()

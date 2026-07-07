@@ -16,6 +16,8 @@ pub enum AuthMethod {
 pub struct Session {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub group_name: String,
     pub host: String,
     pub port: u16,
     pub user: String,
@@ -48,6 +50,7 @@ impl Session {
         Self {
             id: Uuid::new_v4().to_string(),
             name,
+            group_name: String::new(),
             host,
             port,
             user,
@@ -77,6 +80,7 @@ impl Session {
         Self {
             id: Uuid::new_v4().to_string(),
             name,
+            group_name: String::new(),
             host,
             port,
             user,

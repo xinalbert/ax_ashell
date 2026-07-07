@@ -15,7 +15,7 @@ AxAshell is built for these workflows:
 
 The main window is organized around a terminal workspace with these areas:
 
-- Session area: open a local terminal, select a saved SSH session, or create a new one
+- Session area: open a local terminal, expand saved SSH sessions by group, or create a new one
 - Terminal area: local or remote terminals with multi-tab and multi-pane layout
 - Remote files area: SFTP panel for SSH sessions
 - Transfers: upload and download history with task state
@@ -30,10 +30,11 @@ Launch the app and open a local terminal tab from the session area.
 ### Create an SSH Session
 
 1. Open `New SSH` or the session selector.
-2. Enter host, port, and username.
-3. Choose password or private key authentication.
-4. Fill in per-session proxy settings when needed.
-5. Use `Save` or `Save & Connect`.
+2. Optionally enter a session group, or load an existing group from the dropdown.
+3. Enter host, port, and username.
+4. Choose password or private key authentication.
+5. Fill in per-session proxy settings when needed.
+6. Use `Save` or `Save & Connect`.
 
 Current SSH session support includes:
 
@@ -48,6 +49,13 @@ Saved sessions are written to:
 ```text
 ~/.config/ax_ashell/sessions.json
 ```
+
+Current SAVED behavior:
+
+- Both expanded and collapsed sidebar modes show groups first, with SSH sessions nested inside each group
+- Click a group header, or a collapsed group tile, to expand or collapse its sessions
+- Use `Rename` on the group header to rename that group across its saved sessions
+- Sessions without a group appear under `Ungrouped`
 
 ## SFTP Workflows
 
@@ -128,7 +136,7 @@ Configuration sync supports:
 Behavior and boundaries:
 
 - Payloads are encrypted locally before upload
-- Download replaces the locally saved SSH session list
+- Download replaces the locally saved SSH session list and group assignments
 - WebDAV passwords, S3 credentials, and the encryption password stay in process memory only
 - The local config stores connection parameters such as WebDAV endpoint, username, S3 endpoint, bucket, and object key
 
