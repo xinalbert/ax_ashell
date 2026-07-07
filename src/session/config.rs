@@ -301,6 +301,15 @@ pub fn default_xquartz_app_path() -> String {
     default_local_x_server_app_path()
 }
 
+fn normalize_local_x_server_app_path(value: &str) -> String {
+    let value = value.trim();
+    if !value.is_empty() {
+        return value.to_string();
+    }
+
+    default_local_x_server_app_path()
+}
+
 pub fn default_local_x_server_app_path() -> String {
     #[cfg(target_os = "macos")]
     {
@@ -550,6 +559,7 @@ impl ConfigStore {
         if cache.sync_device_id.is_empty() {
             cache.sync_device_id = Uuid::new_v4().to_string();
         }
+        cache.xquartz_app_path = normalize_local_x_server_app_path(&cache.xquartz_app_path);
         if cache.monitoring_position == "Hidden" {
             cache.show_monitoring_dashboard = false;
             cache.monitoring_position = default_monitoring_position();
@@ -1149,20 +1159,11 @@ impl ConfigStore {
     }
 
     pub fn local_x_server_app_path(&self) -> &str {
-        if self.cache.xquartz_app_path.trim().is_empty() {
-            ""
-        } else {
-            self.cache.xquartz_app_path.trim()
-        }
+        self.cache.xquartz_app_path.trim()
     }
 
     pub fn set_local_x_server_app_path(&mut self, val: String) {
-        let val = val.trim();
-        self.cache.xquartz_app_path = if val.is_empty() {
-            default_xquartz_app_path()
-        } else {
-            val.to_string()
-        };
+        self.cache.xquartz_app_path = normalize_local_x_server_app_path(&val);
     }
 
     pub fn show_hidden_files(&self) -> bool {

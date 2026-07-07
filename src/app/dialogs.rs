@@ -2959,11 +2959,21 @@ impl AxShell {
                                                     move |_, window, _cx| {
                                                         v_flex()
                                                             .w_full()
+                                                            .items_stretch()
                                                             .gap_3()
                                                             .child(div().text_sm().font_weight(FontWeight::BOLD).child(t!("xquartz_app_path").to_string()))
-                                                            .child(Input::new(&xquartz_app_path_input).w_full())
+                                                            .child(
+                                                                div()
+                                                                    .w_full()
+                                                                    .min_w(px(320.))
+                                                                    .child(
+                                                                        Input::new(&xquartz_app_path_input)
+                                                                            .w_full(),
+                                                                    ),
+                                                            )
                                                             .child(
                                                                 h_flex()
+                                                                    .w_full()
                                                                     .gap_2()
                                                                     .child(
                                                                         Button::new("browse-xquartz-app")
@@ -2999,7 +3009,13 @@ impl AxShell {
                                                                             }))
                                                                     )
                                                             )
-                                                            .child(div().text_xs().text_color(muted_foreground).child(t!("xquartz_app_path_desc").to_string()))
+                                                            .child(
+                                                                div()
+                                                                    .w_full()
+                                                                    .text_xs()
+                                                                    .text_color(muted_foreground)
+                                                                    .child(t!("xquartz_app_path_desc").to_string()),
+                                                            )
                                                     }
                                                 }))
                                         )
