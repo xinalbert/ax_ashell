@@ -3112,6 +3112,16 @@ impl Render for AxAshell {
             .on_action(cx.listener(|this, _: &crate::OpenTransfers, window, cx| this.show_transfers_dialog(window, cx)))
             .on_action(cx.listener(|this, _: &crate::NewSsh, window, cx| this.show_ssh_dialog(window, cx)))
             .on_action(cx.listener(|this, _: &crate::OpenSearch, window, cx| this.toggle_search(window, cx)))
+            .on_action(cx.listener(|this, _: &crate::PrevTab, window, cx| {
+                this.switch_workspace_tab(-1, window, cx);
+                window.prevent_default();
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &crate::NextTab, window, cx| {
+                this.switch_workspace_tab(1, window, cx);
+                window.prevent_default();
+                cx.stop_propagation();
+            }))
             .on_action(cx.listener(|this, _: &crate::ToggleSidebar, _, cx| {
                 this.sidebar_collapsed = !this.sidebar_collapsed;
                 this.config.set_sidebar_collapsed(this.sidebar_collapsed);

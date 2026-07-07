@@ -819,6 +819,44 @@ impl AxAshell {
         }
     }
 
+    pub(crate) fn switch_workspace_tab(
+        &mut self,
+        step: isize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let settings_index = self.tab_groups.len();
+        let total_tabs = settings_index + usize::from(self.settings_page_open);
+        if total_tabs <= 1 {
+            return;
+        }
+
+        let current_index =
+            if self.workspace_page == WorkspacePage::Settings && self.settings_page_open {
+                settings_index
+            } else {
+                self.active_group
+                    .as_ref()
+                    .and_then(|gid| self.tab_groups.iter().position(|group| group.id == *gid))
+                    .unwrap_or(0)
+            };
+
+        let next_index = (current_index as isize + step).rem_euclid(total_tabs as isize) as usize;
+        if self.settings_page_open && next_index == settings_index {
+            self.open_settings_page(cx);
+            return;
+        }
+
+        let Some(group_id) = self
+            .tab_groups
+            .get(next_index)
+            .map(|group| group.id.clone())
+        else {
+            return;
+        };
+        self.activate_group(group_id, window, cx);
+    }
+
     pub(crate) fn on_input_event(
         &mut self,
         input: &Entity<InputState>,

@@ -35,6 +35,20 @@ impl AxAshell {
             return;
         }
 
+        if crate::app::keybinding_recorder::event_matches_action(&self.config, "PrevTab", event) {
+            self.switch_workspace_tab(-1, window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return;
+        }
+
+        if crate::app::keybinding_recorder::event_matches_action(&self.config, "NextTab", event) {
+            self.switch_workspace_tab(1, window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return;
+        }
+
         // Pane navigation: Alt + h/j/k/l
         if event.keystroke.modifiers.alt
             && !event.keystroke.modifiers.shift
@@ -387,7 +401,12 @@ impl AxAshell {
         if let Some((row, col, _side)) = self.terminal_grid_point_and_side(event.position) {
             if let Some(snapshot) = self.active_snapshot() {
                 if let Some(active_id) = &self.active_tab {
-                    if let Some((url, url_cells)) = crate::terminal::highlight::find_url_at_cell(&snapshot.cells, snapshot.rows, row, col) {
+                    if let Some((url, url_cells)) = crate::terminal::highlight::find_url_at_cell(
+                        &snapshot.cells,
+                        snapshot.rows,
+                        row,
+                        col,
+                    ) {
                         hovered_url = Some(crate::app::HoveredUrl {
                             url,
                             tab_id: active_id.clone(),
@@ -397,7 +416,7 @@ impl AxAshell {
                 }
             }
         }
-        
+
         if self.hovered_url != hovered_url || self.cmd_ctrl_pressed != cmd_ctrl_pressed {
             self.hovered_url = hovered_url;
             self.cmd_ctrl_pressed = cmd_ctrl_pressed;

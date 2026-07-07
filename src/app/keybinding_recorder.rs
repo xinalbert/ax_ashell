@@ -1,6 +1,5 @@
 use gpui::{
-    Action as _, App, Entity, IntoElement, KeyBinding, KeyDownEvent, Keystroke, Unbind,
-    prelude::*,
+    Action as _, App, Entity, IntoElement, KeyBinding, KeyDownEvent, Keystroke, Unbind, prelude::*,
 };
 use gpui_component::{
     Sizable,
@@ -20,6 +19,8 @@ gpui::actions!(
         OpenTransfers,
         NewSsh,
         OpenSearch,
+        PrevTab,
+        NextTab,
         ToggleSidebar,
         ToggleSftpZoom,
         FocusPaneLeft,
@@ -70,6 +71,24 @@ pub(crate) const WORKSPACE_ACTIONS: &[WorkspaceAction] = &[
         id: "OpenSearch",
         label_key: "settings_open_search",
         default_suffix: "f",
+    },
+    WorkspaceAction {
+        id: "PrevTab",
+        label_key: "settings_prev_tab",
+        default_suffix: if cfg!(target_os = "macos") {
+            "shift-["
+        } else {
+            "shift-tab"
+        },
+    },
+    WorkspaceAction {
+        id: "NextTab",
+        label_key: "settings_next_tab",
+        default_suffix: if cfg!(target_os = "macos") {
+            "shift-]"
+        } else {
+            "tab"
+        },
     },
     WorkspaceAction {
         id: "ToggleSidebar",
@@ -169,11 +188,88 @@ pub(crate) fn configured_keystroke(config: &ConfigStore, action_id: &str) -> Opt
         .or_else(|| default_keystroke(action_id))
 }
 
+pub(crate) fn event_matches_action(
+    config: &ConfigStore,
+    action_id: &str,
+    event: &KeyDownEvent,
+) -> bool {
+    let Some(configured) = configured_keystroke(config, action_id) else {
+        return false;
+    };
+    if default_keystroke(action_id).as_deref() == Some(configured.as_str())
+        && matches_default_action_event(action_id, event)
+    {
+        return true;
+    }
+    normalize_recorded_keystroke(event).is_some_and(|keystroke| keystroke == configured)
+}
+
+fn matches_default_action_event(action_id: &str, event: &KeyDownEvent) -> bool {
+    match action_id {
+        "PrevTab" => {
+            if cfg!(target_os = "macos") {
+                matches_macos_brace_shortcut(event, "[", "{")
+            } else {
+                matches_non_macos_tab_shortcut(event, true)
+            }
+        }
+        "NextTab" => {
+            if cfg!(target_os = "macos") {
+                matches_macos_brace_shortcut(event, "]", "}")
+            } else {
+                matches_non_macos_tab_shortcut(event, false)
+            }
+        }
+        _ => false,
+    }
+}
+
+fn matches_macos_brace_shortcut(event: &KeyDownEvent, base_key: &str, shifted_key: &str) -> bool {
+    event.keystroke.modifiers.secondary()
+        && event.keystroke.modifiers.shift
+        && !event.keystroke.modifiers.alt
+        && !event.keystroke.modifiers.control
+        && !event.keystroke.modifiers.function
+        && (event.keystroke.key == base_key
+            || event.keystroke.key == shifted_key
+            || event.keystroke.key_char.as_deref() == Some(base_key)
+            || event.keystroke.key_char.as_deref() == Some(shifted_key))
+}
+
+fn matches_non_macos_tab_shortcut(event: &KeyDownEvent, require_shift: bool) -> bool {
+    event.keystroke.modifiers.secondary()
+        && event.keystroke.modifiers.shift == require_shift
+        && !event.keystroke.modifiers.alt
+        && !event.keystroke.modifiers.platform
+        && !event.keystroke.modifiers.function
+        && event.keystroke.key.eq_ignore_ascii_case("tab")
+}
+
 pub(crate) fn normalize_recorded_keystroke(event: &KeyDownEvent) -> Option<String> {
     let key = event.keystroke.key.trim();
-    if key.is_empty() {
-        return None;
-    }
+    let key = if key.is_empty() {
+        if event.keystroke.modifiers.shift {
+            "shift"
+        } else if event.keystroke.modifiers.control {
+            "control"
+        } else if event.keystroke.modifiers.alt {
+            "alt"
+        } else if event.keystroke.modifiers.platform {
+            "platform"
+        } else if event.keystroke.modifiers.function {
+            "function"
+        } else {
+            return None;
+        }
+    } else {
+        key
+    };
+
+    let key = match (event.keystroke.modifiers.shift, key) {
+        (true, "{") => "[",
+        (true, "}") => "]",
+        _ => key,
+    };
 
     let mut parts = Vec::new();
     if event.keystroke.modifiers.control {
@@ -234,6 +330,8 @@ pub(crate) fn unbind_all_workspace_keys(cx: &mut App, config: &ConfigStore) {
     unbind_action!("OpenTransfers", crate::OpenTransfers);
     unbind_action!("NewSsh", crate::NewSsh);
     unbind_action!("OpenSearch", crate::OpenSearch);
+    unbind_action!("PrevTab", crate::PrevTab);
+    unbind_action!("NextTab", crate::NextTab);
     unbind_action!("ToggleSidebar", crate::ToggleSidebar);
     unbind_action!("ToggleSftpZoom", crate::ToggleSftpZoom);
     unbind_action!("FocusPaneLeft", crate::FocusPaneLeft);
@@ -292,6 +390,8 @@ fn bind_workspace_actions(cx: &mut App, config: &ConfigStore) {
     bind_action!("OpenTransfers", crate::OpenTransfers);
     bind_action!("NewSsh", crate::NewSsh);
     bind_action!("OpenSearch", crate::OpenSearch);
+    bind_action!("PrevTab", crate::PrevTab);
+    bind_action!("NextTab", crate::NextTab);
     bind_action!("ToggleSidebar", crate::ToggleSidebar);
     bind_action!("ToggleSftpZoom", crate::ToggleSftpZoom);
     bind_action!("FocusPaneLeft", crate::FocusPaneLeft);
@@ -325,6 +425,8 @@ impl KeybindingsPage {
                     "OpenTransfers",
                     "NewSsh",
                     "OpenSearch",
+                    "PrevTab",
+                    "NextTab",
                     "Copy",
                     "Paste",
                 ],

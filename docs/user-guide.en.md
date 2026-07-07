@@ -92,6 +92,12 @@ Default bindings include:
 - New SSH: `Cmd/Ctrl + N`
 - Open transfers: `Cmd/Ctrl + T`
 - Search: `Cmd/Ctrl + F`
+- Previous tab:
+  - macOS: `Cmd + Shift + {`
+  - Linux / Windows: `Ctrl + Shift + Tab`
+- Next tab:
+  - macOS: `Cmd + Shift + }`
+  - Linux / Windows: `Ctrl + Tab`
 - Toggle sidebar: `Cmd/Ctrl + S`
 - Focus adjacent pane: `Cmd/Ctrl + H/J/K/L`
 - Split current pane: `Cmd/Ctrl + Shift + H/J/K/L`
