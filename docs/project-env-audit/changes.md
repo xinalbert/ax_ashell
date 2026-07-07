@@ -387,3 +387,75 @@
 - 执行内容：执行 canonical tag 正反例、Cargo 版本正反例和 `Cargo.toml` 版本读取校验；确认脚本已删除 legacy tag 分支，并额外拒绝零填充的月 / 日版本段；完成 `cargo check`
 - 验证结果：`v2026.7.7`、`v2026.7.7-1` 和 manifest 版本读取通过；`v2026.07.07`、`v2026.07.07.1` 与 `2026.07.07` 按预期失败；`cargo check` 与 tracking docs 校验通过
 - 风险/待办：历史旧格式 tag 若在当前脚本下重跑 workflow，会直接失败；后续发布只能使用 canonical `vYYYY.M.D` / `vYYYY.M.D-N`
+
+## 2026-07-07 刷新环境记录到 X11 路径显示修复
+
+- 目的：在进入设置页 X11 本地 X server 路径显示回归修复前，确认当前项目环境和验证命令边界
+- 改动范围：`src/session/config.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：复查 `Cargo.toml`、`src/session/config.rs`、`src/app/mod.rs`、`src/app/dialogs.rs` 与 `src/session/mod.rs`；确认主技术栈和依赖版本未变；将 current 记录切换到 X11 路径兼容修复任务
+- 验证结果：确认本轮不需要联网和外部服务；实施验证命令收敛为 `cargo check` 与 tracking docs 校验
+- 风险/待办：若最终问题来自 GPUI 设置组件渲染而不是配置空值兼容，本轮需要额外补做 GUI 手工复核
+
+## 2026-07-07 完成 X11 路径显示修复的本机验证
+
+- 目的：在 X11 路径空值兼容修复完成后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`src/session/config.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行 `rustfmt --edition 2024 src/session/config.rs`、`cargo check` 与 tracking docs 校验；确认本轮改动集中在配置兼容逻辑，不涉及依赖版本、外部 SSH/X11 服务或联网步骤
+- 验证结果：格式化、编译检查和 tracking docs 校验均通过；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 最终效果仍需用户重启应用后在设置页手工确认；若仍不显示，应继续排查 GPUI 设置组件渲染链路
+
+## 2026-07-07 完成 X11 输入框布局修复的本机验证
+
+- 目的：在根据用户截图追加 X11 输入框布局修复后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`src/app/dialogs.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查 `gpui-component` 的 `SettingItem` 与 `Input` 渲染逻辑；在 `src/app/dialogs.rs` 中为 X11 路径项补充宽度和最小宽度约束；执行 `rustfmt --edition 2024 src/app/dialogs.rs` 与 `cargo check`
+- 验证结果：格式化和编译检查通过；当前已同时覆盖配置空值兼容和设置项输入框塌缩两条主分支；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 最终效果仍需用户重启应用后在设置页手工确认；若仍异常，应继续排查窗口内热更新状态或 GPUI `InputState` 运行时渲染
+
+## 2026-07-07 刷新环境记录到 Windows Expand Panel 消失修复
+
+- 目的：在进入 Windows 下 SFTP `Expand Panel` 偶发消失修复前，确认当前项目环境和验证命令边界
+- 改动范围：`src/app/ui.rs`，`src/app/resizable/mod.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：复查 `Cargo.toml`、`src/app/ui.rs`、`src/app/mod.rs` 与 `src/app/resizable/mod.rs`；确认主技术栈和依赖版本未变；将 current 记录切换到 Windows 下 SFTP panel 展开恢复修复任务
+- 验证结果：确认本轮不需要联网和外部服务；实施验证命令收敛为 `cargo check` 与 tracking docs 校验
+- 风险/待办：当前还没有 Windows 实机日志；若本轮代码级修复后仍复现，需要补抓 Windows 实际布局状态或运行时日志
+
+## 2026-07-07 完成 Windows Expand Panel 消失修复的本机验证
+
+- 目的：在 Windows 下 SFTP `Expand Panel` 偶发消失修复完成后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`src/app/ui.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行 `rustfmt --edition 2024 src/app/ui.rs`、`cargo check` 与 tracking docs 校验；确认本轮改动集中在面板布局恢复逻辑，不涉及依赖版本、外部 SSH/X11 服务或联网步骤
+- 验证结果：格式化、编译检查和 tracking docs 校验均通过；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：Windows GUI 最终效果仍需用户手工确认；若仍复现，应继续记录展开前后的 `body_panels.sizes()`、窗口尺寸和最小化状态
+
+## 2026-07-07 刷新环境记录到双列 SFTP 面板实现
+
+- 目的：在进入“服务器 / 本地”双列 SFTP 面板实现前，确认当前项目环境和验证命令边界
+- 改动范围：`src/app/mod.rs`，`src/app/ui.rs`，`src/sftp/ops.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：复查 `Cargo.toml`、`src/app/mod.rs`、`src/app/ui.rs`、`src/sftp/ops.rs` 与 `src/sftp/mod.rs`；确认主技术栈和依赖版本未变；将 current 记录切换到双列 SFTP 面板任务
+- 验证结果：确认本轮不需要联网和外部服务；实施验证命令收敛为 `cargo check` 与 tracking docs 校验
+- 风险/待办：本轮默认只在前端补本地文件浏览和上传联动；若后续需要把下载目标也改成“当前本地列目录”，需再单独收口下载行为变更
+
+## 2026-07-07 完成双列 SFTP 面板实现的本机验证
+
+- 目的：在双列 SFTP 面板实现完成后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`src/app/mod.rs`，`src/app/ui.rs`，`src/sftp/ops.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行 `rustfmt --edition 2024 src/app/mod.rs src/app/ui.rs src/sftp/ops.rs`、`cargo check` 与 tracking docs 校验；确认本机无 `cargo fmt` 子命令，因此本轮直接使用 `rustfmt` 二进制；确认改动集中在前端状态、布局和 locale，不涉及依赖版本、外部 SSH 服务或联网步骤
+- 验证结果：格式化、编译检查和 tracking docs 校验均通过；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：Windows / macOS GUI 最终效果仍需用户手工确认；若后续要把下载语义也切到当前本地列目录，需要继续评估远端下载入口和覆盖策略
+
+## 2026-07-08 完成双列 SFTP 布局对齐修复的本机验证
+
+- 目的：在用户截图反馈双列 SFTP 高度不对齐和列表内容塌缩后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`src/app/ui.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查 `render_sftp_panel()` 的外层双列 `h_flex`、远端 pane 和本地 pane 的高度约束；补齐 `items_stretch()`、`h_full()`、`w_full()` 与 `overflow_hidden()`；执行 `rustfmt --edition 2024 src/app/ui.rs` 与 `cargo check`
+- 验证结果：格式化和编译检查通过；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 最终效果仍需用户重启或热重载后确认；若列表仍不显示，应继续检查 `UniformList` 父级尺寸或本地目录读取结果
+
+## 2026-07-08 完成双列 SFTP 顶部工具区紧凑化验证
+
+- 目的：在用户截图反馈顶部工具区过高、两侧样式需要一致后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`src/app/ui.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：将远端 / 本地功能按钮从独立操作行合并到路径行，改为小号图标按钮加 tooltip；补充 `parent_folder` 中英文文案；执行 `rustfmt --edition 2024 src/app/ui.rs` 与 `cargo check`
+- 验证结果：格式化和编译检查通过；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 最终效果仍需用户重启或热重载后确认；若半宽下图标按钮仍溢出，应继续收紧按钮间距或隐藏低频动作到菜单
