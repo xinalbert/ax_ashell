@@ -313,7 +313,7 @@ pub fn default_local_x_display() -> String {
 pub fn default_local_x_server_launch_args(path: &str) -> Vec<&'static str> {
     let lower = path.to_ascii_lowercase();
     if lower.ends_with("vcxsrv.exe") || lower.ends_with("xming.exe") {
-        vec![":0", "-multiwindow", "-clipboard"]
+        vec![":0", "-multiwindow", "-clipboard", "-ac"]
     } else {
         Vec::new()
     }
