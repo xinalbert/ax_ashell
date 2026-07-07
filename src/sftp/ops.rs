@@ -1,7 +1,7 @@
 use gpui::{Context, PathPromptOptions, Pixels, Point, Window};
 
 use crate::{
-    AxAshell, SftpContextMenuState,
+    AxShell, SftpContextMenuState,
     sftp::{RemoteEntry, SftpHandle},
     terminal,
 };
@@ -26,7 +26,7 @@ pub(crate) fn is_editable_text_file(filename: &str) -> bool {
     false
 }
 
-impl AxAshell {
+impl AxShell {
     pub(crate) fn active_sftp(&self) -> Option<&terminal::SftpUiState> {
         self.active_group
             .as_ref()

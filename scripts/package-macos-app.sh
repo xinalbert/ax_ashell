@@ -2,9 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="ax_ashell"
-BUNDLE_ID="dev.ax_ashell.app"
-APP_DIR="$ROOT_DIR/target/release/${APP_NAME}.app"
+APP_NAME="ax_shell"
+DISPLAY_NAME="AxShell"
+BUNDLE_ID="dev.ax_shell.app"
+APP_DIR="$ROOT_DIR/target/release/${DISPLAY_NAME}.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
@@ -34,7 +35,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$ROOT_DIR/target/release/$APP_NAME" "$MACOS_DIR/$APP_NAME"
 
-cp "$ROOT_DIR/assets/icons/terminal_icon_all_formats/terminal_icon.icns" "$RESOURCES_DIR/ax_ashell.icns"
+cp "$ROOT_DIR/assets/icons/terminal_icon_all_formats/terminal_icon.icns" "$RESOURCES_DIR/ax_shell.icns"
 
 cat > "$CONTENTS_DIR/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -46,14 +47,16 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <string>en</string>
   <key>CFBundleExecutable</key>
   <string>$APP_NAME</string>
+  <key>CFBundleDisplayName</key>
+  <string>$DISPLAY_NAME</string>
   <key>CFBundleIconFile</key>
-  <string>ax_ashell.icns</string>
+  <string>ax_shell.icns</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>$APP_NAME</string>
+  <string>$DISPLAY_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

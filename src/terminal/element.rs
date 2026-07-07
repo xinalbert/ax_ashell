@@ -10,7 +10,7 @@ use gpui::{
 };
 use gpui_component::ActiveTheme as _;
 
-use crate::AxAshell;
+use crate::AxShell;
 use crate::terminal::custom_blocks::{is_custom_block_supported, paint_custom_block};
 use crate::terminal::{RenderSnapshot, ViewportSelection};
 
@@ -144,7 +144,7 @@ struct CursorLayout {
 }
 
 pub struct TerminalElement {
-    view: Entity<AxAshell>,
+    view: Entity<AxShell>,
     focus_handle: FocusHandle,
     snapshot: RenderSnapshot,
     marked_text: Option<String>,
@@ -176,7 +176,7 @@ struct LayoutCustomBlock {
 }
 
 struct TerminalInputHandler {
-    view: Entity<AxAshell>,
+    view: Entity<AxShell>,
     element_bounds: Bounds<Pixels>,
     cell_width: f32,
     line_height: f32,
@@ -285,7 +285,7 @@ impl InputHandler for TerminalInputHandler {
 
 impl TerminalElement {
     pub fn new(
-        view: Entity<AxAshell>,
+        view: Entity<AxShell>,
         focus_handle: FocusHandle,
         snapshot: RenderSnapshot,
         marked_text: Option<String>,

@@ -7,7 +7,7 @@ use gpui_component::{
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
 use crate::{
-    AxAshell,
+    AxShell,
     session::config::{ConfigStore, CustomThemeModeConfig},
 };
 
@@ -703,7 +703,7 @@ fn build_custom_theme_set(
     Ok((
         ThemeSet {
             name: custom_name.clone().into(),
-            author: Some("ax_ashell".into()),
+            author: Some("ax_shell".into()),
             url: None,
             themes: vec![light.clone(), dark.clone()],
         },
@@ -724,7 +724,7 @@ fn write_custom_theme_file(config: &ConfigStore, theme_set: &ThemeSet) -> Result
     fs::write(&path, content).with_context(|| format!("failed to write {}", path.display()))
 }
 
-impl AxAshell {
+impl AxShell {
     fn current_custom_theme_draft_name(&self) -> String {
         self.config.custom_theme_draft().theme_name
     }

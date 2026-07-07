@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use directories::BaseDirs;
@@ -387,7 +391,7 @@ fn default_s3_region() -> String {
 }
 
 fn default_s3_object_key() -> String {
-    "ax_ashell-sync.json".to_string()
+    "ax_shell-sync.json".to_string()
 }
 
 fn default_follow_system_theme() -> bool {
@@ -500,6 +504,7 @@ impl ConfigStore {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create config dir {}", parent.display()))?;
+            Self::migrate_legacy_config_if_needed(parent)?;
 
             #[cfg(unix)]
             {
@@ -565,9 +570,61 @@ impl ConfigStore {
         }
     }
 
+    pub fn config_root_dir_path() -> Result<PathBuf> {
+        Self::config_root_dir()
+    }
+
     fn config_root_dir() -> Result<PathBuf> {
         let dirs = BaseDirs::new().context("could not determine user home directory")?;
+        Ok(dirs.home_dir().join(".config").join("ax_shell"))
+    }
+
+    fn legacy_config_root_dir() -> Result<PathBuf> {
+        let dirs = BaseDirs::new().context("could not determine user home directory")?;
         Ok(dirs.home_dir().join(".config").join("ax_ashell"))
+    }
+
+    fn migrate_legacy_config_if_needed(config_root: &Path) -> Result<()> {
+        let legacy_root = Self::legacy_config_root_dir()?;
+        if !legacy_root.exists() {
+            return Ok(());
+        }
+
+        let legacy_config = legacy_root.join("sessions.json");
+        let current_config = config_root.join("sessions.json");
+        if legacy_config.exists() && !current_config.exists() {
+            fs::copy(&legacy_config, &current_config).with_context(|| {
+                format!(
+                    "failed to migrate legacy config {} to {}",
+                    legacy_config.display(),
+                    current_config.display()
+                )
+            })?;
+            tracing::info!(
+                "migrated legacy config from {} to {}",
+                legacy_config.display(),
+                current_config.display()
+            );
+        }
+
+        let legacy_themes = legacy_root.join("themes");
+        let current_themes = config_root.join("themes");
+        if legacy_themes.exists() && !current_themes.exists() {
+            copy_dir_recursive(&legacy_themes, &current_themes).with_context(|| {
+                format!(
+                    "failed to migrate legacy themes {} to {}",
+                    legacy_themes.display(),
+                    current_themes.display()
+                )
+            })?;
+            tracing::info!(
+                "migrated legacy themes from {} to {}",
+                legacy_themes.display(),
+                current_themes.display()
+            );
+        }
+
+        Ok(())
     }
 
     pub fn theme_dir_path() -> Result<PathBuf> {
@@ -634,7 +691,7 @@ impl ConfigStore {
 
     pub fn sync_s3_object_key(&self) -> &str {
         if self.cache.sync_s3_object_key.is_empty() {
-            "ax_ashell-sync.json"
+            "ax_shell-sync.json"
         } else {
             &self.cache.sync_s3_object_key
         }
@@ -1175,6 +1232,30 @@ impl ConfigStore {
 
         Ok(())
     }
+}
+
+fn copy_dir_recursive(from: &Path, to: &Path) -> Result<()> {
+    fs::create_dir_all(to).with_context(|| format!("failed to create {}", to.display()))?;
+    for entry in fs::read_dir(from).with_context(|| format!("failed to read {}", from.display()))? {
+        let entry = entry.with_context(|| format!("failed to read entry in {}", from.display()))?;
+        let source = entry.path();
+        let target = to.join(entry.file_name());
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("failed to read file type for {}", source.display()))?;
+        if file_type.is_dir() {
+            copy_dir_recursive(&source, &target)?;
+        } else if file_type.is_file() {
+            fs::copy(&source, &target).with_context(|| {
+                format!(
+                    "failed to copy legacy file {} to {}",
+                    source.display(),
+                    target.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 pub trait ProxyStream:

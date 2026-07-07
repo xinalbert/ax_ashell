@@ -10,7 +10,7 @@ pub(crate) const TERMINAL_PADDING_X: f32 = 32.0;
 #[allow(dead_code)]
 pub(crate) const TERMINAL_PADDING_Y: f32 = 32.0;
 
-pub(crate) const TERMINAL_KEY_CONTEXT: &str = "AxAshellTerminal";
+pub(crate) const TERMINAL_KEY_CONTEXT: &str = "AxShellTerminal";
 
 pub(crate) fn public_version_label() -> String {
     format_public_version(env!("CARGO_PKG_VERSION"))

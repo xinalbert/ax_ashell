@@ -26,8 +26,8 @@ const DEFAULT_WATCH_PATHS: &[&str] = &[
     ".cargo",
 ];
 
-const INSTANCE_KIND_ENV: &str = "AX_ASHELL_INSTANCE_KIND";
-const INSTANCE_APP_ID_ENV: &str = "AX_ASHELL_APP_ID";
+const INSTANCE_KIND_ENV: &str = "AX_SHELL_INSTANCE_KIND";
+const INSTANCE_APP_ID_ENV: &str = "AX_SHELL_APP_ID";
 const DEV_RELOAD_INSTANCE_KIND: &str = "dev-reload";
 
 fn main() {
@@ -123,11 +123,11 @@ impl Config {
     fn help() -> &'static str {
         "\
 Usage:
-  cargo run --example dev_reload -- [options] [-- <ax_ashell-args>]
-  cargo dev-reload [options] [-- <ax_ashell-args>]
+  cargo run --example dev_reload -- [options] [-- <ax_shell-args>]
+  cargo dev-reload [options] [-- <ax_shell-args>]
 
 Options:
-  --release             Build and run target/release/ax_ashell
+  --release             Build and run target/release/ax_shell
   --debounce-ms <ms>    Debounce file events before rebuild (default: 400)
   --watch <path>        Additional or replacement watch path; may be repeated
   -h, --help            Show this help
@@ -212,9 +212,9 @@ impl DebugLogs {
             build_stdout: SharedLogFile::create(session_dir.join("cargo-build.stdout.log"))?,
             build_stderr: SharedLogFile::create(session_dir.join("cargo-build.stderr.log"))?,
             #[cfg(not(target_os = "macos"))]
-            app_stdout: SharedLogFile::create(session_dir.join("ax_ashell.stdout.log"))?,
+            app_stdout: SharedLogFile::create(session_dir.join("ax_shell.stdout.log"))?,
             #[cfg(not(target_os = "macos"))]
-            app_stderr: SharedLogFile::create(session_dir.join("ax_ashell.stderr.log"))?,
+            app_stderr: SharedLogFile::create(session_dir.join("ax_shell.stderr.log"))?,
         };
         logs.runner.write_line(format!(
             "[dev-reload] debug logs enabled under {} (root: {})",
@@ -334,7 +334,7 @@ impl DevReload {
             .current_dir(&self.root)
             .arg("build")
             .arg("--bin")
-            .arg("ax_ashell");
+            .arg("ax_shell");
         if self.config.release {
             command.arg("--release");
         }
@@ -405,7 +405,7 @@ impl DevReload {
             command.env(INSTANCE_KIND_ENV, DEV_RELOAD_INSTANCE_KIND);
             command.env(
                 INSTANCE_APP_ID_ENV,
-                format!("dev.ax_ashell.dev_reload.{}", self.profile_name()),
+                format!("dev.ax_shell.dev_reload.{}", self.profile_name()),
             );
             command.stdin(Stdio::inherit());
             if self.logs.is_some() {
@@ -426,13 +426,13 @@ impl DevReload {
                     stdout,
                     io::stdout(),
                     logs.app_stdout.clone(),
-                    "ax_ashell:stdout",
+                    "ax_shell:stdout",
                 );
                 spawn_stream_tee(
                     stderr,
                     io::stderr(),
                     logs.app_stderr.clone(),
-                    "ax_ashell:stderr",
+                    "ax_shell:stderr",
                 );
             }
             self.log_runner(format!("[dev-reload] started {}", executable.display()));
@@ -493,7 +493,7 @@ impl DevReload {
             "debug"
         };
         base.join(profile)
-            .join(format!("ax_ashell{}", env::consts::EXE_SUFFIX))
+            .join(format!("ax_shell{}", env::consts::EXE_SUFFIX))
     }
 
     fn profile_name(&self) -> &'static str {
@@ -528,7 +528,7 @@ fn macos_bundle_paths(executable: &Path, profile: &str) -> Result<MacOsBundlePat
     let executable_dir = executable
         .parent()
         .context("resolve executable directory")?;
-    let bundle_dir = executable_dir.join("ax_ashell-dev.app");
+    let bundle_dir = executable_dir.join("AxShell-dev.app");
     let bundled_executable = bundle_dir
         .join("Contents")
         .join("MacOS")
@@ -536,7 +536,7 @@ fn macos_bundle_paths(executable: &Path, profile: &str) -> Result<MacOsBundlePat
     Ok(MacOsBundlePaths {
         bundle_dir,
         bundled_executable,
-        bundle_id: format!("dev.ax_ashell.dev_reload.{profile}"),
+        bundle_id: format!("dev.ax_shell.dev_reload.{profile}"),
     })
 }
 
@@ -582,13 +582,13 @@ fn prepare_macos_app_bundle(
     })?;
 
     let icon_source = root.join("assets/icons/terminal_icon_all_formats/terminal_icon.icns");
-    let icon_target = resources_dir.join("ax_ashell.icns");
+    let icon_target = resources_dir.join("ax_shell.icns");
     if icon_source.exists() {
         fs::copy(&icon_source, &icon_target)
             .with_context(|| format!("copy icon into dev bundle {}", icon_target.display()))?;
     }
 
-    let bundle_display_name = format!("ax_ashell dev ({profile})");
+    let bundle_display_name = format!("AxShell dev ({profile})");
     let info_plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -600,9 +600,9 @@ fn prepare_macos_app_bundle(
   <key>CFBundleDisplayName</key>
   <string>{bundle_display_name}</string>
   <key>CFBundleExecutable</key>
-  <string>ax_ashell</string>
+  <string>ax_shell</string>
   <key>CFBundleIconFile</key>
-  <string>ax_ashell.icns</string>
+  <string>ax_shell.icns</string>
   <key>CFBundleIdentifier</key>
   <string>{bundle_id}</string>
   <key>CFBundleInfoDictionaryVersion</key>

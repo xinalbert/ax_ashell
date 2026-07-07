@@ -11,7 +11,7 @@ use uuid::Uuid;
 use self::config::{AuthMethod, Session};
 
 use crate::{
-    AxAshell, PaneLayout, SelectorEntry, TabGroup,
+    AxShell, PaneLayout, SelectorEntry, TabGroup,
     app::WorkspacePage,
     app::constants::{DEFAULT_COLS, DEFAULT_ROWS},
     backend::{local, ssh},
@@ -64,7 +64,7 @@ fn normalize_session_group_name(value: &str) -> String {
     value.trim().to_string()
 }
 
-impl AxAshell {
+impl AxShell {
     pub(crate) fn open_local(&mut self, cx: &mut Context<Self>) {
         let id = Uuid::new_v4().to_string();
         match local::spawn_local_terminal(

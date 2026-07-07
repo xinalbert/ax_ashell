@@ -1,8 +1,8 @@
 [package]
-name = "ax_ashell"
+name = "ax_shell"
 version = "2026.7.6"
 edition = "2024"
-authors = ["ax_ashell contributors"]
+authors = ["AxShell contributors"]
 description = "A GPUI Component based SSH and local terminal client"
 license = "GPL-3.0-or-later"
 rust-version = "1.85.0"
@@ -53,15 +53,15 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 sha2 = "0.10"
 
 [package.metadata.deb]
-maintainer = "ax_ashell contributors"
+maintainer = "AxShell contributors"
 license-file = ["LICENSE"]
 extended-description = "A GPUI Component based SSH and local terminal client"
 section = "terminal"
 priority = "optional"
 assets = [
-    ["target/release/ax_ashell", "usr/bin/", "755"],
-    ["assets/ax_ashell.desktop", "usr/share/applications/", "644"],
-    ["assets/icons/terminal_icon_all_formats/terminal_icon_256.png", "usr/share/icons/hicolor/256x256/apps/ax_ashell.png", "644"],
+    ["target/release/ax_shell", "usr/bin/", "755"],
+    ["assets/ax_shell.desktop", "usr/share/applications/", "644"],
+    ["assets/icons/terminal_icon_all_formats/terminal_icon_256.png", "usr/share/icons/hicolor/256x256/apps/ax_shell.png", "644"],
 ]
 
 [profile.release]

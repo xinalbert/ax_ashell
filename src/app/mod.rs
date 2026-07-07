@@ -206,7 +206,7 @@ pub(crate) enum WorkspacePage {
     Settings,
 }
 
-pub(crate) struct AxAshell {
+pub(crate) struct AxShell {
     pub(crate) focus_handle: FocusHandle,
     pub(crate) selector_focus_handle: FocusHandle,
     pub(crate) host_input: Entity<InputState>,
@@ -367,7 +367,7 @@ pub(crate) struct SftpContextMenuState {
     pub(crate) position: Point<Pixels>,
 }
 
-impl AxAshell {
+impl AxShell {
     fn transfer_source_title(&self, tab_id: &str) -> String {
         self.tabs
             .iter()
@@ -467,7 +467,7 @@ impl AxAshell {
         });
         let sync_endpoint_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("https://dav.example.com/ax_ashell/")
+                .placeholder("https://dav.example.com/ax_shell/")
                 .default_value(config.sync_endpoint())
         });
         let sync_username_input = cx.new(|cx| {
@@ -497,7 +497,7 @@ impl AxAshell {
         });
         let sync_s3_object_key_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("ax_ashell-sync.json")
+                .placeholder("ax_shell-sync.json")
                 .default_value(config.sync_s3_object_key())
         });
         let sync_s3_access_key_input = cx.new(|cx| {

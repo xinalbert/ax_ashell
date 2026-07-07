@@ -12,9 +12,9 @@ use gpui_component::{
 };
 use rust_i18n::t;
 
-use crate::AxAshell;
+use crate::AxShell;
 
-impl AxAshell {
+impl AxShell {
     pub(crate) fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.search_active {
             self.close_search(window, cx);

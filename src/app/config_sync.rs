@@ -3,12 +3,12 @@ use gpui_component::input::InputState;
 use rust_i18n::t;
 
 use crate::{
-    AxAshell,
+    AxShell,
     sync::{self, SyncBackendCredentials, SyncCredentials, SyncPayload, SyncResult},
     terminal::BackendEvent,
 };
 
-impl AxAshell {
+impl AxShell {
     fn sync_input_value(input: &Entity<InputState>, cx: &Context<Self>) -> String {
         input.read(cx).value().trim().to_string()
     }

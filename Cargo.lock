@@ -757,7 +757,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ax_ashell"
+name = "ax_shell"
 version = "2026.7.6"
 dependencies = [
  "alacritty_terminal",

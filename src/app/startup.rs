@@ -1,12 +1,13 @@
 use anyhow::{Context as _, Result, anyhow};
 use gpui::{App, AppContext as _, Bounds, WindowOptions, point, px, size};
 use gpui_component::Root;
+use std::path::PathBuf;
 
-use crate::AxAshell;
+use crate::AxShell;
 use crate::session::config::ConfigStore;
 
-const INSTANCE_KIND_ENV: &str = "AX_ASHELL_INSTANCE_KIND";
-const INSTANCE_APP_ID_ENV: &str = "AX_ASHELL_APP_ID";
+const INSTANCE_KIND_ENV: &str = "AX_SHELL_INSTANCE_KIND";
+const INSTANCE_APP_ID_ENV: &str = "AX_SHELL_APP_ID";
 const DEV_RELOAD_INSTANCE_KIND: &str = "dev-reload";
 
 fn current_instance_kind() -> Option<String> {
@@ -21,9 +22,9 @@ fn current_window_title() -> &'static str {
         current_instance_kind().as_deref(),
         Some(DEV_RELOAD_INSTANCE_KIND)
     ) {
-        "ax_ashell [dev]"
+        "AxShell [dev]"
     } else {
-        "ax_ashell"
+        "AxShell"
     }
 }
 
@@ -44,6 +45,14 @@ fn should_force_app_activation() -> bool {
 pub(crate) fn bind_workspace_keys(cx: &mut gpui::App) {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
     crate::app::keybinding_recorder::bind_workspace_keys_from_config(cx, &config);
+}
+
+fn app_config_dir() -> PathBuf {
+    ConfigStore::config_root_dir_path().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn app_log_dir() -> PathBuf {
+    app_config_dir().join("log")
 }
 
 struct LocalMinutelyRoller {
@@ -121,18 +130,11 @@ impl std::io::Write for LocalMinutelyRoller {
 pub(crate) fn init_logging() {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-    let log_dir = directories::BaseDirs::new()
-        .map(|dirs| {
-            dirs.home_dir()
-                .join(".config")
-                .join("ax_ashell")
-                .join("log")
-        })
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let log_dir = app_log_dir();
 
     std::fs::create_dir_all(&log_dir).ok();
 
-    let roller = LocalMinutelyRoller::new(log_dir.clone(), "ax_ashell".to_string());
+    let roller = LocalMinutelyRoller::new(log_dir.clone(), "ax_shell".to_string());
 
     let (non_blocking, _guard) = tracing_appender::non_blocking(roller);
     // Leak the guard so it lives for the entire duration of the app since GPUI's run might not return
@@ -416,7 +418,7 @@ pub(crate) fn open_main_window(cx: &mut App) {
     cx.open_window(window_options, |window, cx| {
         window.set_window_title(current_window_title());
         gpui_component::Theme::sync_system_appearance(Some(window), cx);
-        let view = cx.new(|cx| AxAshell::new(window, cx));
+        let view = cx.new(|cx| AxShell::new(window, cx));
 
         tracing::info!("[ui] main application window opened");
         let focus_handle = view.read(cx).focus_handle.clone();

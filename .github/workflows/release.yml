@@ -25,19 +25,19 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows-x86_64
-            bin: ax_ashell.exe
+            bin: ax_shell.exe
           - os: ubuntu-22.04 # build on the oldest supported runner for broader glibc compatibility
             target: x86_64-unknown-linux-gnu
             name: linux-x86_64
-            bin: ax_ashell
+            bin: ax_shell
           - os: macos-14 # Apple Silicon
             target: aarch64-apple-darwin
             name: macos-aarch64
-            bin: ax_ashell
+            bin: ax_shell
           - os: macos-14 # Intel (cross-compiled from Apple Silicon to avoid queue delays)
             target: x86_64-apple-darwin
             name: macos-x86_64
-            bin: ax_ashell
+            bin: ax_shell
 
     steps:
       - uses: actions/checkout@v5
@@ -73,7 +73,7 @@ jobs:
         run: |
           set -eu
           VERSION="${GITHUB_REF_NAME:-dev}"
-          STAGE="ax_ashell-${VERSION}-${{ matrix.name }}"
+          STAGE="ax_shell-${VERSION}-${{ matrix.name }}"
 
           if [ "${{ runner.os }}" = "macOS" ]; then
             # ── Build a proper .app bundle ────────────────────────────────────
@@ -81,12 +81,12 @@ jobs:
             # scripts/package-macos-app.sh, because that script runs `cargo build`
             # without respecting the `--target` flag from the matrix.
 
-            APP="ax_ashell.app"
+            APP="AxShell.app"
             CONTENTS="$APP/Contents"
             mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 
-            cp "target/${{ matrix.target }}/release/ax_ashell" "$CONTENTS/MacOS/"
-            cp "assets/icons/terminal_icon_all_formats/terminal_icon.icns" "$CONTENTS/Resources/ax_ashell.icns"
+            cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$CONTENTS/MacOS/"
+            cp "assets/icons/terminal_icon_all_formats/terminal_icon.icns" "$CONTENTS/Resources/ax_shell.icns"
 
             VERSION_NUM="${VERSION#v}"
             cat > "$CONTENTS/Info.plist" <<EOF
@@ -98,15 +98,17 @@ jobs:
             <key>CFBundleDevelopmentRegion</key>
             <string>en</string>
             <key>CFBundleExecutable</key>
-            <string>ax_ashell</string>
+            <string>ax_shell</string>
+            <key>CFBundleDisplayName</key>
+            <string>AxShell</string>
             <key>CFBundleIconFile</key>
-            <string>ax_ashell.icns</string>
+            <string>ax_shell.icns</string>
             <key>CFBundleIdentifier</key>
-            <string>dev.ax_ashell.app</string>
+            <string>dev.ax_shell.app</string>
             <key>CFBundleInfoDictionaryVersion</key>
             <string>6.0</string>
             <key>CFBundleName</key>
-            <string>ax_ashell</string>
+            <string>AxShell</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
             <key>CFBundleShortVersionString</key>
@@ -304,40 +306,40 @@ jobs:
   #         SHA_INTEL=$(sha256sum dist/macos-x86_64/*.zip | cut -d' ' -f1)
   #
   #         mkdir -p tap/Casks
-  #         CASK_FILE="tap/Casks/ax_ashell.rb"
+  #         CASK_FILE="tap/Casks/ax_shell.rb"
   #
   #         cat > "$CASK_FILE" <<EOF
-  #         cask "ax_ashell" do
+  #         cask "ax_shell" do
   #           version "${VERSION}"
   #
   #           on_arm do
   #             sha256 "${SHA_ARM}"
-  #             url "https://github.com/xinalbert/ax_ashell/releases/download/v#{version}/ax_ashell-v#{version}-macos-aarch64.zip"
+  #             url "https://github.com/xinalbert/ax_shell/releases/download/v#{version}/ax_shell-v#{version}-macos-aarch64.zip"
   #           end
   #           on_intel do
   #             sha256 "${SHA_INTEL}"
-  #             url "https://github.com/xinalbert/ax_ashell/releases/download/v#{version}/ax_ashell-v#{version}-macos-x86_64.zip"
+  #             url "https://github.com/xinalbert/ax_shell/releases/download/v#{version}/ax_shell-v#{version}-macos-x86_64.zip"
   #           end
   #
-  #           name "ax_ashell"
-  #           desc "ax_ashell is a modern, fast, GPUI Component-based desktop terminal client written in Rust."
-  #           homepage "https://github.com/xinalbert/ax_ashell"
+  #           name "ax_shell"
+  #           desc "AxShell is a modern, fast, GPUI Component-based desktop terminal client written in Rust."
+  #           homepage "https://github.com/xinalbert/ax_shell"
   #
-  #           app "ax_ashell.app"
+  #           app "AxShell.app"
   #
   #           postflight do
-  #             puts "Removing quarantine flag from ax_ashell.app..."
+  #             puts "Removing quarantine flag from AxShell.app..."
   #             system_command "/usr/bin/xattr",
-  #                            args: ["-rd", "com.apple.quarantine", "#{appdir}/ax_ashell.app"],
+  #                            args: ["-rd", "com.apple.quarantine", "#{appdir}/AxShell.app"],
   #                            sudo: true
   #           end
   #
   #           caveats <<~EOS
-  #             ax_ashell uses ad-hoc signing. The installation includes a postflight script
+  #             AxShell uses ad-hoc signing. The installation includes a postflight script
   #             that removes the 'com.apple.quarantine' attribute from the application
   #             to allow it to run. This will require your administrator password.
   #
-  #             ax_ashell 采用本地签名。安装程序包含一个后置脚本，用于移除应用程序的
+  #             AxShell 采用本地签名。安装程序包含一个后置脚本，用于移除应用程序的
   #             'com.apple.quarantine' 属性以允许其运行。这需要您的管理员密码。
   #           EOS
   #         end
@@ -352,8 +354,8 @@ jobs:
   #         git config user.name "github-actions[bot]"
   #         git config user.email "github-actions[bot]@users.noreply.github.com"
   #         if [[ -n $(git status -s) ]]; then
-  #           git add Casks/ax_ashell.rb
-  #           git commit -m "chore: bump ax_ashell to v${VERSION}"
+  #           git add Casks/ax_shell.rb
+  #           git commit -m "chore: bump ax_shell to v${VERSION}"
   #           git push
   #         else
   #           echo "No changes to commit"
