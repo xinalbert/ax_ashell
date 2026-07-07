@@ -149,6 +149,7 @@ pub struct TerminalElement {
     snapshot: RenderSnapshot,
     marked_text: Option<String>,
     font_family: SharedString,
+    effective_font_family: Option<SharedString>,
     font_size: Pixels,
     line_height: Pixels,
     cell_width: Pixels,
@@ -302,6 +303,7 @@ impl TerminalElement {
             snapshot,
             marked_text,
             font_family,
+            effective_font_family: None,
             font_size,
             line_height,
             cell_width,
@@ -313,10 +315,38 @@ impl TerminalElement {
     fn base_text_style(&self, cx: &App) -> TextStyle {
         TextStyle {
             color: cx.theme().foreground,
-            font_family: self.font_family.clone(),
+            font_family: self.active_font_family(),
             font_size: self.font_size.into(),
             line_height: self.line_height.into(),
             ..Default::default()
+        }
+    }
+
+    fn active_font_family(&self) -> SharedString {
+        self.effective_font_family
+            .clone()
+            .unwrap_or_else(|| self.font_family.clone())
+    }
+
+    fn measured_metrics(&mut self, window: &mut Window) -> TerminalMetrics {
+        let font_family =
+            terminal_monospace_font_family(window, self.font_family.clone(), self.font_size);
+        self.effective_font_family = Some(font_family.clone());
+        let font = Font {
+            family: font_family,
+            ..Font::default()
+        };
+        let font_id = window.text_system().resolve_font(&font);
+        let measured_width = window
+            .text_system()
+            .ch_advance(font_id, self.font_size)
+            .or_else(|_| window.text_system().em_advance(font_id, self.font_size))
+            .map(|width| width.as_f32())
+            .unwrap_or_else(|_| self.cell_width.as_f32())
+            .max(6.0);
+        TerminalMetrics {
+            cell_width: px(measured_width),
+            line_height: self.line_height,
         }
     }
 
@@ -367,7 +397,7 @@ impl TerminalElement {
             color: fg,
             background_color: None,
             font: Font {
-                family: self.font_family.clone(),
+                family: self.active_font_family(),
                 weight,
                 style,
                 ..Font::default()
@@ -569,6 +599,41 @@ impl TerminalElement {
     }
 }
 
+pub(crate) fn terminal_monospace_font_family(
+    window: &mut Window,
+    family: SharedString,
+    font_size: Pixels,
+) -> SharedString {
+    if terminal_font_is_monospace(window, family.clone(), font_size) {
+        family
+    } else {
+        "Maple Mono NF CN".into()
+    }
+}
+
+pub(crate) fn terminal_font_is_monospace(
+    window: &mut Window,
+    family: SharedString,
+    font_size: Pixels,
+) -> bool {
+    let font = Font {
+        family,
+        ..Font::default()
+    };
+    let text_system = window.text_system();
+    let font_id = text_system.resolve_font(&font);
+    let Ok(zero) = text_system.ch_advance(font_id, font_size) else {
+        return false;
+    };
+
+    ['i', 'm', 'W', ' '].into_iter().all(|ch| {
+        text_system
+            .advance(font_id, font_size, ch)
+            .map(|advance| (advance.width - zero).abs() <= px(0.5))
+            .unwrap_or(false)
+    })
+}
+
 impl IntoElement for TerminalElement {
     type Element = Self;
 
@@ -608,10 +673,11 @@ impl Element for TerminalElement {
         _inspector_id: Option<&gpui::InspectorElementId>,
         bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
         let _ = self.base_text_style(cx);
+        let metrics = self.measured_metrics(window);
         let (rects, runs, custom_blocks, underlines) = self.layout_grid(cx);
 
         // Save the precise GPUI-rendered bounds of this terminal element.
@@ -623,8 +689,12 @@ impl Element for TerminalElement {
 
             // Sync PTY size unconditionally on every prepaint layout pass to ensure
             // absolute synchronization with GPUI layout regardless of intermediate events.
-            let line_height = this.terminal_line_height();
-            let cell_width = this.terminal_cell_width();
+            this.update_terminal_font_metrics(
+                metrics.cell_width.as_f32(),
+                metrics.line_height.as_f32(),
+            );
+            let line_height = metrics.line_height.as_f32();
+            let cell_width = metrics.cell_width.as_f32();
             let w = bounds.size.width.as_f32();
             let h = bounds.size.height.as_f32();
             let cols = (w / cell_width).floor().max(1.0) as u16;
@@ -642,8 +712,8 @@ impl Element for TerminalElement {
         PrepaintState {
             bounds,
             metrics: TerminalMetrics {
-                cell_width: self.cell_width,
-                line_height: self.line_height,
+                cell_width: metrics.cell_width,
+                line_height: metrics.line_height,
             },
             rects,
             runs,
@@ -731,7 +801,7 @@ impl Element for TerminalElement {
                     &[TextRun {
                         len: marked_text.len(),
                         font: Font {
-                            family: self.font_family.clone(),
+                            family: self.active_font_family(),
                             ..Font::default()
                         },
                         color: base_style.color,

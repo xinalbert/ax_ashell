@@ -184,11 +184,9 @@ impl AxShell {
         }
         tab.clear_selection();
 
-        if let Some(bytes) = encode_key(&event.keystroke, tab.app_cursor_mode(), false) {
-            tab.send_backend(BackendCommand::Input(bytes));
-            window.prevent_default();
-            cx.stop_propagation();
-            cx.notify();
+        let app_cursor_mode = tab.app_cursor_mode();
+        if let Some(bytes) = encode_key(&event.keystroke, app_cursor_mode, false) {
+            self.send_terminal_input(bytes, window, cx);
         }
     }
 
@@ -214,6 +212,7 @@ impl AxShell {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
+        self.clear_terminal_marked_text(window, cx);
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
             return;
         };

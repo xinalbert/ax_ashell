@@ -138,6 +138,21 @@ pub(crate) struct TerminalScrollbarState {
     display_offset: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TerminalFontMetrics {
+    pub(crate) cell_width: f32,
+    pub(crate) line_height: f32,
+}
+
+impl TerminalFontMetrics {
+    pub(crate) fn fallback(font_size: f32) -> Self {
+        Self {
+            cell_width: (font_size * 0.646).max(6.0),
+            line_height: (font_size * 1.385).max(font_size + 2.0),
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct TerminalScrollbarHandle {
     state: Rc<RefCell<Option<TerminalScrollbarState>>>,
@@ -252,6 +267,7 @@ pub(crate) struct AxShell {
     pub(crate) dark_theme_name: SharedString,
     pub(crate) ui_font_size: f32,
     pub(crate) terminal_font_size: f32,
+    pub(crate) terminal_font_metrics: TerminalFontMetrics,
     pub(crate) terminal_zoom_accumulator: f32,
     pub(crate) ui_font_family: SharedString,
     pub(crate) terminal_font_family: SharedString,
@@ -709,6 +725,7 @@ impl AxShell {
             dark_theme_name,
             ui_font_size: config.ui_font_size(),
             terminal_font_size: config.terminal_font_size(),
+            terminal_font_metrics: TerminalFontMetrics::fallback(config.terminal_font_size()),
             terminal_zoom_accumulator: 0.0,
             cursor_style: config.cursor_style(),
             ui_font_family,
@@ -1025,6 +1042,9 @@ impl AxShell {
                     if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                         tab.backend_initialized = true;
                         tab.feed(&bytes);
+                    }
+                    if self.terminal_marked_text.take().is_some() {
+                        changed = true;
                     }
                 }
                 BackendEvent::Status { tab_id, text } => {

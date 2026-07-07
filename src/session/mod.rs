@@ -438,15 +438,27 @@ impl AxShell {
     }
 
     pub(crate) fn terminal_cell_width(&self) -> f32 {
-        (self.terminal_font_size * 0.646).max(6.0)
+        self.terminal_font_metrics.cell_width
     }
 
     pub(crate) fn terminal_line_height(&self) -> f32 {
-        (self.terminal_font_size * 1.385).max(self.terminal_font_size + 2.0)
+        self.terminal_font_metrics.line_height
+    }
+
+    pub(crate) fn update_terminal_font_metrics(&mut self, cell_width: f32, line_height: f32) {
+        let next = crate::app::TerminalFontMetrics {
+            cell_width: cell_width.max(6.0),
+            line_height: line_height.max(self.terminal_font_size + 2.0),
+        };
+        if self.terminal_font_metrics != next {
+            self.terminal_font_metrics = next;
+        }
     }
 
     pub(crate) fn change_terminal_font_size(&mut self, delta: f32, cx: &mut Context<Self>) {
         self.terminal_font_size = (self.terminal_font_size + delta).clamp(10.0, 24.0);
+        self.terminal_font_metrics =
+            crate::app::TerminalFontMetrics::fallback(self.terminal_font_size);
         self.config.set_terminal_font_size(self.terminal_font_size);
         if let Err(err) = self.config.save() {
             tracing::warn!("failed to save terminal font size: {err:#}");
@@ -484,6 +496,8 @@ impl AxShell {
 
     pub(crate) fn change_terminal_font_family(&mut self, family: &str, cx: &mut Context<Self>) {
         self.terminal_font_family = family.into();
+        self.terminal_font_metrics =
+            crate::app::TerminalFontMetrics::fallback(self.terminal_font_size);
         self.config.set_terminal_font_family(family);
         if let Err(err) = self.config.save() {
             tracing::warn!("failed to save terminal font family: {err:#}");
