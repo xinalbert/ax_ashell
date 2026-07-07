@@ -57,7 +57,7 @@ That directory contains:
 - `cargo build` `stdout` / `stderr`
 - app process `stdout` / `stderr`
 
-If the app has already launched successfully, a later rebuild failure keeps the old process running and continues watching. Only an initial startup build failure exits the command.
+Whether the failure happens on the initial startup build or on a later rebuild, `cargo dev-reload` now keeps watching and waits for the next file change before trying again.
 
 ## macOS `.app` Packaging
 

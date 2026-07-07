@@ -57,7 +57,7 @@ target/debug/dev-reload-logs/session-<timestamp>/
 - `cargo build` 的 `stdout` / `stderr`
 - 应用进程的 `stdout` / `stderr`
 
-如果应用已经启动成功，后续某次改动导致编译失败，`cargo dev-reload` 会保留当前旧进程并继续监听；只有首次启动即编译失败时才会退出。
+无论是首次启动还是后续某次改动，只要编译失败，`cargo dev-reload` 都会保留当前状态并继续监听，等下一次文件变化后再尝试重新构建。
 
 ## macOS `.app` 打包
 

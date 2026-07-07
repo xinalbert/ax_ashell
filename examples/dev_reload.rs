@@ -135,6 +135,7 @@ Options:
 Notes:
   - This is restart-based development reload, not state-preserving hot reload.
   - On file change, the running app is stopped first, then rebuilt and restarted.
+  - If a build fails, dev-reload stays alive and waits for the next change.
   - Default watch set: src, assets, locales, Cargo.toml, Cargo.lock, build.rs, .cargo
 "
     }
@@ -265,13 +266,13 @@ impl DevReload {
             self.log_runner(format!("[dev-reload] watching {}", watch_path.display()));
         }
 
-        self.rebuild_and_restart("initial start", true)?;
+        self.rebuild_and_restart("initial start")?;
 
         loop {
             let events =
                 self.collect_change_batch(&rx, Duration::from_millis(self.config.debounce_ms))?;
             let summary = summarize_events(&events);
-            self.rebuild_and_restart(&summary, false)?;
+            self.rebuild_and_restart(&summary)?;
         }
     }
 
@@ -293,13 +294,11 @@ impl DevReload {
             .collect()
     }
 
-    fn rebuild_and_restart(&mut self, reason: &str, fail_fast: bool) -> Result<()> {
+    fn rebuild_and_restart(&mut self, reason: &str) -> Result<()> {
         self.log_runner(format!("[dev-reload] trigger: {reason}"));
         if let Err(err) = self.build_app() {
             self.log_runner(format!("[dev-reload] build failed: {err:#}"));
-            if fail_fast {
-                return Err(err);
-            }
+            self.log_runner("[dev-reload] waiting for the next filesystem change");
             return Ok(());
         }
 
