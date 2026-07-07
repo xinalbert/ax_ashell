@@ -79,6 +79,8 @@ open target/release/AxShell.app
 SIGN_IDENTITY="Developer ID Application: Example" ./scripts/package-macos-app.sh
 ```
 
+本地 `.app` 打包和 GitHub Release workflow 共用 `scripts/release_version.py` 里的版本规则，不再各自拼版本字符串。
+
 ## Debian `.deb` 打包
 
 ```bash
@@ -98,10 +100,33 @@ sudo dpkg -i target/debian/ax_shell_<version>-1_amd64.deb
 assets/ax_shell.desktop
 ```
 
+## GitHub Release
+
+推送以下格式的 tag 会触发正式发布：
+
+```text
+vYYYY.M.D
+vYYYY.M.D-N
+```
+
+当前映射规则：
+
+- Tag / Cargo / 运行时版本：`v2026.7.6` / `2026.7.6`，或 `v2026.7.6-1` / `2026.7.6-1`
+- 对外版本：`2026.07.06` 或 `2026.07.06.1`
+- macOS `CFBundleShortVersionString`：`2026.07.06`
+- macOS `CFBundleVersion`：`20260706` 或 `20260706.1`
+
+之所以不把 `Cargo.toml` 直接写成 `2026.07.06`，是因为 Cargo 会拒绝带前导零的 semver 段。因此现在把 tag 和 `Cargo.toml` 统一为 Cargo 兼容格式，再由脚本派生对外展示版本。
+
+workflow 在 tag 构建时会先用 `scripts/release_version.py` 同步 runner 内的 `Cargo.toml` 和 `Cargo.lock`，再执行 `cargo build --release`。这样 `env!("CARGO_PKG_VERSION")`、release 产物名和 macOS bundle 版本都来自同一个 tag。
+
+手动运行 `workflow_dispatch` 时不会创建 GitHub Release，只会基于当前 `Cargo.toml` 版本构建并上传 workflow artifacts。
+
 ## 版本与资源
 
-- Cargo 包版本当前使用 `2026.7.6` 这类 semver 兼容形式
-- 对外展示版本按日期格式映射为 `YYYY.MM.DD`
+- 已发布版本以 Git tag 为唯一版本源
+- Cargo 包版本保持 `YYYY.M.D` / `YYYY.M.D-N` 这类 semver 兼容形式
+- 对外展示版本按日期格式映射为 `YYYY.MM.DD` / `YYYY.MM.DD.N`
 - 图标资源位于 `assets/icons/terminal_icon_all_formats`
 
 ## 配置与日志

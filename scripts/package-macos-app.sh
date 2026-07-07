@@ -10,23 +10,17 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
-PACKAGE_VERSION="$(grep '^version = ' "$ROOT_DIR/Cargo.toml" | head -n 1 | cut -d '\"' -f 2)"
-PUBLIC_VERSION="$(python3 - "$PACKAGE_VERSION" <<'PY'
-import sys
+PYTHON_BIN=python3
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  PYTHON_BIN=python
+fi
 
-version = sys.argv[1].split("+", 1)[0]
-core, dash, suffix = version.partition("-")
-parts = core.split(".")
-if len(parts) == 3 and all(part.isdigit() for part in parts):
-    year, month, day = (int(part) for part in parts)
-    public = f"{year:04d}.{month:02d}.{day:02d}"
-    if dash and suffix:
-        public = f"{public}.{suffix}"
-    print(public)
-else:
-    print(version)
-PY
-)"
+while IFS='=' read -r key value; do
+  case "$key" in
+    RELEASE_BUNDLE_SHORT_VERSION) BUNDLE_SHORT_VERSION="$value" ;;
+    RELEASE_BUNDLE_VERSION) BUNDLE_VERSION="$value" ;;
+  esac
+done < <("$PYTHON_BIN" "$ROOT_DIR/scripts/release_version.py" env --cargo-version-file "$ROOT_DIR/Cargo.toml")
 
 cd "$ROOT_DIR"
 cargo build --release
@@ -60,9 +54,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>$PUBLIC_VERSION</string>
+  <string>$BUNDLE_SHORT_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>$PACKAGE_VERSION</string>
+  <string>$BUNDLE_VERSION</string>
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
   <key>NSHighResolutionCapable</key>

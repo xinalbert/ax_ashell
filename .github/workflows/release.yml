@@ -1,7 +1,7 @@
 name: Release
 
 # Build native binaries for Windows / Linux / macOS.
-#  - Push a tag like `v2026.07.06` or `v2026.07.06.1`
+#  - Push a tag like `v2026.7.6` or `v2026.7.6-1`
 #    -> builds all platforms and attaches the archives to a GitHub Release.
 #  - Run manually (workflow_dispatch) -> builds all platforms and uploads them as
 #    downloadable workflow artifacts (no release created).
@@ -42,6 +42,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Resolve release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHON_BIN=python3
+          if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+            PYTHON_BIN=python
+          fi
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            "$PYTHON_BIN" scripts/release_version.py env --tag "$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+            "$PYTHON_BIN" scripts/release_version.py sync-manifest --tag "$GITHUB_REF_NAME"
+          else
+            "$PYTHON_BIN" scripts/release_version.py env --cargo-version-file Cargo.toml >> "$GITHUB_ENV"
+          fi
+
       # GPUI needs these system libs on Linux to compile.
       - name: Install Linux GUI dependencies
         if: runner.os == 'Linux'
@@ -72,8 +87,11 @@ jobs:
         shell: bash
         run: |
           set -eu
-          VERSION="${GITHUB_REF_NAME:-dev}"
-          STAGE="ax_shell-${VERSION}-${{ matrix.name }}"
+          VERSION_LABEL="${GITHUB_REF_NAME:-dev}"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            VERSION_LABEL="${RELEASE_TAG}"
+          fi
+          STAGE="ax_shell-${VERSION_LABEL}-${{ matrix.name }}"
 
           if [ "${{ runner.os }}" = "macOS" ]; then
             # ── Build a proper .app bundle ────────────────────────────────────
@@ -88,7 +106,6 @@ jobs:
             cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$CONTENTS/MacOS/"
             cp "assets/icons/terminal_icon_all_formats/terminal_icon.icns" "$CONTENTS/Resources/ax_shell.icns"
 
-            VERSION_NUM="${VERSION#v}"
             cat > "$CONTENTS/Info.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -112,9 +129,9 @@ jobs:
             <key>CFBundlePackageType</key>
             <string>APPL</string>
             <key>CFBundleShortVersionString</key>
-            <string>${VERSION_NUM}</string>
+            <string>${RELEASE_BUNDLE_SHORT_VERSION}</string>
             <key>CFBundleVersion</key>
-            <string>1</string>
+            <string>${RELEASE_BUNDLE_VERSION}</string>
             <key>LSMinimumSystemVersion</key>
             <string>12.0</string>
             <key>NSHighResolutionCapable</key>
@@ -163,6 +180,16 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Resolve release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHON_BIN=python3
+          if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+            PYTHON_BIN=python
+          fi
+          "$PYTHON_BIN" scripts/release_version.py env --tag "$GITHUB_REF_NAME" >> "$GITHUB_ENV"
 
       - name: Download all workflow artifacts
         uses: actions/download-artifact@v8
@@ -267,6 +294,7 @@ jobs:
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          name: AxShell ${{ env.RELEASE_PUBLIC_VERSION }}
           files: dist/**/*
           body_path: release/body.md
           generate_release_notes: true

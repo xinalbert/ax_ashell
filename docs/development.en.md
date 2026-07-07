@@ -79,6 +79,8 @@ If `codesign` is available, the script signs the bundle automatically. Override 
 SIGN_IDENTITY="Developer ID Application: Example" ./scripts/package-macos-app.sh
 ```
 
+The local `.app` packager and the GitHub Release workflow both read version rules from `scripts/release_version.py` instead of rebuilding them separately.
+
 ## Debian `.deb` Packaging
 
 ```bash
@@ -98,10 +100,33 @@ The desktop entry metadata lives at:
 assets/ax_shell.desktop
 ```
 
+## GitHub Release
+
+Push one of these tag formats to trigger a published release:
+
+```text
+vYYYY.M.D
+vYYYY.M.D-N
+```
+
+Current mapping:
+
+- Tag / Cargo / runtime version: `v2026.7.6` / `2026.7.6`, or `v2026.7.6-1` / `2026.7.6-1`
+- Public version: `2026.07.06` or `2026.07.06.1`
+- macOS `CFBundleShortVersionString`: `2026.07.06`
+- macOS `CFBundleVersion`: `20260706` or `20260706.1`
+
+`Cargo.toml` cannot use `2026.07.06` directly because Cargo rejects semver components with leading zeros. The canonical tag and manifest version now stay Cargo-compatible, and the script derives the public-facing version separately.
+
+On tag builds the workflow resolves the tag through `scripts/release_version.py`, updates `Cargo.toml` and `Cargo.lock` inside the runner, and only then runs `cargo build --release`. That keeps `env!("CARGO_PKG_VERSION")`, release asset names, and macOS bundle metadata on the same version source.
+
+Manual `workflow_dispatch` runs do not create a GitHub Release. They build from the current `Cargo.toml` version and upload workflow artifacts only.
+
 ## Versioning and Assets
 
-- The Cargo package currently uses semver-compatible versions such as `2026.7.6`
-- Public-facing release labels are mapped to `YYYY.MM.DD`
+- Published releases use the Git tag as the single version source
+- The Cargo package keeps semver-compatible `YYYY.M.D` / `YYYY.M.D-N` versions
+- Public-facing release labels map to `YYYY.MM.DD` / `YYYY.MM.DD.N`
 - Icon assets live under `assets/icons/terminal_icon_all_formats`
 
 ## Config and Logs
