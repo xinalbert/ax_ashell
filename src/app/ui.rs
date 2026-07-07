@@ -2820,12 +2820,14 @@ impl AxShell {
                 let font_size = px(this.terminal_font_size);
                 let line_height = px(this.terminal_line_height());
                 let cell_width = px(this.terminal_cell_width());
+                let terminal_left_inset = cell_width / 2.;
                 let is_url_hovered = this
                     .hovered_url
                     .as_ref()
                     .map_or(false, |hu| hu.tab_id == *tab_id);
                 let mut el = div()
                     .size_full()
+                    .pl(terminal_left_inset)
                     .overflow_hidden()
                     .when(is_url_hovered, |d| d.cursor_pointer())
                     .on_mouse_down(

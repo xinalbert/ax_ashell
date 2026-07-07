@@ -2,68 +2,55 @@
 
 ## 当前目标
 
-- 目标：将 GitHub 发布链路改成“tag 作为唯一发布版本源”，让 workflow、构建时版本、release 产物名和 macOS bundle 版本从同一套规则派生
-- 交付物：共享版本解析脚本、release workflow tag 版本注入、Cargo manifest/lock 临时同步、打包脚本复用同一规则、README/development 文档更新、格式化与脚本级验证、跟踪记录
+- 目标：给 terminal 区域左侧增加约半个字符宽度的留白，避免内容紧贴侧边栏分隔线
+- 交付物：terminal 容器左侧间距调整、必要的编译验证、跟踪记录
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`.github/workflows/release.yml`，`scripts/package-macos-app.sh`，`Cargo.toml`，`Cargo.lock`，`src/app/constants.rs`，`src/app/startup.rs`，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
-- 不在本轮范围内：SSH / SFTP 协议行为、主题编辑器行为、终端渲染策略、UI 布局、依赖升级、真实远端仓库重命名、安装包实机安装验证、Git 历史整理
+- 当前范围：`src/app/ui.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 不在本轮范围内：终端网格算法、输入命中算法、SSH / SFTP 行为、设置页、发布流程、依赖升级、安装包实机安装验证
 
 ## 当前状态
 
 - 阶段：已完成
 - 开工判定：允许开工
-- 是否需要联网：是，已完成
+- 是否需要联网：否
 - 多 agent：未使用
 
 ## 活动计划
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 刷新 current plan、项目地图和环境记录到“tag 全链路版本源”任务，并确定 tag/version 映射规则 | `docs/` contract 自检，源码走查 | 输入格式最终收口为 `vYYYY.M.D` / `vYYYY.M.D-N` |
-| P2 | completed | 新增共享版本解析/同步脚本，统一 tag、Cargo semver、公开显示版本与 bundle version 派生 | 脚本样例运行，源码走查 | `scripts/release_version.py` 现为唯一版本派生入口 |
-| P3 | completed | 更新 release workflow，在 tag 构建时自动注入版本并同步 manifest/lock 后再编译打包 | workflow YAML 自检，脚本样例运行 | tag 构建会先同步 runner 内的 manifest/lock，再进入 `cargo build --release` |
-| P4 | completed | 让本地 macOS 打包脚本复用共享版本规则，并同步更新 README/development 文档 | shell 脚本静态检查，README/doc 走查 | 本地 `.app` 打包与 GitHub Release 共用同一套版本规则 |
-| P5 | completed | 运行必要脚本验证、编译检查和 tracking docs 校验 | 版本脚本样例运行，`cargo check`，tracking docs 校验 | 本轮未改 Rust 源码，因此未额外运行 `rustfmt` |
+| P1 | completed | 刷新 current plan 与环境记录到“terminal 左侧留白”任务，并确认间距应落在哪一层 | `docs/` contract 自检，源码走查，截图对照 | 目标间距按半个字符宽度收口 |
+| P2 | completed | 在 terminal 容器层增加左侧留白，避免文本贴边 | `cargo check`，源码走查 | 保持 terminal grid / input 算法不变 |
+| P3 | completed | 更新跟踪记录并收口验证边界 | tracking docs 校验 | GUI 实机目视确认留给用户 |
 
 ## 已完成
 
-- 新增 `scripts/release_version.py`，统一解析规范 tag `vYYYY.M.D` / `vYYYY.M.D-N` 到 Cargo 版本、公开版本、macOS bundle 版本与 tag 文本
-- release workflow 在 build job 中先解析 tag，再同步 runner 内的 `Cargo.toml` / `Cargo.lock` 根包版本，之后才编译与打包
-- publish job 现复用同一套版本规则，GitHub Release 标题直接使用派生后的公开版本
-- 本地 `scripts/package-macos-app.sh` 改为读取共享版本脚本，不再各自维护 plist 版本拼接逻辑
-- README 与中英文 development 文档已补充 tag 格式、版本映射、Cargo 版本限制和手动 `workflow_dispatch` 的行为说明
-- 已通过少量官方文档检索确认 macOS bundle 版本约束，并将 `CFBundleShortVersionString` 固定为三段日期，`CFBundleVersion` 固定为纯数字日期或 `日期.补发序号`
-- 已确认 Cargo 拒绝 `2026.07.06` 这类带前导零的 semver 版本，因此规范 tag 改为与 `Cargo.toml` 一致的 Cargo 兼容格式
+- 已从截图和代码定位到问题位于 terminal pane 左边界与正文之间的视觉留白不足
+- 已确认更合适的修复层级是 `src/app/ui.rs` 的 terminal 容器，而不是 `src/terminal/element.rs` / `src/terminal/input.rs` 的网格与命中层
+- 已在 `src/app/ui.rs` 为 terminal pane 容器增加 `0.5 * cell_width` 的左内边距，让正文与分隔线拉开约半个字符宽度
 
 ## 验证
 
-- 已完成：`rg -n "GITHUB_REF_NAME|refs/tags|version|CFBundleShortVersionString|CARGO_PKG_VERSION" .github/workflows scripts src Cargo.toml`
-- 已完成：release workflow、打包脚本、运行时版本显示路径的源码走查
-- 已完成：`python3 scripts/release_version.py --help`
-- 已完成：`python3 scripts/release_version.py env --tag v2026.7.6`
-- 已完成：`python3 scripts/release_version.py env --tag v2026.7.6-1`
-- 已完成：`python3 scripts/release_version.py env --cargo-version-file Cargo.toml`
-- 已完成：`python3 scripts/release_version.py env --tag v2026.2.30` 失败校验
-- 已完成：临时 manifest 验证 `Cargo.toml` 不接受 `2026.07.06` / `2026.07.06.1`
-- 已完成：`bash -n scripts/package-macos-app.sh`
-- 已完成：`.github/workflows/release.yml` YAML 静态自检
+- 已完成：截图对照确认目标区域
+- 已完成：`src/app/ui.rs`、`src/terminal/element.rs`、`src/terminal/input.rs` 相关路径源码走查
+- 已完成：terminal 容器左侧留白实现
 - 已完成：`cargo check`
 - 已完成：`python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .`
-- 未完成：真实 tag push、GitHub Release 页面展示与 macOS bundle 平台侧实机验证
+- 未完成：GUI 实机目视确认
 
 ## 风险与阻塞
 
 - 阻塞：无
-- 风险一：尚未做真实 tag push，因此 GitHub Release 页面上的最终展示效果仍需在远端执行一次确认
-- 风险二：macOS `.app` 的 Finder / 系统信息展示仍属于平台侧实机验证范围，本轮只完成规则和脚本级收口
+- 风险一：若未来继续增大留白，终端可见列数会继续减少，需要再看是否要同步右侧留白或最小宽度策略
+- 风险二：当前只做左侧留白，右侧保持原样，属于刻意的最小改动
 
 ## 下一步
 
-- 建议下一步直接推一次测试 tag，确认 GitHub Release 页面、资产名称和 macOS bundle 展示符合预期
+- 建议先在本机看一眼实际视觉效果；如果还嫌近，再把左留白调到 `0.75 * cell_width`
 
 ## 最后更新时间
 
-- 2026-07-07 21:25 CST
+- 2026-07-07 21:33 CST

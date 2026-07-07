@@ -363,3 +363,11 @@
 - 执行内容：用临时 manifest 执行 `cargo metadata`，确认 Cargo 会拒绝 `2026.07.06` / `2026.07.06.1`；据此将规范 tag 收口为 `vYYYY.M.D` / `vYYYY.M.D-N`，让 tag 与 `Cargo.toml` 保持同一套 Cargo 兼容字符，再由脚本派生对外展示版本
 - 验证结果：Cargo 版本约束验证通过；共享版本脚本、shell / YAML 自检和 tracking docs 校验继续通过；仅保留既有 `block v0.1.6` future-incompat warning
 - 风险/待办：真实远端 tag push 仍需改用新的 canonical tag 格式；历史旧格式 tag 如需重跑工作流，应按当时脚本版本处理
+
+## 2026-07-07 完成 terminal 左侧留白微调
+
+- 目的：避免 terminal 正文紧贴左侧分隔线，给 terminal 区域增加约半个字符宽度的左留白
+- 改动范围：`src/app/ui.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查 terminal 容器、渲染和输入命中路径；确认无需改 `src/terminal/element.rs` / `src/terminal/input.rs`；在 `src/app/ui.rs` 的 terminal 容器上增加 `pl(cell_width / 2.)`
+- 验证结果：`cargo check` 通过；当前改动只影响 terminal 容器层布局，不影响 PTY 网格、选区或输入命中逻辑；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：最终视觉效果仍需用户本机目视确认；若半字符仍偏近，可继续上调到 `0.75 * cell_width`
