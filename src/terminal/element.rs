@@ -396,11 +396,8 @@ impl TerminalElement {
         let mut underlines = Vec::new();
         let mut current_run: Option<BatchedTextRun> = None;
 
-        // Retrieve cached keyword highlights and merge with search highlights
-        let mut highlights = self.snapshot.highlights.clone();
-        if let Some(sm) = self.search_highlights.as_ref() {
-            highlights.extend(sm.iter().map(|(k, v)| (*k, *v)));
-        }
+        let keyword_highlights = &self.snapshot.highlights;
+        let search_highlights = self.search_highlights.as_ref();
 
         for render_cell in &self.snapshot.cells {
             let cell = &render_cell.cell;
@@ -442,9 +439,18 @@ impl TerminalElement {
 
             let mut style = self.cell_run_style(cell, font_brightness, cx);
 
-            // Apply keyword highlight color if this cell was matched.
-            if let Some(&hl_color) = highlights.get(&(render_cell.row, render_cell.col)) {
+            if let Some(hl_color) = search_highlights
+                .and_then(|map| map.get(&(render_cell.row, render_cell.col)))
+                .copied()
+            {
                 style.color = adjust_terminal_foreground_brightness(hl_color, font_brightness);
+            } else if let Some(&hl_color) =
+                keyword_highlights.get(&(render_cell.row, render_cell.col))
+            {
+                // Preserve original ANSI/truecolor emphasis from the terminal output.
+                if keyword_highlight_allowed(cell) {
+                    style.color = adjust_terminal_foreground_brightness(hl_color, font_brightness);
+                }
             }
 
             // Apply hover underline if mouse is hovering over this URL
@@ -865,6 +871,20 @@ fn is_default_bg(color: AnsiColor) -> bool {
     matches!(color, AnsiColor::Named(NamedColor::Background))
 }
 
+fn is_default_fg(color: AnsiColor) -> bool {
+    matches!(color, AnsiColor::Named(NamedColor::Foreground))
+}
+
+fn keyword_highlight_allowed(cell: &alacritty_terminal::term::cell::Cell) -> bool {
+    let (visible_fg, visible_bg) = if cell.flags.contains(Flags::INVERSE) {
+        (cell.bg, cell.fg)
+    } else {
+        (cell.fg, cell.bg)
+    };
+
+    is_default_fg(visible_fg) && is_default_bg(visible_bg)
+}
+
 fn adjust_terminal_foreground_brightness(color: Hsla, factor: f32) -> Hsla {
     if (factor - 1.0).abs() <= f32::EPSILON {
         return color;
@@ -959,5 +979,43 @@ fn named_color(named: NamedColor, _foreground: bool, cx: &App) -> Hsla {
         NamedColor::DimMagenta => Hsla::from(rgb(0xb48ead)),
         NamedColor::DimCyan => Hsla::from(rgb(0x88c0d0)),
         NamedColor::DimWhite => Hsla::from(rgb(0xe5e9f0)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keyword_highlight_allowed;
+    use alacritty_terminal::{
+        term::cell::{Cell, Flags},
+        vte::ansi::{Color as AnsiColor, NamedColor},
+    };
+
+    #[test]
+    fn keyword_highlight_allows_default_cells() {
+        assert!(keyword_highlight_allowed(&Cell::default()));
+    }
+
+    #[test]
+    fn keyword_highlight_skips_explicit_foreground_colors() {
+        let mut cell = Cell::default();
+        cell.fg = AnsiColor::Named(NamedColor::Red);
+
+        assert!(!keyword_highlight_allowed(&cell));
+    }
+
+    #[test]
+    fn keyword_highlight_skips_explicit_background_colors() {
+        let mut cell = Cell::default();
+        cell.bg = AnsiColor::Named(NamedColor::Blue);
+
+        assert!(!keyword_highlight_allowed(&cell));
+    }
+
+    #[test]
+    fn keyword_highlight_skips_inverse_cells() {
+        let mut cell = Cell::default();
+        cell.flags.insert(Flags::INVERSE);
+
+        assert!(!keyword_highlight_allowed(&cell));
     }
 }
