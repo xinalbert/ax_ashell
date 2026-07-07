@@ -1588,6 +1588,7 @@ impl AxShell {
         let session_groups = self.saved_session_groups();
         let active_session_id = self.active_session_id().map(ToOwned::to_owned);
         let renaming_saved_group = self.renaming_saved_group.clone();
+        let is_local_active = self.active_kind() == Some(TabKind::Local);
 
         v_flex()
             .gap_4()
@@ -1699,6 +1700,11 @@ impl AxShell {
                                     .track_scroll(&self.saved_scroll_handle)
                                     .overflow_y_scroll()
                                     .gap_2()
+                                    .child(self.render_saved_local_terminal_entry(
+                                        "saved-local-terminal",
+                                        is_local_active,
+                                        cx,
+                                    ))
                                     .children(session_groups.into_iter().enumerate().map(
                                         |(group_ix, (group_name, sessions))| {
                                             let display_group_name =
@@ -2057,9 +2063,127 @@ impl AxShell {
             )
     }
 
+    fn render_saved_local_terminal_entry(
+        &self,
+        id: &'static str,
+        is_active: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .id(id)
+            .w_full()
+            .p_2()
+            .rounded_md()
+            .border_1()
+            .border_color(if is_active {
+                cx.theme().primary
+            } else {
+                cx.theme().border
+            })
+            .bg(if is_active {
+                cx.theme().tab_active
+            } else {
+                cx.theme().muted
+            })
+            .cursor_pointer()
+            .hover(|this| this.bg(cx.theme().secondary))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.open_local(cx)),
+            )
+            .tooltip(|window, cx| {
+                gpui_component::tooltip::Tooltip::new(t!("open_local_shell_tab").to_string())
+                    .build(window, cx)
+            })
+            .child(
+                h_flex()
+                    .w_full()
+                    .min_w(px(0.))
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Icon::new(IconName::SquareTerminal)
+                            .with_size(Size::Small)
+                            .text_color(if is_active {
+                                cx.theme().primary
+                            } else {
+                                cx.theme().muted_foreground
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .text_size(rems(1.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(t!("local_terminal").to_string()),
+                    )
+                    .child(
+                        div()
+                            .max_w(px(180.))
+                            .min_w(px(0.))
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .text_size(rems(0.833))
+                            .text_color(cx.theme().muted_foreground)
+                            .child(t!("open_local_shell_tab").to_string()),
+                    ),
+            )
+    }
+
+    fn render_collapsed_saved_local_terminal_entry(
+        &self,
+        is_active: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .id("collapsed-saved-local-terminal")
+            .w(px(36.))
+            .h(px(36.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_md()
+            .border_1()
+            .border_color(if is_active {
+                cx.theme().primary
+            } else {
+                cx.theme().border
+            })
+            .bg(if is_active {
+                cx.theme().tab_active
+            } else {
+                cx.theme().muted
+            })
+            .cursor_pointer()
+            .hover(|this| this.bg(cx.theme().secondary))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.open_local(cx)),
+            )
+            .tooltip(|window, cx| {
+                gpui_component::tooltip::Tooltip::new(t!("open_local_shell_tab").to_string())
+                    .build(window, cx)
+            })
+            .child(
+                Icon::new(IconName::SquareTerminal)
+                    .with_size(Size::Small)
+                    .text_color(if is_active {
+                        cx.theme().primary
+                    } else {
+                        cx.theme().foreground
+                    }),
+            )
+    }
+
     fn render_collapsed_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let session_groups = self.saved_session_groups();
         let active_session_id = self.active_session_id().map(ToOwned::to_owned);
+        let is_local_active = self.active_kind() == Some(TabKind::Local);
 
         v_flex()
             .w_full()
@@ -2107,6 +2231,10 @@ impl AxShell {
                             .overflow_y_scroll()
                             .gap_2()
                             .items_center()
+                            .child(self.render_collapsed_saved_local_terminal_entry(
+                                is_local_active,
+                                cx,
+                            ))
                             .children(session_groups.into_iter().enumerate().map(
                                 |(group_ix, (group_name, sessions))| {
                                     let display_group_name = Self::display_group_name(&group_name);
