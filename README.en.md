@@ -1,14 +1,14 @@
 [中文](README.md)
 
-# AxAshell
+# AxShell
 
 ![Preview](preview.png)
 
-AxAshell is a desktop terminal workspace built with Rust, GPUI, and `alacritty_terminal`, focused on local shells, SSH sessions, and built-in SFTP file management.
+AxShell is a desktop terminal workspace built with Rust, GPUI, and `alacritty_terminal`, focused on local shells, SSH sessions, and built-in SFTP file management.
 
 Forked from <https://github.com/rust-kotlin/ashell.git>
 
-Repository: <https://github.com/xinalbert/ax_ashell>
+Repository: <https://github.com/xinalbert/ax_shell>
 
 ## Core Features
 
@@ -43,8 +43,9 @@ See [Development and Packaging](docs/development.en.md) for the full run and pac
 ## Project Status
 
 - Runtime and packaging icons come from `assets/icons/terminal_icon_all_formats`
-- GitHub Actions still builds the app and uploads artifacts
-- Token-backed publishing paths such as GitHub Releases and Homebrew cask updates are currently disabled
+- GitHub Actions builds multi-platform artifacts; tag builds publish GitHub Release assets automatically
+- Token-backed publishing paths such as Homebrew cask updates are currently disabled
+- The old `ax_ashell` config directory is copied into the new `AxShell` config directory on first use when needed; the old directory is not deleted
 
 ## License
 

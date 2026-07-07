@@ -8,49 +8,62 @@
 ## 索引范围
 
 - 根目录：`<repo-root>`
-- 覆盖：`src/app/`，`src/session/`，`src/terminal/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`
-- 排除：`.git/`，`target/`，`assets/` 批量资源，构建产物与外部依赖缓存
+- 覆盖：`src/app/`，`src/session/`，`src/terminal/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
+- 排除：`.git/`，`target/`，`assets/` 批量图标/字体资源，构建产物与外部依赖缓存
 
 ## 目录地图
 
 | Path | Purpose | Open When | Notes |
 | --- | --- | --- | --- |
-| `src/session/` | 配置持久化、会话模型和本地配置目录路径 | 改 custom theme 持久化字段、theme file 输出路径、配置兼容逻辑时 | 本轮 custom theme draft/registry file 模型主要在这里落地 |
-| `src/app/` | 侧栏、设置页、弹窗、主题与工作区 UI | 调整 Custom 页面、theme list、主题应用逻辑和工作区动作时 | `theme.rs` 负责注册/生成/apply，`dialogs.rs` 已改成 metadata-driven custom theme editor，`mod.rs` 负责动态输入状态 |
-| `src/terminal/` | 终端渲染、颜色和交互 | custom theme brightness 或终端颜色语义需要与主题联动时 | 本轮只改 `element.rs` 的 custom brightness 语义，不改 PTY 或输入链路 |
+| `src/session/` | 配置持久化、会话模型、本地终端动作和本地配置目录路径 | 改 config root、旧配置迁移、custom theme 持久化字段、theme file 输出路径、配置兼容逻辑或本地终端打开逻辑时 | `ConfigStore::load()` 创建/迁移配置目录；`open_local(cx)` 创建本地终端 tab/group |
+| `src/app/` | 启动、日志、侧栏、设置页、弹窗、主题、字体选择与工作区 UI | 调整应用显示名、启动日志、crash hook、SAVED 侧栏入口、Custom 页面、theme list、字体下拉、主题应用逻辑和工作区动作时 | `startup.rs` 负责窗口标题、日志/crash 路径和平台启动辅助；`ui.rs` 负责展开/收起侧栏；`theme.rs` 负责注册/生成/apply |
+| `src/terminal/` | 终端渲染、颜色、字体 metrics 和交互 | custom theme brightness、终端颜色语义、字体间距、PTY resize 或鼠标命中需要联动时 | 本轮改 `element.rs` 与 `input.rs`，让字体实测 metrics 统一驱动渲染和输入命中 |
 | `src/sync/` | 会话配置加密同步 payload | 判断新增会话字段是否会自动进入同步上传/下载时 | 本轮预计不改传输逻辑，只依赖 `Session` 序列化扩展 |
-| `src/main.rs` | 应用初始化入口 | 增加 custom theme watch/load、补入口初始化顺序时 | 本轮需要在 `gpui_component::init` 后加载并 watch 用户 theme 目录 |
+| `src/main.rs` | 应用初始化入口 | 增加全局初始化、custom theme watch/load、补入口初始化顺序时 | 本轮在 `main()` 第一行注册 panic hook，保证早期启动 panic 可落 crash 文件 |
 | `locales/` | 中英文界面文案 | 新增 custom theme 分组、提示、保存说明和错误消息时 | 需要同步 `en.yml` 和 `zh-CN.yml` |
-| `docs/` | 环境审计和实施跟踪 | 记录本轮 custom theme 注册化和验证边界时 | 本轮需刷新 env audit 与 project tracker；用户文档可视结果稳定后再决定是否补充 |
+| `.github/workflows/` | CI / Release 构建和打包元数据 | 改二进制名、artifact 名、macOS bundle Info.plist 或发布路径时 | `release.yml` 手工组装 `.app`，需要与 Cargo 包名一致 |
+| `scripts/` | 本地开发/打包脚本 | 改 macOS `.app` 名称、bundle id、图标文件名、签名逻辑时 | `package-macos-app.sh` 会运行 `cargo build --release` 并组装 bundle |
+| `assets/*.desktop` | Linux desktop entry | 改应用显示名、Exec、Icon、StartupWMClass 或 Debian metadata 时 | 当前 desktop 文件为 `assets/ax_shell.desktop` |
+| `docs/` | README、用户/开发文档、环境审计和实施跟踪 | 改项目名称、配置目录、同步文件名、打包命令或验证边界时 | 本轮需同步 README、user-guide、development、env audit 与 project tracker |
 
 ## 关键文件
 
 | Path | Role | Key Symbols / Sections | Read For |
 | --- | --- | --- | --- |
-| `src/session/config.rs` | 本地配置文件模型、路径和 getter/setter | `ConfigFile`，`ConfigStore::load/save`，config path helpers | 新增 custom theme draft、registry file 路径和兼容迁移 |
+| `src/session/config.rs` | 本地配置文件模型、路径和 getter/setter | `ConfigFile`，`ConfigStore::load/save`，`config_root_dir_path`，config path helpers | 改配置目录、旧目录迁移、sync 默认对象名、custom theme draft 和 registry file 路径 |
 | `src/app/theme.rs` | 主题注册、当前主题应用和 custom theme 逻辑 | `load_embedded_themes`，`load_user_themes`，`apply_theme_preferences`，`save_custom_appearance` | 本轮已改成“真实 ThemeConfig + theme file 持久化 + registry 即时应用/监听” |
-| `src/app/mod.rs` | 全局 UI 状态和设置页输入实体 | `AxAshell` fields，`new(...)`，`on_input_event` | custom theme 编辑器字段数量会增多，输入状态与回车保存链路在这里 |
-| `src/app/dialogs.rs` | 设置页渲染 | `render_settings_page`，Custom page groups/items | General 页主题下拉现只走 registry；Custom 页已扩成基底 preset + light/dark 分组色槽编辑 |
-| `src/terminal/element.rs` | terminal 前景色与高亮渲染 | `layout_grid`，`cell_run_style`，`color_to_hsla` | 把亮度语义从“全局 custom 数值”收敛到“当前激活的 custom theme” |
+| `src/app/startup.rs` | 启动辅助、日志初始化和窗口打开 | `init_logging`，`open_main_window`，platform launch helpers | 增加运行日志、crash 日志、panic hook、窗口打开错误记录或启动期诊断时 |
+| `src/app/mod.rs` | 全局 UI 状态、设置页输入实体和终端 metrics 缓存 | `AxShell` fields，`new(...)`，`TerminalFontMetrics` | custom theme 编辑器字段数量、终端字体 metrics 缓存、滚动条状态或输入状态变化时 |
+| `src/app/dialogs.rs` | 设置页渲染 | `render_settings_page`，`terminal_font_names`，Custom page groups/items | 设置页字体选择、General 页主题下拉、Custom 页色槽编辑 |
+| `src/app/ui.rs` | 主 UI、展开/收起侧栏、SAVED 列表和顶部标签 | `sidebar`，`render_collapsed_sidebar`，`render_tab_bar` | 增加固定 Local Terminal 入口、调整 saved session 分组、侧栏折叠态或顶部标签交互时 |
+| `src/terminal/element.rs` | terminal 前景色、高亮、字体 metrics 测量、等宽字体保护与网格渲染 | `TerminalElement`，`terminal_font_is_monospace`，`terminal_monospace_font_family`，`layout_grid`，`cell_run_style` | 终端文本、背景块、光标、PTY resize、比例字体 fallback 或字体间距问题 |
+| `src/terminal/input.rs` | terminal 键盘、鼠标、滚动和 IME 输入 | `terminal_grid_point_and_side`，`on_terminal_scroll` | 鼠标命中、选择、滚动行高或 IME 候选框位置与终端网格不一致时 |
 | `src/main.rs` | 应用启动初始化顺序 | `main()` | 新增用户 theme 文件初始加载和 watch 入口 |
+| `Cargo.toml` | Cargo 包、依赖、Debian metadata | `[package]`，`[package.metadata.deb]` | 改 crate/package name、二进制名、deb assets 或依赖时 |
+| `.github/workflows/release.yml` | 多平台 release 构建与 GitHub Release 发布 | `build`，`publish`，macOS bundle heredoc | 改 release artifact、bundle display name、binary copy path 或 cask 注释模板时 |
+| `scripts/package-macos-app.sh` | 本地 macOS bundle 打包脚本 | `APP_NAME`，`DISPLAY_NAME`，`BUNDLE_ID`，`Info.plist` | 改 macOS 本地打包输出和显示名时 |
+| `examples/dev_reload.rs` | restart-based 开发重载 | `build_app`，`prepare_macos_app_bundle`，env constants | 改 dev 二进制名、bundle id、开发 app 显示名或日志文件名时 |
 
 ## 常用定位
 
+- `rg -n 'init_logging|panic|crash|open_main_window|current_window_title' src/main.rs src/app/startup.rs`
+- `rg -n 'AxAshell|ax_ashell|AX_ASHELL|AxShell|ax_shell|AX_SHELL' Cargo.toml Cargo.lock src examples scripts .github assets README.md README.en.md docs`
+- `rg -n 'sidebar\\(|render_collapsed_sidebar|saved_session_groups|open_local' src/app/ui.rs src/session/mod.rs`
 - `rg -n 'custom_theme|ThemeRegistry|load_embedded_themes|apply_theme_preferences|save_custom' src/app src/session src/main.rs`
-- `rg -n 'custom_font_brightness|color_to_hsla|layout_grid' src/terminal`
+- `rg -n 'terminal_font_metrics|terminal_font_is_monospace|terminal_cell_width|terminal_line_height|layout_grid' src/app src/session src/terminal`
 - `rg -n 'ThemeConfig|ThemeSet|try_parse_color|watch_dir|default_light_theme|default_dark_theme' ~/.cargo/git/checkouts/gpui-component-*`
 - `cargo check`
 
 ## 忽略与未索引
 
-- `src/backend/` 未索引：本轮不改 SSH/PTTY 后端协议或连接实现
-- `assets/`、`target/` 未索引：本轮不涉及静态资源或构建产物
+- `src/backend/ssh.rs` 未细化索引：本轮不改 SSH 协议或连接实现
+- `assets/icons/`、`assets/fonts/`、`target/` 未索引：本轮不涉及批量图标/字体资源或构建产物
 
 ## 刷新规则
 
-- 刷新触发：custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义或用户文档范围发生变化时刷新
-- 最近依据：`src/main.rs`，`src/app/theme.rs`，`src/app/mod.rs`，`src/app/dialogs.rs`，`src/session/config.rs`，`src/terminal/element.rs` 与 `gpui-component` theme registry/schema 的实读结果；已结合 `cargo check` / `cargo test` 验证当前实现
+- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、release workflow、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics 或用户文档范围发生变化时刷新
+- 最近依据：`Cargo.toml`，`Cargo.lock`，`src/main.rs`，`src/app/startup.rs`，`src/session/config.rs`，`examples/dev_reload.rs`，`scripts/package-macos-app.sh`，`.github/workflows/release.yml`，`assets/ax_shell.desktop`，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`，`docs/user-guide.md`，`docs/user-guide.en.md`
 
 ## 最后更新时间
 
-- 2026-07-07 15:47 CST
+- 2026-07-07 18:09 CST

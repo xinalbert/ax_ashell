@@ -1,10 +1,10 @@
 [中文](user-guide.md)
 
-# AxAshell User Guide
+# AxShell User Guide
 
 ## What It Covers
 
-AxAshell is built for these workflows:
+AxShell is built for these workflows:
 
 - Managing local terminals and multiple SSH sessions in one desktop workspace
 - Browsing remote directories, transferring files, and editing remote files from the same SSH session
@@ -47,11 +47,14 @@ Current SSH session support includes:
 Saved sessions are written to:
 
 ```text
-~/.config/ax_ashell/sessions.json
+~/.config/ax_shell/sessions.json
 ```
+
+When upgrading from the old name, AxShell copies `~/.config/ax_ashell/sessions.json` and the old `themes/` directory into the new config directory if the new files do not exist yet. The old directory is not deleted.
 
 Current SAVED behavior:
 
+- `Local Terminal` is pinned at the top and opens a new local terminal tab; it is not a saved SSH session and does not participate in grouping, renaming, or deletion
 - Both expanded and collapsed sidebar modes show groups first, with SSH sessions nested inside each group
 - Click a group header, or a collapsed group tile, to expand or collapse its sessions
 - Use `Rename` on the group header to rename that group across its saved sessions
@@ -80,7 +83,7 @@ Transfer history keeps up to 100 records.
 
 ## Multi-Pane and Keybindings
 
-AxAshell exposes workspace actions as configurable keybindings. The default main modifier is:
+AxShell exposes workspace actions as configurable keybindings. The default main modifier is:
 
 - macOS: `Cmd`
 - Linux / Windows: `Ctrl`
@@ -149,7 +152,7 @@ Behavior and boundaries:
 The default object name is:
 
 ```text
-ax_ashell-sync.json
+ax_shell-sync.json
 ```
 
 ### Proxy
@@ -182,8 +185,16 @@ Before using it, make sure:
 Runtime logs are written to:
 
 ```text
-~/.config/ax_ashell/log
+~/.config/ax_shell/log
 ```
+
+If the app crashes, it writes a crash report to:
+
+```text
+~/.config/ax_shell/crash/ax_shell-crash-*.log
+```
+
+When the crash prompt appears, report it at `https://github.com/xinalbert/ax_shell/issues` and attach the crash file plus the latest runtime logs.
 
 SFTP remote editing and temporary archive flows use temp files under the app config directory.
 

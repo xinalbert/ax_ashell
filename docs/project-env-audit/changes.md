@@ -277,3 +277,65 @@
 - 执行内容：移除设置页根容器任意鼠标按下时强制聚焦主 `focus_handle` 的逻辑；保留快捷键录制按钮显式聚焦主 `focus_handle`；在设置页根容器 `on_key_down` 中增加焦点校验，只有主 `focus_handle` 当前聚焦时才处理快捷键录制和设置页标签切换
 - 验证结果：`rustfmt --edition 2024 --config skip_children=true src/app/dialogs.rs`、`cargo check`、`cargo test` 均通过；13 个 Rust 测试全部通过；仅保留既有 `block v0.1.6` future-incompat warning
 - 风险/待办：GUI 最终交互效果仍需本机手工确认；若后续希望点击设置页空白处也支持快捷键切换标签，需要改成只在非输入控件背景点击时聚焦，而不是恢复全局抢焦点
+
+## 2026-07-07 刷新环境记录到崩溃日志 hook 任务
+
+- 触发原因：用户要求程序崩溃时保存崩溃日志到文件，并提示用户到指定仓库反馈
+- 执行内容：复查 `Cargo.toml`、`src/main.rs`、`src/app/startup.rs` 与现有运行日志文档；确认 Rust/GPUI/cargo 环境事实未变，本轮验证重点切换为启动期 panic hook、crash 文件写入和原生错误提示
+- 影响文件：`src/main.rs`，`src/app/startup.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+
+## 2026-07-07 刷新环境记录到终端字体 metrics 修复任务
+
+- 目的：在进入 Terminal 字体间距修复前，确认当前项目环境、验证命令和本轮外部依赖边界
+- 改动范围：`src/app/mod.rs`，`src/app/ui.rs`，`src/session/mod.rs`，`src/terminal/element.rs`，`src/terminal/input.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查 `Cargo.toml`、`src/app/ui.rs`、`src/session/mod.rs`、`src/terminal/element.rs`、`src/terminal/input.rs` 与 GPUI `TextSystem` 字体测量 API；确认主技术栈和依赖版本未变，只将 current 记录切换到终端字体 metrics 修复任务语境
+- 验证结果：确认本轮不需要联网和外部服务；实施验证命令收敛为 `rustfmt --edition 2024 --config skip_children=true src/app/mod.rs src/app/ui.rs src/session/mod.rs src/terminal/element.rs src/terminal/input.rs`、`cargo check` 和 tracking docs 校验
+- 风险/待办：GUI 最终视觉效果仍需本机手工切换不同终端字体确认；非等宽字体只能按代表字符建立终端网格，不能保证每个 glyph 都严格适配
+
+## 2026-07-07 完成终端字体 metrics 修复的本机验证
+
+- 目的：在终端字体 metrics 缓存和实测接入完成后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`src/app/mod.rs`，`src/session/mod.rs`，`src/terminal/element.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行 `rustfmt --edition 2024 --config skip_children=true src/app/mod.rs src/app/ui.rs src/session/mod.rs src/terminal/element.rs src/terminal/input.rs`、`cargo check`、`cargo test` 与 tracking docs 校验；确认本轮改动集中在 GPUI terminal metrics / 渲染 / resize 计算，不涉及依赖版本、外部服务或联网步骤
+- 验证结果：格式化、编译检查和 13 个 Rust 测试均通过；tracking docs 校验因历史 `changes/2026/07.md` 与 `research.md` 旧记录缺少 `时间：` 字段未通过；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 最终视觉效果仍需本机手工切换不同终端字体确认；若用户选择非等宽字体，终端仍只能按代表字符建立等宽网格
+
+## 2026-07-07 完成 Terminal 比例字体保护的本机验证
+
+- 目的：修正 Arial 等比例字体被用于 Terminal 后仍出现网格混乱的问题
+- 改动范围：`src/app/dialogs.rs`，`src/terminal/element.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：新增 Terminal 字体等宽检测和比例字体 fallback；设置页 Terminal 字体下拉改为只列等宽字体，UI 字体下拉保持原行为
+- 验证结果：`rustfmt --edition 2024 --config skip_children=true src/app/dialogs.rs src/app/mod.rs src/app/ui.rs src/session/mod.rs src/terminal/element.rs src/terminal/input.rs`、`cargo check`、`cargo test` 均通过；13 个 Rust 测试全部通过；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 最终效果仍需确认；如果某些系统字体的等宽属性被 advance 检测误判，可将其加入显式 allowlist
+
+## 2026-07-07 刷新环境记录到 SAVED 固定本地终端入口任务
+
+- 目的：在进入 SAVED 区固定 Local Terminal 入口实现前，确认当前项目环境、验证命令和本轮外部依赖边界
+- 改动范围：`src/app/ui.rs`，`docs/user-guide.md`，`docs/user-guide.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查 `Cargo.toml`、`src/app/ui.rs`、`src/session/mod.rs` 与现有用户文档；确认主技术栈和依赖版本未变，只将 current 记录切换到 SAVED 固定本地终端入口任务语境
+- 验证结果：确认本轮不需要联网和外部服务；实施验证命令收敛为 `rustfmt --edition 2024 --config skip_children=true src/app/ui.rs`、`cargo check`、`cargo test` 和 tracking docs 校验
+- 风险/待办：GUI 最终点击效果仍需本机手工确认；固定入口语义是“新开本地终端”，不会复用已有本地 tab
+
+## 2026-07-07 完成 SAVED 固定本地终端入口的本机验证
+
+- 目的：在 SAVED 固定本地终端入口实现完成后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`src/app/ui.rs`，`docs/user-guide.md`，`docs/user-guide.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行 `rustfmt --edition 2024 --config skip_children=true src/app/ui.rs`、`cargo check`、`cargo test`；确认本轮改动集中在 GPUI 侧栏渲染和用户文档，不涉及依赖版本、会话配置模型、SSH/SFTP 协议或外部服务
+- 验证结果：格式化、编译检查和 13 个 Rust 测试均通过；tracking docs 校验因历史 `changes/2026/07.md` 与 `research.md` 旧记录缺少 `时间：` 字段未通过；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 最终点击效果仍需本机手工确认；固定入口语义是“新开本地终端”，不会复用已有本地 tab
+
+## 2026-07-07 刷新环境记录到 AxShell 项目改名任务
+
+- 目的：进入项目名称、Cargo 包名、二进制名、配置目录和打包元数据统一改名任务前，确认当前运行环境和验证边界
+- 改动范围：`Cargo.toml`，`Cargo.lock`，`assets/ax_shell.desktop`，`assets/ax_ashell.desktop`，`.github/workflows/release.yml`，`scripts/package-macos-app.sh`，`examples/dev_reload.rs`，`src/` 项目标识引用，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`，`docs/user-guide.md`，`docs/user-guide.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：确认主技术栈仍为 Rust / GPUI / Tokio / russh；将 current 记录切换为 AxShell 改名任务；验证重点扩展到 `ax_shell` 二进制、旧 `ax_ashell` 配置目录迁移、macOS/Linux 打包元数据和文档引用一致性
+- 验证结果：运行环境和依赖版本未变；本轮不需要联网、不依赖外部 SSH/X11 服务
+- 风险/待办：真实远端仓库重命名和平台安装包展示不在自动验证范围内，需要后续手工确认
+
+## 2026-07-07 完成 AxShell 项目改名的本机验证
+
+- 目的：在项目名称、二进制、配置目录和打包元数据统一改名完成后，把本轮实际验证结果回写到环境记忆
+- 改动范围：`Cargo.toml`，`Cargo.lock`，`assets/ax_shell.desktop`，旧 desktop 文件删除，`.github/workflows/release.yml`，`scripts/package-macos-app.sh`，`examples/dev_reload.rs`，`src/` 项目标识引用，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`，`docs/user-guide.md`，`docs/user-guide.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行 `rustfmt`、`cargo check`、`cargo check --example dev_reload`、`cargo test` 和残留旧名检索；确认本轮改动不涉及依赖版本、外部服务或 SSH/SFTP 协议行为
+- 验证结果：格式化、编译检查、dev-reload example 编译和 13 个 Rust 测试均通过；仅保留既有 `block v0.1.6` future-incompat warning；非历史区域的旧名只保留在旧配置目录迁移代码和升级说明中
+- 风险/待办：真实远端仓库重命名、本地目录名调整和平台安装包展示需要后续手工确认

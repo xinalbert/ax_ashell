@@ -1,6 +1,6 @@
 [English](development.en.md)
 
-# AxAshell 开发与打包
+# AxShell 开发与打包
 
 ## 环境要求
 
@@ -43,7 +43,7 @@ cargo run --example dev_reload --
 - 默认监听 `src`、`assets`、`locales`、`Cargo.toml`、`Cargo.lock`、`build.rs` 和 `.cargo`
 - 文件变化后会重新构建并重启应用
 - 在 macOS 上会以独立的开发 app bundle 启动，避免和已运行的 release `.app` 共用应用身份或抢错输入焦点
-- `--release` 可切换到 `target/release/ax_ashell`
+- `--release` 可切换到 `target/release/ax_shell`
 
 调试模式下还会额外写日志到：
 
@@ -63,13 +63,13 @@ target/debug/dev-reload-logs/session-<timestamp>/
 
 ```bash
 ./scripts/package-macos-app.sh
-open target/release/ax_ashell.app
+open target/release/AxShell.app
 ```
 
 脚本会：
 
 - 先执行 `cargo build --release`
-- 生成 `target/release/ax_ashell.app`
+- 生成 `target/release/AxShell.app`
 - 写入 `Info.plist`
 - 复制 `assets/icons/terminal_icon_all_formats/terminal_icon.icns` 到 bundle
 
@@ -89,13 +89,13 @@ cargo deb
 安装示例：
 
 ```bash
-sudo dpkg -i target/debian/ax_ashell_<version>-1_amd64.deb
+sudo dpkg -i target/debian/ax_shell_<version>-1_amd64.deb
 ```
 
 桌面入口定义位于：
 
 ```text
-assets/ax_ashell.desktop
+assets/ax_shell.desktop
 ```
 
 ## 版本与资源
@@ -109,14 +109,24 @@ assets/ax_ashell.desktop
 本地配置默认写入：
 
 ```text
-~/.config/ax_ashell/sessions.json
+~/.config/ax_shell/sessions.json
 ```
+
+旧版 `~/.config/ax_ashell/sessions.json` 和 `themes/` 会在新目录缺失时自动复制到 `~/.config/ax_shell/`，用于平滑升级；迁移不会删除旧目录。
 
 运行日志默认写入：
 
 ```text
-~/.config/ax_ashell/log
+~/.config/ax_shell/log
 ```
+
+程序发生 Rust panic 崩溃时，panic hook 会额外写入崩溃报告：
+
+```text
+~/.config/ax_shell/crash/ax_shell-crash-*.log
+```
+
+崩溃报告包含 panic 位置、版本、线程、常规运行日志目录和 backtrace。提交反馈时请在 `https://github.com/xinalbert/ax_shell/issues` 附上对应 crash 文件和最近的运行日志。
 
 ## 相关文档
 

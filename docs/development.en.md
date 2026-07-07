@@ -1,6 +1,6 @@
 [中文](development.md)
 
-# AxAshell Development and Packaging
+# AxShell Development and Packaging
 
 ## Requirements
 
@@ -43,7 +43,7 @@ Current behavior:
 - It watches `src`, `assets`, `locales`, `Cargo.toml`, `Cargo.lock`, `build.rs`, and `.cargo` by default
 - File changes trigger rebuild and relaunch
 - On macOS it launches through an isolated development app bundle so it does not share app identity or input focus with a running release `.app`
-- `--release` switches to `target/release/ax_ashell`
+- `--release` switches to `target/release/ax_shell`
 
 In debug mode it also writes logs to:
 
@@ -63,13 +63,13 @@ Whether the failure happens on the initial startup build or on a later rebuild, 
 
 ```bash
 ./scripts/package-macos-app.sh
-open target/release/ax_ashell.app
+open target/release/AxShell.app
 ```
 
 The script will:
 
 - run `cargo build --release`
-- create `target/release/ax_ashell.app`
+- create `target/release/AxShell.app`
 - write `Info.plist`
 - copy `assets/icons/terminal_icon_all_formats/terminal_icon.icns` into the bundle
 
@@ -89,13 +89,13 @@ cargo deb
 Install example:
 
 ```bash
-sudo dpkg -i target/debian/ax_ashell_<version>-1_amd64.deb
+sudo dpkg -i target/debian/ax_shell_<version>-1_amd64.deb
 ```
 
 The desktop entry metadata lives at:
 
 ```text
-assets/ax_ashell.desktop
+assets/ax_shell.desktop
 ```
 
 ## Versioning and Assets
@@ -109,14 +109,24 @@ assets/ax_ashell.desktop
 Local config is written to:
 
 ```text
-~/.config/ax_ashell/sessions.json
+~/.config/ax_shell/sessions.json
 ```
+
+For upgrades from the old name, `~/.config/ax_ashell/sessions.json` and `themes/` are copied into `~/.config/ax_shell/` when the new config files do not exist yet. The migration does not delete the old directory.
 
 Runtime logs are written to:
 
 ```text
-~/.config/ax_ashell/log
+~/.config/ax_shell/log
 ```
+
+When the app crashes because of a Rust panic, the panic hook also writes a crash report to:
+
+```text
+~/.config/ax_shell/crash/ax_shell-crash-*.log
+```
+
+Crash reports include the panic location, version, thread, runtime log directory, and backtrace. When filing an issue at `https://github.com/xinalbert/ax_shell/issues`, attach the crash file and the latest runtime logs.
 
 ## Related Docs
 

@@ -1,14 +1,14 @@
 [English](README.en.md)
 
-# AxAshell
+# AxShell
 
 ![Preview](preview.png)
 
-AxAshell 是一个基于 Rust、GPUI 和 `alacritty_terminal` 的桌面终端工作区，提供本地 Shell、SSH 远程会话和内置 SFTP 文件管理。
+AxShell 是一个基于 Rust、GPUI 和 `alacritty_terminal` 的桌面终端工作区，提供本地 Shell、SSH 远程会话和内置 SFTP 文件管理。
 
 Forked from <https://github.com/rust-kotlin/ashell.git>
 
-仓库地址：<https://github.com/xinalbert/ax_ashell>
+仓库地址：<https://github.com/xinalbert/ax_shell>
 
 ## 主要功能
 
@@ -43,8 +43,9 @@ cargo dev-reload
 ## 当前状态
 
 - 运行时与打包图标统一使用 `assets/icons/terminal_icon_all_formats`
-- 当前保留 GitHub Actions 构建与 artifact 上传链路
-- 自动发布 GitHub Release、Homebrew cask 等依赖外部密钥的发布流程暂未启用
+- GitHub Actions 会构建多平台产物；tag 构建会自动发布 GitHub Release assets
+- Homebrew cask 等依赖外部密钥的发布流程暂未启用
+- 旧 `ax_ashell` 配置目录会在首次使用 `AxShell` 新配置目录时自动复制迁移，不会删除旧目录
 
 ## 许可证
 
