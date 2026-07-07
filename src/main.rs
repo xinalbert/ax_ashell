@@ -24,6 +24,7 @@ pub(crate) use app::keybinding_recorder::{
 pub(crate) use app::{AxShell, PaneLayout, SelectorEntry, SftpContextMenuState, TabGroup};
 
 fn main() {
+    app::startup::install_crash_hook();
     app::startup::sync_macos_launch_environment();
     app::startup::init_logging();
 

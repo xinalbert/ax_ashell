@@ -2,6 +2,7 @@ use anyhow::{Context as _, Result, anyhow};
 use gpui::{App, AppContext as _, Bounds, WindowOptions, point, px, size};
 use gpui_component::Root;
 use std::path::PathBuf;
+use std::sync::Once;
 
 use crate::AxShell;
 use crate::session::config::ConfigStore;
@@ -9,6 +10,8 @@ use crate::session::config::ConfigStore;
 const INSTANCE_KIND_ENV: &str = "AX_SHELL_INSTANCE_KIND";
 const INSTANCE_APP_ID_ENV: &str = "AX_SHELL_APP_ID";
 const DEV_RELOAD_INSTANCE_KIND: &str = "dev-reload";
+const FEEDBACK_ISSUES_URL: &str = "https://github.com/xinalbert/ax_shell/issues";
+static CRASH_HOOK: Once = Once::new();
 
 fn current_instance_kind() -> Option<String> {
     std::env::var(INSTANCE_KIND_ENV)
@@ -53,6 +56,10 @@ fn app_config_dir() -> PathBuf {
 
 fn app_log_dir() -> PathBuf {
     app_config_dir().join("log")
+}
+
+fn app_crash_dir() -> PathBuf {
+    app_config_dir().join("crash")
 }
 
 struct LocalMinutelyRoller {
@@ -164,6 +171,164 @@ pub(crate) fn init_logging() {
         .with(stdout_layer)
         .with(file_layer)
         .init();
+}
+
+pub(crate) fn install_crash_hook() {
+    CRASH_HOOK.call_once(|| {
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            let crash_path = write_crash_report(panic_info);
+
+            match &crash_path {
+                Some(path) => {
+                    tracing::error!(
+                        "AxShell crashed; crash report saved to {}. Please report it at {}",
+                        path.display(),
+                        FEEDBACK_ISSUES_URL
+                    );
+                    eprintln!(
+                        "AxShell crashed. Crash report saved to: {}\nPlease report it at: {}",
+                        path.display(),
+                        FEEDBACK_ISSUES_URL
+                    );
+                }
+                None => {
+                    tracing::error!(
+                        "AxShell crashed, but writing the crash report failed. Please report it at {}",
+                        FEEDBACK_ISSUES_URL
+                    );
+                    eprintln!(
+                        "AxShell crashed, but writing the crash report failed.\nPlease report it at: {}",
+                        FEEDBACK_ISSUES_URL
+                    );
+                }
+            }
+
+            notify_user_about_crash(crash_path.as_ref());
+            previous_hook(panic_info);
+        }));
+    });
+}
+
+fn write_crash_report(panic_info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf> {
+    let crash_dir = app_crash_dir();
+    if std::fs::create_dir_all(&crash_dir).is_err() {
+        return None;
+    }
+
+    let now = chrono::Local::now();
+    let path = crash_dir.join(format!(
+        "ax_shell-crash-{}.log",
+        now.format("%Y-%m-%d-%H-%M-%S")
+    ));
+    let report = build_crash_report(panic_info, now);
+
+    if std::fs::write(&path, report).is_err() {
+        return None;
+    }
+    cleanup_old_crash_reports(&crash_dir);
+    Some(path)
+}
+
+fn build_crash_report(
+    panic_info: &std::panic::PanicHookInfo<'_>,
+    now: chrono::DateTime<chrono::Local>,
+) -> String {
+    use std::fmt::Write as _;
+
+    let current_thread = std::thread::current();
+    let thread_name = current_thread.name().unwrap_or("<unnamed>");
+    let panic_payload = panic_payload_to_string(panic_info);
+    let location = panic_info
+        .location()
+        .map(|location| {
+            format!(
+                "{}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            )
+        })
+        .unwrap_or_else(|| "<unknown>".to_string());
+    let instance_kind = current_instance_kind().unwrap_or_else(|| "default".to_string());
+    let backtrace = std::backtrace::Backtrace::force_capture();
+
+    let mut report = String::new();
+    let _ = writeln!(report, "AxShell crash report");
+    let _ = writeln!(report, "======================");
+    let _ = writeln!(report, "time: {}", now.to_rfc3339());
+    let _ = writeln!(report, "version: {}", env!("CARGO_PKG_VERSION"));
+    let _ = writeln!(
+        report,
+        "target: {}-{}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+    let _ = writeln!(report, "instance_kind: {instance_kind}");
+    let _ = writeln!(report, "thread: {thread_name}");
+    let _ = writeln!(report, "location: {location}");
+    let _ = writeln!(report, "panic: {panic_payload}");
+    let _ = writeln!(report, "runtime_log_dir: {}", app_log_dir().display());
+    let _ = writeln!(report, "feedback: {FEEDBACK_ISSUES_URL}");
+    let _ = writeln!(report);
+    let _ = writeln!(report, "backtrace:");
+    let _ = writeln!(report, "{backtrace}");
+    report
+}
+
+fn panic_payload_to_string(panic_info: &std::panic::PanicHookInfo<'_>) -> String {
+    if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = panic_info.payload().downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "<non-string panic payload>".to_string()
+    }
+}
+
+fn notify_user_about_crash(crash_path: Option<&PathBuf>) {
+    let crash_path = crash_path
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<failed to write crash report>".to_string());
+    let description = format!(
+        "AxShell crashed.\n\nCrash report:\n{crash_path}\n\nPlease create an issue and attach this file:\n{FEEDBACK_ISSUES_URL}"
+    );
+
+    let _ = std::panic::catch_unwind(|| {
+        let _ = rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title("AxShell crashed")
+            .set_description(description)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    });
+}
+
+fn cleanup_old_crash_reports(crash_dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(crash_dir) else {
+        return;
+    };
+    let mut files: Vec<_> = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("ax_shell-crash-")
+        })
+        .collect();
+    files.sort_by_key(|entry| {
+        entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+    });
+    if files.len() <= 20 {
+        return;
+    }
+    for file in files.iter().take(files.len() - 20) {
+        let _ = std::fs::remove_file(file.path());
+    }
 }
 
 #[cfg(target_os = "macos")]
