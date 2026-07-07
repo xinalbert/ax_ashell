@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-CANONICAL_TAG_PATTERN = re.compile(r"^v(?P<cargo_version>\d+\.\d+\.\d+(?:-\d+)?)$")
-LEGACY_TAG_PATTERN = re.compile(
-    r"^v(?P<year>\d{4})\.(?P<month>\d{2})\.(?P<day>\d{2})(?:\.(?P<suffix>\d+))?$"
+CANONICAL_TAG_PATTERN = re.compile(
+    r"^v(?P<year>\d{4})\.(?P<month>\d+)\.(?P<day>\d+)(?:-(?P<suffix>\d+))?$"
+)
+CARGO_VERSION_PATTERN = re.compile(
+    r"^(?P<year>\d{4})\.(?P<month>\d+)\.(?P<day>\d+)(?:-(?P<suffix>\d+))?$"
 )
 
 
@@ -31,67 +33,99 @@ def build_bundle_version(year: int, month: int, day: int, suffix: str) -> str:
     return bundle_version
 
 
-def validate_suffix(raw_tag_or_version: str, suffix: str) -> None:
+def fail_version(subject: str, raw_value: str, detail: str) -> None:
+    raise ValueError(f"{subject}: {raw_value!r}; {detail}")
+
+
+def validate_suffix(subject: str, raw_tag_or_version: str, suffix: str) -> None:
     if not suffix:
         return
     if not suffix.isdigit():
-        raise ValueError(
-            f"unsupported version format: {raw_tag_or_version!r}; numeric suffix is required"
-        )
+        fail_version(subject, raw_tag_or_version, "numeric suffix is required")
     if suffix.startswith("0") and suffix != "0":
-        raise ValueError(
-            f"unsupported version format: {raw_tag_or_version!r}; numeric suffix must not contain leading zeros"
+        fail_version(
+            subject,
+            raw_tag_or_version,
+            "numeric suffix must not contain leading zeros",
         )
 
 
-def validate_date(raw_tag_or_version: str, year: int, month: int, day: int) -> None:
+def validate_date_part(
+    subject: str,
+    raw_tag_or_version: str,
+    label: str,
+    value: str,
+    *,
+    width: int | None = None,
+) -> None:
+    if width is not None and len(value) != width:
+        fail_version(subject, raw_tag_or_version, f"{label} must be {width} digits")
+    if len(value) > 1 and value.startswith("0"):
+        fail_version(subject, raw_tag_or_version, f"{label} must not contain leading zeros")
+
+
+def validate_date(
+    subject: str,
+    raw_tag_or_version: str,
+    year: int,
+    month: int,
+    day: int,
+) -> None:
     try:
         dt.date(year, month, day)
     except ValueError as exc:
-        raise ValueError(f"unsupported version format: {raw_tag_or_version!r}; {exc}") from exc
+        fail_version(subject, raw_tag_or_version, str(exc))
 
 
-def release_version_from_tag(tag: str) -> ReleaseVersion:
-    canonical_match = CANONICAL_TAG_PATTERN.fullmatch(tag)
-    if canonical_match:
-        version = release_version_from_cargo(canonical_match.group("cargo_version"))
-        return ReleaseVersion(
-            cargo_version=version.cargo_version,
-            public_version=version.public_version,
-            bundle_short_version=version.bundle_short_version,
-            bundle_version=version.bundle_version,
-            tag=tag,
-            suffix=version.suffix,
-        )
+def build_release_version(
+    *,
+    subject: str,
+    raw_value: str,
+    year_value: str,
+    month_value: str,
+    day_value: str,
+    suffix: str,
+    tag: str | None = None,
+) -> ReleaseVersion:
+    validate_date_part(subject, raw_value, "year", year_value, width=4)
+    validate_date_part(subject, raw_value, "month", month_value)
+    validate_date_part(subject, raw_value, "day", day_value)
+    validate_suffix(subject, raw_value, suffix)
 
-    legacy_match = LEGACY_TAG_PATTERN.fullmatch(tag)
-    if not legacy_match:
-        raise ValueError(
-            f"unsupported tag format: {tag!r}; expected vYYYY.M.D or vYYYY.M.D-N"
-        )
+    year = int(year_value)
+    month = int(month_value)
+    day = int(day_value)
+    validate_date(subject, raw_value, year, month, day)
 
-    year = int(legacy_match.group("year"))
-    month = int(legacy_match.group("month"))
-    day = int(legacy_match.group("day"))
-    suffix = legacy_match.group("suffix") or ""
-    validate_suffix(tag, suffix)
-    validate_date(tag, year, month, day)
-
-    base_cargo = f"{year}.{month}.{day}"
+    cargo_version = f"{year}.{month}.{day}"
     public_version = f"{year:04d}.{month:02d}.{day:02d}"
-    bundle_version = build_bundle_version(year, month, day, suffix)
-    cargo_version = base_cargo
     if suffix:
-        public_version = f"{public_version}.{suffix}"
         cargo_version = f"{cargo_version}-{suffix}"
+        public_version = f"{public_version}.{suffix}"
 
     return ReleaseVersion(
         cargo_version=cargo_version,
         public_version=public_version,
         bundle_short_version=f"{year:04d}.{month:02d}.{day:02d}",
-        bundle_version=bundle_version,
-        tag=tag,
+        bundle_version=build_bundle_version(year, month, day, suffix),
+        tag=tag or f"v{cargo_version}",
         suffix=suffix,
+    )
+
+
+def release_version_from_tag(tag: str) -> ReleaseVersion:
+    match = CANONICAL_TAG_PATTERN.fullmatch(tag)
+    if not match:
+        fail_version("unsupported tag format", tag, "expected vYYYY.M.D or vYYYY.M.D-N")
+
+    return build_release_version(
+        subject="unsupported tag format",
+        raw_value=tag,
+        year_value=match.group("year"),
+        month_value=match.group("month"),
+        day_value=match.group("day"),
+        suffix=match.group("suffix") or "",
+        tag=tag,
     )
 
 
@@ -100,32 +134,21 @@ def release_version_from_cargo(cargo_version: str) -> ReleaseVersion:
     if not version:
         raise ValueError("cargo version is empty")
 
-    core, dash, suffix = version.partition("-")
-    parts = core.split(".")
-    if len(parts) != 3 or not all(part.isdigit() for part in parts):
-        raise ValueError(
-            f"unsupported Cargo version format: {cargo_version!r}; expected YYYY.M.D or YYYY.M.D-N"
+    match = CARGO_VERSION_PATTERN.fullmatch(version)
+    if not match:
+        fail_version(
+            "unsupported Cargo version format",
+            cargo_version,
+            "expected YYYY.M.D or YYYY.M.D-N",
         )
 
-    year, month, day = (int(part) for part in parts)
-    if dash and not suffix:
-        raise ValueError(
-            f"unsupported Cargo version format: {cargo_version!r}; expected YYYY.M.D or YYYY.M.D-N"
-        )
-    validate_suffix(cargo_version, suffix if dash else "")
-    validate_date(cargo_version, year, month, day)
-
-    public_version = f"{year:04d}.{month:02d}.{day:02d}"
-    if dash and suffix:
-        public_version = f"{public_version}.{suffix}"
-
-    return ReleaseVersion(
-        cargo_version=version,
-        public_version=public_version,
-        bundle_short_version=f"{year:04d}.{month:02d}.{day:02d}",
-        bundle_version=build_bundle_version(year, month, day, suffix if dash else ""),
-        tag=f"v{version}",
-        suffix=suffix if dash else "",
+    return build_release_version(
+        subject="unsupported Cargo version format",
+        raw_value=cargo_version,
+        year_value=match.group("year"),
+        month_value=match.group("month"),
+        day_value=match.group("day"),
+        suffix=match.group("suffix") or "",
     )
 
 

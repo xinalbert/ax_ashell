@@ -371,3 +371,19 @@
 - 执行内容：复查 terminal 容器、渲染和输入命中路径；确认无需改 `src/terminal/element.rs` / `src/terminal/input.rs`；在 `src/app/ui.rs` 的 terminal 容器上增加 `pl(cell_width / 2.)`
 - 验证结果：`cargo check` 通过；当前改动只影响 terminal 容器层布局，不影响 PTY 网格、选区或输入命中逻辑；仅保留既有 `block v0.1.6` future-incompat warning
 - 风险/待办：最终视觉效果仍需用户本机目视确认；若半字符仍偏近，可继续上调到 `0.75 * cell_width`
+
+## 2026-07-07 刷新环境记录到 canonical-only release tag 任务
+
+- 目的：在收紧 release tag 解析前，确认本轮环境边界和验证方式
+- 改动范围：`scripts/release_version.py`，`.github/workflows/release.yml`，`Cargo.toml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查版本脚本、release workflow 注释、Cargo manifest 和 tracking docs；确认运行环境与依赖版本未变，本轮重点是删除 legacy tag 解析，并同步拒绝零填充的 `YYYY.MM.DD` / `YYYY.MM.DD-N`
+- 验证结果：确认本轮不需要联网和外部服务；实施验证将收敛为版本脚本正反例、`cargo check` 和 tracking docs 校验
+- 风险/待办：历史旧格式 tag 若在当前脚本下重跑 workflow，将按设计直接失败，需要在变更记录中明确这一行为变化
+
+## 2026-07-07 完成 canonical-only release tag 环境收口
+
+- 目的：在 release tag 解析收紧完成后，把实际验证结果回写到环境记忆
+- 改动范围：`scripts/release_version.py`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行 canonical tag 正反例、Cargo 版本正反例和 `Cargo.toml` 版本读取校验；确认脚本已删除 legacy tag 分支，并额外拒绝零填充的月 / 日版本段；完成 `cargo check`
+- 验证结果：`v2026.7.7`、`v2026.7.7-1` 和 manifest 版本读取通过；`v2026.07.07`、`v2026.07.07.1` 与 `2026.07.07` 按预期失败；`cargo check` 与 tracking docs 校验通过
+- 风险/待办：历史旧格式 tag 若在当前脚本下重跑 workflow，会直接失败；后续发布只能使用 canonical `vYYYY.M.D` / `vYYYY.M.D-N`
