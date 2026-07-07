@@ -112,6 +112,13 @@ impl AxShell {
     pub(crate) fn toggle_sftp_minimized(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let state = self.body_panels.clone();
         let minimized = self.sftp_panel_minimized;
+        let default_restore_size = if self.config.show_monitoring_dashboard()
+            && self.config.monitoring_position() == "Bottom"
+        {
+            px(328.)
+        } else {
+            px(248.)
+        };
 
         if !minimized {
             let sizes = state.read(cx).sizes();
@@ -121,7 +128,7 @@ impl AxShell {
             self.sftp_panel_minimized = true;
         } else {
             self.sftp_panel_minimized = false;
-            let prev_size = self.prev_monitoring_size.unwrap_or(px(328.));
+            let target_size = self.prev_monitoring_size.unwrap_or(default_restore_size);
 
             cx.on_next_frame(
                 window,
@@ -134,13 +141,8 @@ impl AxShell {
                               window: &mut gpui::Window,
                               cx: &mut gpui::Context<crate::app::AxShell>| {
                             this.body_panels.update(cx, |state, cx| {
-                                let sizes = state.sizes();
-                                let c_size_f32: f32 = sizes.iter().map(|s| s.as_f32()).sum();
-                                let c_size = px(c_size_f32);
-
-                                if c_size > px(0.0) && prev_size < c_size {
-                                    let target_p0 = c_size - prev_size;
-                                    state.resize_panel(0, target_p0, window, cx);
+                                if state.sizes().len() > 1 {
+                                    state.resize_panel(1, target_size, window, cx);
                                 }
                             });
                             cx.notify();
