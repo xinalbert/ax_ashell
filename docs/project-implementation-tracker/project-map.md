@@ -8,7 +8,7 @@
 ## 索引范围
 
 - 根目录：`<repo-root>`
-- 覆盖：`src/app/`，`src/session/`，`src/terminal/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
+- 覆盖：`src/app/`，`src/session/`，`src/terminal/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
 - 排除：`.git/`，`target/`，`assets/` 批量图标/字体资源，构建产物与外部依赖缓存
 
 ## 目录地图
@@ -22,7 +22,7 @@
 | `src/main.rs` | 应用初始化入口 | 增加全局初始化、custom theme watch/load、补入口初始化顺序时 | 本轮在 `main()` 第一行注册 panic hook，保证早期启动 panic 可落 crash 文件 |
 | `locales/` | 中英文界面文案 | 新增 custom theme 分组、提示、保存说明和错误消息时 | 需要同步 `en.yml` 和 `zh-CN.yml` |
 | `.github/workflows/` | CI / Release 构建和打包元数据 | 改二进制名、artifact 名、macOS bundle Info.plist 或发布路径时 | `release.yml` 手工组装 `.app`，需要与 Cargo 包名一致 |
-| `scripts/` | 本地开发/打包脚本 | 改 macOS `.app` 名称、bundle id、图标文件名、签名逻辑时 | `package-macos-app.sh` 会运行 `cargo build --release` 并组装 bundle |
+| `scripts/` | 本地开发/打包脚本与发布辅助脚本 | 改 macOS `.app` 名称、bundle id、图标文件名、签名逻辑、tag/version 映射或发布前 manifest 同步时 | `package-macos-app.sh` 会运行 `cargo build --release` 并组装 bundle；本轮将新增共享版本脚本 |
 | `assets/*.desktop` | Linux desktop entry | 改应用显示名、Exec、Icon、StartupWMClass 或 Debian metadata 时 | 当前 desktop 文件为 `assets/ax_shell.desktop` |
 | `docs/` | README、用户/开发文档、环境审计和实施跟踪 | 改项目名称、配置目录、同步文件名、打包命令或验证边界时 | 本轮需同步 README、user-guide、development、env audit 与 project tracker |
 
@@ -40,14 +40,17 @@
 | `src/terminal/input.rs` | terminal 键盘、鼠标、滚动和 IME 输入 | `terminal_grid_point_and_side`，`on_terminal_scroll` | 鼠标命中、选择、滚动行高或 IME 候选框位置与终端网格不一致时 |
 | `src/main.rs` | 应用启动初始化顺序 | `main()` | 新增用户 theme 文件初始加载和 watch 入口 |
 | `Cargo.toml` | Cargo 包、依赖、Debian metadata | `[package]`，`[package.metadata.deb]` | 改 crate/package name、二进制名、deb assets 或依赖时 |
+| `Cargo.lock` | 根包与依赖锁文件 | `[[package]] name = "ax_shell"` | 若发布时临时同步 root package version，需要确认 lock 中 root package 条目一起更新 |
 | `.github/workflows/release.yml` | 多平台 release 构建与 GitHub Release 发布 | `build`，`publish`，macOS bundle heredoc | 改 release artifact、bundle display name、binary copy path 或 cask 注释模板时 |
 | `scripts/package-macos-app.sh` | 本地 macOS bundle 打包脚本 | `APP_NAME`，`DISPLAY_NAME`，`BUNDLE_ID`，`Info.plist` | 改 macOS 本地打包输出和显示名时 |
+| `scripts/release_version.py` | 共享发布版本规则脚本 | tag 解析、Cargo semver/public version/bundle version 派生、manifest/lock 同步 | 改 tag 作为唯一版本源的全链路规则时 |
 | `examples/dev_reload.rs` | restart-based 开发重载 | `build_app`，`prepare_macos_app_bundle`，env constants | 改 dev 二进制名、bundle id、开发 app 显示名或日志文件名时 |
 
 ## 常用定位
 
 - `rg -n 'init_logging|panic|crash|open_main_window|current_window_title' src/main.rs src/app/startup.rs`
 - `rg -n 'AxAshell|ax_ashell|AX_ASHELL|AxShell|ax_shell|AX_SHELL' Cargo.toml Cargo.lock src examples scripts .github assets README.md README.en.md docs`
+- `rg -n 'GITHUB_REF_NAME|refs/tags|CFBundleShortVersionString|CARGO_PKG_VERSION|version = ' .github/workflows scripts src Cargo.toml Cargo.lock`
 - `rg -n 'sidebar\\(|render_collapsed_sidebar|saved_session_groups|open_local' src/app/ui.rs src/session/mod.rs`
 - `rg -n 'custom_theme|ThemeRegistry|load_embedded_themes|apply_theme_preferences|save_custom' src/app src/session src/main.rs`
 - `rg -n 'terminal_font_metrics|terminal_font_is_monospace|terminal_cell_width|terminal_line_height|layout_grid' src/app src/session src/terminal`
@@ -61,9 +64,9 @@
 
 ## 刷新规则
 
-- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、release workflow、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics 或用户文档范围发生变化时刷新
-- 最近依据：`Cargo.toml`，`Cargo.lock`，`src/main.rs`，`src/app/startup.rs`，`src/session/config.rs`，`examples/dev_reload.rs`，`scripts/package-macos-app.sh`，`.github/workflows/release.yml`，`assets/ax_shell.desktop`，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`，`docs/user-guide.md`，`docs/user-guide.en.md`
+- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics 或用户文档范围发生变化时刷新
+- 最近依据：`Cargo.toml`，`Cargo.lock`，`src/app/constants.rs`，`src/app/startup.rs`，`scripts/package-macos-app.sh`，`.github/workflows/release.yml`，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`
 
 ## 最后更新时间
 
-- 2026-07-07 18:09 CST
+- 2026-07-07 20:52 CST

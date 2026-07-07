@@ -339,3 +339,27 @@
 - 执行内容：执行 `rustfmt`、`cargo check`、`cargo check --example dev_reload`、`cargo test` 和残留旧名检索；确认本轮改动不涉及依赖版本、外部服务或 SSH/SFTP 协议行为
 - 验证结果：格式化、编译检查、dev-reload example 编译和 13 个 Rust 测试均通过；仅保留既有 `block v0.1.6` future-incompat warning；非历史区域的旧名只保留在旧配置目录迁移代码和升级说明中
 - 风险/待办：真实远端仓库重命名、本地目录名调整和平台安装包展示需要后续手工确认
+
+## 2026-07-07 刷新环境记录到 tag 全链路版本源任务
+
+- 目的：进入“tag 作为唯一发布版本源”的实施前，确认当前项目环境、版本事实和验证边界
+- 改动范围：`.github/workflows/release.yml`，`scripts/package-macos-app.sh`，`Cargo.toml`，`Cargo.lock`，`src/app/constants.rs`，`src/app/startup.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查 release workflow、macOS 打包脚本、运行时版本显示和 Cargo manifest/lock；确认主技术栈、依赖版本和 CI 运行环境未变化，本轮重点切换为 tag/version 映射、manifest/lock 临时同步和 bundle 版本派生
+- 验证结果：确认本轮不需要联网和外部服务；实施验证将收敛为版本脚本样例运行、workflow 静态自检、`rustfmt`、`cargo check` 和 tracking docs 校验
+- 风险/待办：若继续支持 `vYYYY.MM.DD.N` 四段 tag，需要把它合法映射到 Cargo semver 与 bundle version，避免 workflow、本地打包和运行时版本各自漂移
+
+## 2026-07-07 完成 tag 全链路版本源的环境收口
+
+- 目的：在发布链路改造完成后，把本轮实际验证边界和少量官方文档检索结果回写到环境记忆
+- 改动范围：`.github/workflows/release.yml`，`scripts/release_version.py`，`scripts/package-macos-app.sh`，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行版本脚本样例运行、非法 tag 失败校验、shell 静态检查、release workflow YAML 静态自检、`cargo check` 与 tracking docs 校验；补充一次 Apple 官方文档检索，用于确认 `CFBundleShortVersionString` / `CFBundleVersion` 的格式约束，并据此固定 macOS bundle version 映射
+- 验证结果：版本脚本、shell / YAML 自检、编译检查和 tracking docs 校验全部通过；当前发布链路已统一到 `scripts/release_version.py`；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：真实 GitHub Release 执行、macOS Finder/系统信息展示和多平台安装包体验仍需一次远端 tag push / 本机实装验证
+
+## 2026-07-07 收口 tag 与 Cargo 版本格式一致性
+
+- 目的：避免 `Cargo.toml` 和 tag 分别使用 `2026.7.6` 与 `2026.07.06` 两套主版本字符，减少误读
+- 改动范围：`scripts/release_version.py`，`.github/workflows/release.yml`，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：用临时 manifest 执行 `cargo metadata`，确认 Cargo 会拒绝 `2026.07.06` / `2026.07.06.1`；据此将规范 tag 收口为 `vYYYY.M.D` / `vYYYY.M.D-N`，让 tag 与 `Cargo.toml` 保持同一套 Cargo 兼容字符，再由脚本派生对外展示版本
+- 验证结果：Cargo 版本约束验证通过；共享版本脚本、shell / YAML 自检和 tracking docs 校验继续通过；仅保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：真实远端 tag push 仍需改用新的 canonical tag 格式；历史旧格式 tag 如需重跑工作流，应按当时脚本版本处理
