@@ -491,3 +491,13 @@
 - 执行内容：将远端 / 本地功能按钮从独立操作行合并到路径行，改为小号图标按钮加 tooltip；补充 `parent_folder` 中英文文案；执行 `rustfmt --edition 2024 src/app/ui.rs` 与 `cargo check`
 - 验证结果：格式化和编译检查通过；仅保留既有 `block v0.1.6` future-incompat warning
 - 风险/待办：GUI 最终效果仍需用户重启或热重载后确认；若半宽下图标按钮仍溢出，应继续收紧按钮间距或隐藏低频动作到菜单
+
+## 2026-07-08 完成 Zed 依赖升级环境验证
+
+- 时间：2026-07-08 09:13 CST
+- 触发原因：用户要求评估并继续验证 `zed-industries/zed` 升级代价；在 `cargo dev-reload` 报出 `accesskit` 版本冲突后，需要确认当前环境与工具链是否能完成依赖统一升级
+- 执行内容：复查 `Cargo.toml`、`Cargo.lock`、当前 env / tracking 记录与现有未提交 diff；确认根项目 `gpui` / `gpui_platform` / `menu` 需要保持 plain git source 才能和 `gpui-component` 共用同一 Zed source id；在真实仓库统一 `Cargo.lock` 到 `f9c994796ad4341649d7b8664edbdfaae8bebd5d` 后执行 `cargo check --locked`、`cargo test --locked`，并刷新环境 current
+- 影响文件：`Cargo.lock`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：`Cargo.lock` 中 Zed 源已统一为 `git+https://github.com/zed-industries/zed#f9c994796ad4341649d7b8664edbdfaae8bebd5d`；`cargo check --locked` 通过；`cargo test --locked` 13 个测试全部通过；当前无需源码 API 迁移；仍保留既有 `block v0.1.6` future-incompat warning
+- 对 plan 的更新：当前环境已证明本轮升级可在 `rust-version = 1.88.0` 下落地；若后续需要在 manifest 层显式 pin 某个 Zed commit，必须先让 `gpui-component` 与根依赖共享完全相同的 source id

@@ -2,6 +2,7 @@
 
 ## 2026-07-06 russh 依赖版本
 
+- 时间：2026-07-07 07:57 +0800
 - 检索问题：`russh`、`russh-keys`、`russh-sftp` 在 crates.io / Cargo registry 的当前版本是什么
 - 检索原因：用户要求将 `russh` 升级到最新版，版本信息会随时间变化，必须查询当前 registry
 - 来源列表：Cargo registry / crates.io via `cargo search russh --limit 5`；Cargo registry / crates.io via `cargo search russh-keys --limit 5`；Cargo registry / crates.io via `cargo search russh-sftp --limit 5`
@@ -11,6 +12,7 @@
 
 ## 2026-07-07 GitHub Release 描述生成能力
 
+- 时间：2026-07-07 07:57 +0800
 - 检索问题：GitHub Release workflow 能否同时使用自动生成 release notes 和自定义 release body
 - 检索原因：用户希望发布流程自动把提交记录中的重大改动放进 Release 描述
 - 来源列表：GitHub Docs `Automatically generated release notes`；`softprops/action-gh-release` README
@@ -20,6 +22,7 @@
 
 ## 2026-07-07 X11 forwarding cookie 替换策略
 
+- 时间：2026-07-07 07:57 +0800
 - 检索问题：SSH X11 forwarding 是否可以把远端 X11 setup 直接透明转发给本机 X server，还是必须替换 fake cookie
 - 检索原因：用户询问能否不处理 cookie 直接转发；该决策影响 X11 relay 的安全边界和能否被 XQuartz 接受
 - 来源列表：RFC 4254 Section 6.3.1 `x11-req`；OpenSSH portable `channels.c`
@@ -29,6 +32,7 @@
 
 ## 2026-07-07 macOS bundle version 格式约束
 
+- 时间：2026-07-07 21:29 +0800
 - 检索问题：`CFBundleShortVersionString` 和 `CFBundleVersion` 是否允许直接使用四段日期版本，例如 `2026.07.06.1`
 - 检索原因：本轮要把 Git tag 做成唯一发布版本源，但同日补发 tag `vYYYY.MM.DD.N` 如果直接写入 plist，可能违反 Apple 对 bundle version 的格式要求
 - 来源列表：Apple Developer Documentation `CFBundleShortVersionString`；Apple Developer Glossary `version number`；Apple Developer Glossary `build version number`
