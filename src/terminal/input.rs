@@ -175,15 +175,21 @@ impl AxShell {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
+        {
+            let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
+                return;
+            };
+
+            if tab.render_snapshot().display_offset > 0 {
+                tab.scroll_to_bottom();
+            }
+            tab.clear_selection();
+        }
+        self.flush_active_terminal_output();
+
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
             return;
         };
-
-        if tab.render_snapshot().display_offset > 0 {
-            tab.scroll_to_bottom();
-        }
-        tab.clear_selection();
-
         let app_cursor_mode = tab.app_cursor_mode();
         if let Some(bytes) = encode_key(&event.keystroke, app_cursor_mode, false) {
             self.send_terminal_input(bytes, window, cx);
@@ -213,15 +219,21 @@ impl AxShell {
             return;
         };
         self.clear_terminal_marked_text(window, cx);
+        {
+            let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
+                return;
+            };
+
+            if tab.render_snapshot().display_offset > 0 {
+                tab.scroll_to_bottom();
+            }
+
+            tab.clear_selection();
+        }
+        self.flush_active_terminal_output();
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
             return;
         };
-
-        if tab.render_snapshot().display_offset > 0 {
-            tab.scroll_to_bottom();
-        }
-
-        tab.clear_selection();
         tab.send_backend(BackendCommand::Input(bytes));
         window.prevent_default();
         cx.stop_propagation();
@@ -245,14 +257,20 @@ impl AxShell {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
+        {
+            let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
+                return;
+            };
+
+            if tab.render_snapshot().display_offset > 0 {
+                tab.scroll_to_bottom();
+            }
+            tab.clear_selection();
+        }
+        self.flush_active_terminal_output();
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
             return;
         };
-
-        if tab.render_snapshot().display_offset > 0 {
-            tab.scroll_to_bottom();
-        }
-        tab.clear_selection();
         tab.paste_text(text);
         window.prevent_default();
         cx.stop_propagation();
@@ -286,6 +304,7 @@ impl AxShell {
         cx: &mut Context<Self>,
     ) {
         if self.terminal_marked_text.take().is_some() {
+            self.flush_active_terminal_output();
             window.invalidate_character_coordinates();
             cx.notify();
         }
@@ -310,6 +329,7 @@ impl AxShell {
         tab.clear_selection();
         self.terminal_marked_text = None;
         tab.send_backend(BackendCommand::Input(text.as_bytes().to_vec()));
+        self.flush_active_terminal_output();
         window.invalidate_character_coordinates();
         cx.notify();
     }
@@ -335,6 +355,7 @@ impl AxShell {
                         tab.clear_selection();
                     }
                 }
+                self.flush_active_terminal_output();
                 cx.notify();
                 handled = true;
             }
@@ -494,6 +515,7 @@ impl AxShell {
             self.end_drag_split();
         }
         self.terminal_selecting = false;
+        self.flush_active_terminal_output();
         cx.notify();
     }
 

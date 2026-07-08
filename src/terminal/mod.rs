@@ -148,6 +148,7 @@ pub struct TerminalTab {
         )>,
     >,
     viewport_signature: u64,
+    deferred_output: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -267,6 +268,7 @@ impl TerminalTab {
             scroll_pixel_y: 0.0,
             highlight_cache: std::cell::RefCell::new(None),
             viewport_signature: 0,
+            deferred_output: Vec::new(),
         };
         this.refresh_viewport_signature();
         this
@@ -275,6 +277,22 @@ impl TerminalTab {
     pub fn feed(&mut self, bytes: &[u8]) -> bool {
         self.processor.advance(&mut self.term, bytes);
         self.refresh_viewport_signature()
+    }
+
+    pub fn defer_output(&mut self, bytes: &[u8]) {
+        self.deferred_output.extend_from_slice(bytes);
+    }
+
+    pub fn has_deferred_output(&self) -> bool {
+        !self.deferred_output.is_empty()
+    }
+
+    pub fn flush_deferred_output(&mut self) -> bool {
+        if self.deferred_output.is_empty() {
+            return false;
+        }
+        let bytes = std::mem::take(&mut self.deferred_output);
+        self.feed(&bytes)
     }
 
     /// Send a command to the backend. Thread-safe via the shared Arc<Mutex>.
@@ -287,7 +305,8 @@ impl TerminalTab {
     /// Replace the backend with a new one. The `Term`'s internal listener
     /// shares the same `Arc`, so user input is automatically routed to the
     /// new backend. The old backend must be closed by the caller.
-    pub fn set_backend(&self, new_backend: BackendTx) {
+    pub fn set_backend(&mut self, new_backend: BackendTx) {
+        self.deferred_output.clear();
         if let Ok(mut backend) = self.backend.lock() {
             *backend = new_backend;
         }
@@ -464,7 +483,10 @@ impl TerminalTab {
     }
 
     pub fn selection_active(&self) -> bool {
-        self.term.selection.is_some()
+        self.term
+            .selection
+            .as_ref()
+            .is_some_and(|selection| !selection.is_empty())
     }
 
     pub fn clear_selection(&mut self) {

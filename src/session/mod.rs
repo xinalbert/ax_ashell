@@ -779,7 +779,6 @@ impl AxShell {
                 group.pane_root = self.pane_root.clone();
             }
         }
-        self.active_tab = Some(id.clone());
         // Find which group this tab belongs to and restore its pane_root
         let tab_group = self
             .tab_groups
