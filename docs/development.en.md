@@ -41,7 +41,7 @@ Current behavior:
 
 - It is restart-based live development, not state-preserving hot reload
 - It watches `src`, `assets`, `locales`, `Cargo.toml`, `Cargo.lock`, `build.rs`, and `.cargo` by default
-- File changes trigger rebuild and relaunch
+- File changes trigger rebuild and relaunch; on Windows it stops the running app before rebuilding so the active `.exe` does not block replacement
 - On macOS it launches through an isolated development app bundle so it does not share app identity or input focus with a running release `.app`
 - `--release` switches to `target/release/ax_shell`
 

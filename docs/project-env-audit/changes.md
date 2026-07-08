@@ -501,3 +501,10 @@
 - 计划状态变更：无
 - 验证结果：`Cargo.lock` 中 Zed 源已统一为 `git+https://github.com/zed-industries/zed#f9c994796ad4341649d7b8664edbdfaae8bebd5d`；`cargo check --locked` 通过；`cargo test --locked` 13 个测试全部通过；当前无需源码 API 迁移；仍保留既有 `block v0.1.6` future-incompat warning
 - 对 plan 的更新：当前环境已证明本轮升级可在 `rust-version = 1.88.0` 下落地；若后续需要在 manifest 层显式 pin 某个 Zed commit，必须先让 `gpui-component` 与根依赖共享完全相同的 source id
+## 2026-07-08 刷新环境记录到 dev-reload Windows 顺序修复
+
+- 触发原因：用户确认继续修复 `cargo dev-reload`，需要确认该命令是否跨平台可用，并把环境/验证边界切换到 Windows 重载顺序问题
+- 执行内容：复查 `.cargo/config.toml`、`examples/dev_reload.rs`、`docs/development.md`、`.github/workflows/ci.yml` 与现有 env/tracking 记录；确认 `cargo dev-reload` 是跨平台 alias，问题集中在非 macOS 分支的重载顺序与 Windows `.exe` 占用风险；将当前验证入口刷新为 `dev_reload` example 的局部编译/测试命令
+- 受影响文件：`examples/dev_reload.rs`，`docs/development.md`，`docs/development.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 更新后的命令或环境：`rustfmt --edition 2024 examples/dev_reload.rs`，`cargo check --example dev_reload`，`cargo test --example dev_reload`，`python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .`
+- 验证结果：`rustfmt --edition 2024 examples/dev_reload.rs` 通过；`cargo check --example dev_reload` 通过；`cargo test --example dev_reload` 通过，3 个测试全部通过；tracking docs 校验通过；仍未做 Windows 实机热重载回归

@@ -296,7 +296,23 @@ impl DevReload {
 
     fn rebuild_and_restart(&mut self, reason: &str) -> Result<()> {
         self.log_runner(format!("[dev-reload] trigger: {reason}"));
+        let initial_start = self.child.is_none();
+
+        if cfg!(target_os = "windows") && !initial_start {
+            self.stop_child()?;
+            if let Err(err) = self.build_app() {
+                self.log_runner(format!("[dev-reload] build failed: {err:#}"));
+                self.log_runner("[dev-reload] waiting for the next filesystem change");
+                return Ok(());
+            }
+            self.start_app()?;
+            return Ok(());
+        }
+
         if let Err(err) = self.build_app() {
+            if initial_start {
+                return Err(err);
+            }
             self.log_runner(format!("[dev-reload] build failed: {err:#}"));
             self.log_runner("[dev-reload] waiting for the next filesystem change");
             return Ok(());
@@ -471,7 +487,6 @@ impl DevReload {
             if child.try_wait().context("poll child process")?.is_some() {
                 return Ok(());
             }
-            // Stop first, then rebuild, to avoid executable replacement issues on Windows.
             child.kill().context("stop running app")?;
             let _ = child.wait();
             self.log_runner("[dev-reload] stopped running app");
