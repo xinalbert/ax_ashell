@@ -12,7 +12,9 @@ use gpui_component::ActiveTheme as _;
 
 use crate::AxShell;
 use crate::terminal::custom_blocks::{is_custom_block_supported, paint_custom_block};
-use crate::terminal::{RenderSnapshot, ViewportSelection};
+use crate::terminal::{
+    RenderCell, RenderSnapshot, TerminalComposition, TerminalFrozenSelection, ViewportSelection,
+};
 
 #[derive(Clone, Copy)]
 struct TerminalMetrics {
@@ -147,7 +149,8 @@ pub struct TerminalElement {
     view: Entity<AxShell>,
     focus_handle: FocusHandle,
     snapshot: RenderSnapshot,
-    marked_text: Option<String>,
+    composition: Option<TerminalComposition>,
+    frozen_selection: Option<TerminalFrozenSelection>,
     font_family: SharedString,
     effective_font_family: Option<SharedString>,
     font_size: Pixels,
@@ -233,12 +236,12 @@ impl InputHandler for TerminalInputHandler {
         &mut self,
         _range_utf16: Option<std::ops::Range<usize>>,
         new_text: &str,
-        _new_selected_range: Option<std::ops::Range<usize>>,
+        new_selected_range: Option<std::ops::Range<usize>>,
         window: &mut Window,
         cx: &mut App,
     ) {
         self.view.update(cx, |view, cx| {
-            view.set_terminal_marked_text(new_text.to_string(), window, cx);
+            view.set_terminal_marked_text(new_text.to_string(), new_selected_range, window, cx);
         });
     }
 
@@ -289,7 +292,8 @@ impl TerminalElement {
         view: Entity<AxShell>,
         focus_handle: FocusHandle,
         snapshot: RenderSnapshot,
-        marked_text: Option<String>,
+        composition: Option<TerminalComposition>,
+        frozen_selection: Option<TerminalFrozenSelection>,
         font_family: SharedString,
         font_size: Pixels,
         line_height: Pixels,
@@ -301,7 +305,8 @@ impl TerminalElement {
             view,
             focus_handle,
             snapshot,
-            marked_text,
+            composition,
+            frozen_selection,
             font_family,
             effective_font_family: None,
             font_size,
@@ -428,8 +433,20 @@ impl TerminalElement {
 
         let keyword_highlights = &self.snapshot.highlights;
         let search_highlights = self.search_highlights.as_ref();
+        let frozen_cells = frozen_cells_by_position(self.frozen_selection.as_ref(), &self.snapshot);
+        let frozen_highlights =
+            frozen_highlights_by_position(self.frozen_selection.as_ref(), &self.snapshot);
+        let active_selection = self
+            .frozen_selection
+            .as_ref()
+            .and_then(|frozen| remap_frozen_selection(frozen, &self.snapshot))
+            .or(self.snapshot.selection);
 
         for render_cell in &self.snapshot.cells {
+            let render_cell = frozen_cells
+                .as_ref()
+                .and_then(|cells| cells.get(&(render_cell.row, render_cell.col)))
+                .unwrap_or(render_cell);
             let cell = &render_cell.cell;
             if cell.flags.intersects(
                 Flags::HIDDEN | Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
@@ -437,7 +454,7 @@ impl TerminalElement {
                 continue;
             }
 
-            let selected = self.snapshot.selection.is_some_and(|selection| {
+            let selected = active_selection.is_some_and(|selection| {
                 selection_contains(selection, render_cell.row, render_cell.col)
             });
             let bg = color_to_hsla(cell.bg, false, font_brightness, cx);
@@ -474,8 +491,14 @@ impl TerminalElement {
                 .copied()
             {
                 style.color = adjust_terminal_foreground_brightness(hl_color, font_brightness);
-            } else if let Some(&hl_color) =
-                keyword_highlights.get(&(render_cell.row, render_cell.col))
+            } else if let Some(hl_color) = frozen_highlights
+                .as_ref()
+                .and_then(|map| map.get(&(render_cell.row, render_cell.col)).copied())
+                .or_else(|| {
+                    keyword_highlights
+                        .get(&(render_cell.row, render_cell.col))
+                        .copied()
+                })
             {
                 // Preserve original ANSI/truecolor emphasis from the terminal output.
                 if keyword_highlight_allowed(cell) {
@@ -610,6 +633,119 @@ impl TerminalElement {
         };
 
         visible_cell_background(&render_cell.cell, cx)
+    }
+
+    fn paint_composition(
+        &self,
+        composition: &TerminalComposition,
+        draw_origin: Point<Pixels>,
+        metrics: TerminalMetrics,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if composition.text.is_empty() {
+            return;
+        }
+
+        let row = composition
+            .anchor_row
+            .min(self.snapshot.rows.saturating_sub(1));
+        let col = composition
+            .anchor_col
+            .min(self.snapshot.cols.saturating_sub(1));
+        let pos = point(
+            draw_origin.x + metrics.cell_width * col as f32,
+            draw_origin.y + metrics.line_height * row as f32,
+        );
+
+        let mut base_style = self.base_text_style(cx);
+        base_style.underline = Some(UnderlineStyle {
+            color: Some(base_style.color),
+            thickness: px(1.0),
+            wavy: false,
+        });
+
+        let selected_bytes = composition_selected_byte_range(
+            &composition.text,
+            composition.selected_range_utf16.as_ref(),
+        );
+        let mut runs = Vec::new();
+        let font = Font {
+            family: self.active_font_family(),
+            ..Font::default()
+        };
+        let selection_bg = cx.theme().selection;
+        let selection_fg = high_contrast_cursor_color(selection_bg);
+        let text_len = composition.text.len();
+
+        let push_run = |runs: &mut Vec<TextRun>, len: usize, color: Hsla| {
+            if len == 0 {
+                return;
+            }
+            runs.push(TextRun {
+                len,
+                font: font.clone(),
+                color,
+                underline: base_style.underline.clone(),
+                ..Default::default()
+            });
+        };
+
+        if let Some(range) = selected_bytes.as_ref().filter(|range| !range.is_empty()) {
+            push_run(&mut runs, range.start, base_style.color);
+            push_run(&mut runs, range.end - range.start, selection_fg);
+            push_run(&mut runs, text_len - range.end, base_style.color);
+        } else {
+            push_run(&mut runs, text_len, base_style.color);
+        }
+
+        let shaped = window.text_system().shape_line(
+            composition.text.clone().into(),
+            self.font_size,
+            &runs,
+            None,
+        );
+        let bg_bounds = Bounds::new(pos, gpui::size(shaped.width, metrics.line_height));
+        window.paint_quad(fill(bg_bounds, cx.theme().background));
+
+        if let Some(range) = selected_bytes.filter(|range| !range.is_empty()) {
+            let prefix_width = composition_text_width(
+                &composition.text[..range.start],
+                self.font_size,
+                font.clone(),
+                base_style.color,
+                base_style.underline.clone(),
+                window,
+            );
+            let selected_width = composition_text_width(
+                &composition.text[range.clone()],
+                self.font_size,
+                font,
+                selection_fg,
+                base_style.underline.clone(),
+                window,
+            );
+            if selected_width > px(0.0) {
+                window.paint_quad(fill(
+                    Bounds::new(
+                        point(pos.x + prefix_width, pos.y),
+                        gpui::size(selected_width, metrics.line_height),
+                    ),
+                    selection_bg,
+                ));
+            }
+        }
+
+        shaped
+            .paint(
+                pos,
+                metrics.line_height,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            )
+            .ok();
     }
 }
 
@@ -797,54 +933,15 @@ impl Element for TerminalElement {
             cx,
         );
 
-        if let Some(marked_text) = self.marked_text.as_ref().filter(|text| !text.is_empty()) {
-            if let Some(cursor) = prepaint.cursor {
-                let pos = point(
-                    draw_origin.x + prepaint.metrics.cell_width * cursor.col as f32,
-                    draw_origin.y + prepaint.metrics.line_height * cursor.row as f32,
-                );
-                let mut base_style = self.base_text_style(cx);
-                base_style.underline = Some(UnderlineStyle {
-                    color: Some(base_style.color),
-                    thickness: px(1.0),
-                    wavy: false,
-                });
-                let shaped = window.text_system().shape_line(
-                    marked_text.clone().into(),
-                    self.font_size,
-                    &[TextRun {
-                        len: marked_text.len(),
-                        font: Font {
-                            family: self.active_font_family(),
-                            ..Font::default()
-                        },
-                        color: base_style.color,
-                        underline: base_style.underline,
-                        ..Default::default()
-                    }],
-                    None,
-                );
-                let bg_bounds =
-                    Bounds::new(pos, gpui::size(shaped.width, prepaint.metrics.line_height));
-                window.paint_quad(fill(bg_bounds, cx.theme().background));
-                shaped
-                    .paint(
-                        pos,
-                        prepaint.metrics.line_height,
-                        gpui::TextAlign::Left,
-                        None,
-                        window,
-                        cx,
-                    )
-                    .ok();
-            }
+        if let Some(composition) = self.composition.as_ref() {
+            self.paint_composition(composition, draw_origin, prepaint.metrics, window, cx);
         }
 
         if let Some(cursor) = prepaint.cursor {
             if self
-                .marked_text
+                .composition
                 .as_ref()
-                .is_some_and(|text| !text.is_empty())
+                .is_some_and(|composition| !composition.text.is_empty())
             {
                 return;
             }
@@ -924,6 +1021,181 @@ fn merge_underlines(mut underlines: Vec<LayoutUnderline>) -> Vec<LayoutUnderline
     }
 
     merged
+}
+
+fn frozen_cells_by_position(
+    frozen_selection: Option<&TerminalFrozenSelection>,
+    snapshot: &RenderSnapshot,
+) -> Option<std::collections::HashMap<(i32, i32), RenderCell>> {
+    let frozen_selection = frozen_selection?;
+    let mut cells = std::collections::HashMap::with_capacity(frozen_selection.cells.len());
+    for cell in &frozen_selection.cells {
+        let Some(row) =
+            remap_frozen_bottom_index_for_snapshot(cell.bottom_index, frozen_selection, snapshot)
+        else {
+            continue;
+        };
+        cells.insert(
+            (row, cell.col),
+            RenderCell {
+                row,
+                col: cell.col,
+                cell: cell.cell.clone(),
+            },
+        );
+    }
+    Some(cells)
+}
+
+fn frozen_highlights_by_position(
+    frozen_selection: Option<&TerminalFrozenSelection>,
+    snapshot: &RenderSnapshot,
+) -> Option<std::collections::HashMap<(i32, i32), Hsla>> {
+    let frozen_selection = frozen_selection?;
+    let mut highlights =
+        std::collections::HashMap::with_capacity(frozen_selection.highlights.len());
+    for ((bottom_index, col), color) in &frozen_selection.highlights {
+        let Some(row) =
+            remap_frozen_bottom_index_for_snapshot(*bottom_index, frozen_selection, snapshot)
+        else {
+            continue;
+        };
+        highlights.insert((row, *col), *color);
+    }
+    Some(highlights)
+}
+
+fn frozen_stream_delta(
+    frozen_selection: &TerminalFrozenSelection,
+    snapshot: &RenderSnapshot,
+) -> usize {
+    if frozen_selection.display_offset == 0 && snapshot.display_offset == 0 {
+        snapshot
+            .history_size
+            .saturating_sub(frozen_selection.history_size)
+    } else {
+        0
+    }
+}
+
+fn frozen_row_offset(frozen_selection: &TerminalFrozenSelection, snapshot: &RenderSnapshot) -> i32 {
+    if let Some(selection) = snapshot.selection {
+        return selection.start_row as i32 - frozen_selection.selection.start_row as i32;
+    }
+
+    -(frozen_stream_delta(frozen_selection, snapshot) as i32)
+}
+
+fn remap_frozen_bottom_index_for_snapshot(
+    bottom_index: usize,
+    frozen_selection: &TerminalFrozenSelection,
+    snapshot: &RenderSnapshot,
+) -> Option<i32> {
+    let original_row = frozen_selection.viewport_rows as i32 - 1 - bottom_index as i32;
+    let row = original_row + frozen_row_offset(frozen_selection, snapshot);
+    (row >= 0 && row < snapshot.rows as i32).then_some(row)
+}
+
+fn remap_frozen_selection(
+    frozen_selection: &TerminalFrozenSelection,
+    snapshot: &RenderSnapshot,
+) -> Option<ViewportSelection> {
+    if let Some(selection) = snapshot.selection {
+        return Some(selection);
+    }
+
+    let offset = frozen_row_offset(frozen_selection, snapshot);
+    let map_row = |row: usize| {
+        let original_row = row as i32;
+        original_row + offset
+    };
+    let raw_start = map_row(frozen_selection.selection.start_row);
+    let raw_end = map_row(frozen_selection.selection.end_row);
+    let rows = snapshot.rows as i32;
+    if raw_end < 0 || raw_start >= rows {
+        return None;
+    }
+
+    let start_row = raw_start.max(0) as usize;
+    let end_row = raw_end.min(rows.saturating_sub(1)) as usize;
+    Some(ViewportSelection {
+        start_row,
+        start_col: if raw_start < 0 {
+            0
+        } else {
+            frozen_selection.selection.start_col
+        },
+        end_row,
+        end_col: if raw_end >= rows {
+            snapshot.cols.saturating_sub(1)
+        } else {
+            frozen_selection.selection.end_col
+        },
+        is_block: frozen_selection.selection.is_block,
+    })
+}
+
+fn composition_text_width(
+    text: &str,
+    font_size: Pixels,
+    font: Font,
+    color: Hsla,
+    underline: Option<UnderlineStyle>,
+    window: &mut Window,
+) -> Pixels {
+    if text.is_empty() {
+        return px(0.0);
+    }
+
+    window
+        .text_system()
+        .shape_line(
+            text.to_string().into(),
+            font_size,
+            &[TextRun {
+                len: text.len(),
+                font,
+                color,
+                underline,
+                ..Default::default()
+            }],
+            None,
+        )
+        .width
+}
+
+fn composition_selected_byte_range(
+    text: &str,
+    range_utf16: Option<&std::ops::Range<usize>>,
+) -> Option<std::ops::Range<usize>> {
+    let range = range_utf16?;
+    let len_utf16 = text.encode_utf16().count();
+    let start_utf16 = range.start.min(len_utf16);
+    let end_utf16 = range.end.min(len_utf16);
+    let (start_utf16, end_utf16) = if start_utf16 <= end_utf16 {
+        (start_utf16, end_utf16)
+    } else {
+        (end_utf16, start_utf16)
+    };
+
+    let start = byte_index_for_utf16_offset(text, start_utf16);
+    let end = byte_index_for_utf16_offset(text, end_utf16);
+    Some(start..end)
+}
+
+fn byte_index_for_utf16_offset(text: &str, target_utf16: usize) -> usize {
+    let mut current_utf16 = 0;
+    for (byte_idx, ch) in text.char_indices() {
+        if current_utf16 >= target_utf16 {
+            return byte_idx;
+        }
+        let next_utf16 = current_utf16 + ch.len_utf16();
+        if target_utf16 < next_utf16 {
+            return byte_idx;
+        }
+        current_utf16 = next_utf16;
+    }
+    text.len()
 }
 
 fn selection_contains(selection: ViewportSelection, row: i32, col: i32) -> bool {
@@ -1109,12 +1381,18 @@ fn named_color(named: NamedColor, _foreground: bool, cx: &App) -> Hsla {
 
 #[cfg(test)]
 mod tests {
-    use super::{contrast_ratio, high_contrast_cursor_color, keyword_highlight_allowed};
+    use super::{
+        byte_index_for_utf16_offset, composition_selected_byte_range, contrast_ratio,
+        high_contrast_cursor_color, keyword_highlight_allowed,
+        remap_frozen_bottom_index_for_snapshot, remap_frozen_selection,
+    };
+    use crate::terminal::{RenderSnapshot, TerminalFrozenSelection, ViewportSelection};
     use alacritty_terminal::{
         term::cell::{Cell, Flags},
         vte::ansi::{Color as AnsiColor, NamedColor},
     };
     use gpui::{Hsla, rgb};
+    use std::collections::HashMap;
 
     #[test]
     fn keyword_highlight_allows_default_cells() {
@@ -1169,5 +1447,117 @@ mod tests {
         };
 
         assert!(selected >= alternative);
+    }
+
+    #[test]
+    fn composition_byte_index_uses_utf16_offsets() {
+        let text = "a中🏀";
+
+        assert_eq!(byte_index_for_utf16_offset(text, 0), 0);
+        assert_eq!(byte_index_for_utf16_offset(text, 1), "a".len());
+        assert_eq!(byte_index_for_utf16_offset(text, 2), "a中".len());
+        assert_eq!(byte_index_for_utf16_offset(text, 4), text.len());
+    }
+
+    #[test]
+    fn composition_selected_range_handles_non_ascii_text() {
+        let text = "pin中🏀yin";
+
+        assert_eq!(
+            composition_selected_byte_range(text, Some(&(3..6))),
+            Some("pin".len().."pin中🏀".len())
+        );
+    }
+
+    #[test]
+    fn composition_selected_range_clamps_to_text() {
+        let text = "abc";
+
+        assert_eq!(
+            composition_selected_byte_range(text, Some(&(1..99))),
+            Some(1..3)
+        );
+    }
+
+    #[test]
+    fn frozen_bottom_index_moves_up_with_stream_history() {
+        let frozen = frozen_selection(10, 5, 8, 8);
+        let snapshot = snapshot(10, 7);
+
+        assert_eq!(
+            remap_frozen_bottom_index_for_snapshot(1, &frozen, &snapshot),
+            Some(6)
+        );
+        assert_eq!(
+            remap_frozen_selection(&frozen, &snapshot).map(|selection| selection.start_row),
+            Some(6)
+        );
+    }
+
+    #[test]
+    fn frozen_bottom_index_follows_live_selection_when_history_saturates() {
+        let frozen = frozen_selection(10, 2000, 8, 8);
+        let live_selection = ViewportSelection {
+            start_row: 6,
+            start_col: 0,
+            end_row: 6,
+            end_col: 3,
+            is_block: false,
+        };
+        let snapshot = snapshot_with_selection(10, 2000, Some(live_selection));
+
+        assert_eq!(
+            remap_frozen_bottom_index_for_snapshot(1, &frozen, &snapshot),
+            Some(6)
+        );
+        assert_eq!(
+            remap_frozen_selection(&frozen, &snapshot).map(|selection| selection.start_row),
+            Some(6)
+        );
+    }
+
+    fn frozen_selection(
+        viewport_rows: usize,
+        history_size: usize,
+        start_row: usize,
+        end_row: usize,
+    ) -> TerminalFrozenSelection {
+        TerminalFrozenSelection {
+            tab_id: "tab".to_string(),
+            selection: ViewportSelection {
+                start_row,
+                start_col: 0,
+                end_row,
+                end_col: 3,
+                is_block: false,
+            },
+            viewport_rows,
+            history_size,
+            display_offset: 0,
+            cells: Vec::new(),
+            highlights: HashMap::new(),
+            text: "text".to_string(),
+        }
+    }
+
+    fn snapshot(rows: usize, history_size: usize) -> RenderSnapshot {
+        snapshot_with_selection(rows, history_size, None)
+    }
+
+    fn snapshot_with_selection(
+        rows: usize,
+        history_size: usize,
+        selection: Option<ViewportSelection>,
+    ) -> RenderSnapshot {
+        RenderSnapshot {
+            cells: Vec::new(),
+            cursor: None,
+            selection,
+            display_offset: 0,
+            history_size,
+            rows,
+            cols: 10,
+            highlights: HashMap::new(),
+        }
     }
 }

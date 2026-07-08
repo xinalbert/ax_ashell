@@ -27,7 +27,7 @@ use tokio::runtime::Runtime;
 use crate::{
     session::config::{AuthMethod, ConfigStore},
     system::{SystemSampler, SystemSnapshot},
-    terminal::{BackendEvent, TerminalTab},
+    terminal::{BackendEvent, TerminalComposition, TerminalFrozenSelection, TerminalTab},
 };
 
 pub(crate) use types::{
@@ -130,7 +130,8 @@ pub(crate) struct AxShell {
     pub(crate) terminal_selecting: bool,
     pub(crate) dragging_splitter: Option<(Vec<usize>, usize)>, // (parent_path, child_index)
     pub(crate) drag_split_origin: Option<gpui::Point<Pixels>>,
-    pub(crate) terminal_marked_text: Option<String>,
+    pub(crate) terminal_composition: Option<TerminalComposition>,
+    pub(crate) terminal_frozen_selection: Option<TerminalFrozenSelection>,
     pub(crate) sidebar_collapsed: bool,
     pub(crate) collapsed_saved_scroll_handle: gpui::ScrollHandle,
     pub(crate) status: SharedString,

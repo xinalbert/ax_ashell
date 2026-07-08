@@ -4,6 +4,7 @@ pub mod highlight;
 pub mod input;
 
 use std::hash::{Hash, Hasher};
+use std::ops::Range;
 use std::sync::mpsc::Sender;
 
 use alacritty_terminal::{
@@ -148,7 +149,6 @@ pub struct TerminalTab {
         )>,
     >,
     viewport_signature: u64,
-    deferred_output: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -175,6 +175,34 @@ pub struct RenderSnapshot {
     pub rows: usize,
     pub cols: usize,
     pub highlights: std::collections::HashMap<(i32, i32), gpui::Hsla>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerminalComposition {
+    pub tab_id: String,
+    pub text: String,
+    pub selected_range_utf16: Option<Range<usize>>,
+    pub anchor_row: usize,
+    pub anchor_col: usize,
+}
+
+#[derive(Clone)]
+pub struct FrozenRenderCell {
+    pub bottom_index: usize,
+    pub col: i32,
+    pub cell: Cell,
+}
+
+#[derive(Clone)]
+pub struct TerminalFrozenSelection {
+    pub tab_id: String,
+    pub selection: ViewportSelection,
+    pub viewport_rows: usize,
+    pub history_size: usize,
+    pub display_offset: usize,
+    pub cells: Vec<FrozenRenderCell>,
+    pub highlights: std::collections::HashMap<(usize, i32), gpui::Hsla>,
+    pub text: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -268,7 +296,6 @@ impl TerminalTab {
             scroll_pixel_y: 0.0,
             highlight_cache: std::cell::RefCell::new(None),
             viewport_signature: 0,
-            deferred_output: Vec::new(),
         };
         this.refresh_viewport_signature();
         this
@@ -277,22 +304,6 @@ impl TerminalTab {
     pub fn feed(&mut self, bytes: &[u8]) -> bool {
         self.processor.advance(&mut self.term, bytes);
         self.refresh_viewport_signature()
-    }
-
-    pub fn defer_output(&mut self, bytes: &[u8]) {
-        self.deferred_output.extend_from_slice(bytes);
-    }
-
-    pub fn has_deferred_output(&self) -> bool {
-        !self.deferred_output.is_empty()
-    }
-
-    pub fn flush_deferred_output(&mut self) -> bool {
-        if self.deferred_output.is_empty() {
-            return false;
-        }
-        let bytes = std::mem::take(&mut self.deferred_output);
-        self.feed(&bytes)
     }
 
     /// Send a command to the backend. Thread-safe via the shared Arc<Mutex>.
@@ -306,7 +317,6 @@ impl TerminalTab {
     /// shares the same `Arc`, so user input is automatically routed to the
     /// new backend. The old backend must be closed by the caller.
     pub fn set_backend(&mut self, new_backend: BackendTx) {
-        self.deferred_output.clear();
         if let Ok(mut backend) = self.backend.lock() {
             *backend = new_backend;
         }

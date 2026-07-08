@@ -744,3 +744,41 @@
 - 计划状态变更：无
 - 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验通过；仍保留既有 `block v0.1.6` future-incompat warning；真实超时目录交互仍需 GUI 和远端环境手工验证
 - 对 plan 的更新：本轮环境验证已完成；后续只需在 GUI 中补看坏目录报错后旧目录列表是否仍可点击
+
+## 2026-07-08 刷新环境记录到终端 IME composition 锚点与高亮
+
+- 时间：2026-07-08 22:35 +0800
+- 触发原因：用户确认需要执行“像 VS Code 那样，在光标后方维护 composition 内容区域，选定后再提交到终端渲染层，并在刷新后保持高亮不中断”
+- 执行内容：复查 `Cargo.toml`、`src/terminal/input.rs`、`src/terminal/element.rs`、`src/terminal/mod.rs`、`src/app/workspace.rs`、`src/app/ui/terminal_panel.rs`、`src/app/event_loop.rs` 以及 GPUI `InputHandler` 本地依赖源码；确认本轮不新增依赖、不调整配置格式、不联网、不使用多 agent
+- 影响文件：`src/app/mod.rs`，`src/app/init.rs`，`src/app/workspace.rs`，`src/app/ui/terminal_panel.rs`，`src/terminal/input.rs`，`src/terminal/element.rs`，`src/terminal/mod.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：待执行 `rustfmt`、`cargo check`、`cargo test` 与 tracking docs 校验；GUI 中文 IME 候选框和预编辑高亮仍需手工验证
+- 对 plan 的更新：验证入口保持不变；实现限定在现有终端输入状态、IME bounds 和 overlay 绘制层
+
+## 2026-07-08 完成终端 IME composition 锚点与高亮环境验证
+
+- 时间：2026-07-08 22:49 +0800
+- 触发原因：终端 IME composition 状态、锚点定位和预编辑选区高亮代码已完成，需要回写实际本机验证结果
+- 执行内容：执行 `rustfmt --edition 2024 --config skip_children=true src/app/mod.rs src/app/init.rs src/app/workspace.rs src/app/ui/terminal_panel.rs src/app/event_loop.rs src/terminal/input.rs src/terminal/element.rs src/terminal/mod.rs`、`cargo check` 和 `cargo test`；确认本轮未新增依赖，未调整 `Cargo.toml` / `Cargo.lock`
+- 影响文件：`src/app/mod.rs`，`src/app/init.rs`，`src/app/workspace.rs`，`src/app/ui/terminal_panel.rs`，`src/app/event_loop.rs`，`src/terminal/input.rs`，`src/terminal/element.rs`，`src/terminal/mod.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，23 个测试全部通过；tracking docs 校验通过；仍保留既有 `block v0.1.6` future-incompat warning；GUI 中文 IME 候选和持续输出刷新场景未手工验证
+- 对 plan 的更新：当前环境可支持 composition 锚点与预编辑高亮；后续只需在 GUI 中补看系统输入法候选窗口稳定性
+
+## 2026-07-08 修正 IME composition 仍冻结终端线路
+
+- 时间：2026-07-08 22:54 +0800
+- 触发原因：用户反馈底层线路仍被冻结，说明旧的交互期输出延迟策略不应继续覆盖 IME composition
+- 执行内容：修改 `src/app/event_loop.rs`，让 backend output 只在真实终端选区/拖选时 defer，IME composition 不再触发输出冻结；修改 `src/terminal/input.rs`，让 `setMarkedText("")` 取消输入时统一走 composition 清理和积压输出冲刷路径
+- 影响文件：`src/app/event_loop.rs`，`src/terminal/input.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024 --config skip_children=true src/app/event_loop.rs src/terminal/input.rs` 通过；`cargo check` 通过；`cargo test` 通过，23 个测试全部通过；GUI 中文 IME 候选和持续输出刷新场景仍需手工验证
+- 对 plan 的更新：策略修正为“鼠标选区继续冻结输出；IME composition 只靠 overlay 锚点和高亮保持稳定，不冻结底层终端线路”
+
+## 2026-07-08 完成终端选区行级冻结环境验证
+
+- 目的：在移除全局输出冻结并改为渲染层只冻结选中行后，把实际验证结果和环境边界回写到环境记忆
+- 改动范围：`src/app/mod.rs`，`src/app/init.rs`，`src/app/event_loop.rs`，`src/app/ui/layout.rs`，`src/app/ui/terminal_panel.rs`，`src/app/workspace.rs`，`src/session/mod.rs`，`src/session/pane.rs`，`src/terminal/input.rs`，`src/terminal/element.rs`，`src/terminal/mod.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：删除空的 deferred output 机制；让 backend output 始终进入 `TerminalTab::feed`；新增选区 frozen snapshot 状态、复制优先 frozen text、渲染层 frozen row 覆盖和倒置索引 + live selection 校准；执行 `rustfmt --edition 2024 --config skip_children=true src/app/mod.rs src/app/init.rs src/app/event_loop.rs src/app/ui/terminal_panel.rs src/app/ui/layout.rs src/app/workspace.rs src/session/mod.rs src/session/pane.rs src/terminal/input.rs src/terminal/element.rs src/terminal/mod.rs`、`cargo check` 和 `cargo test`
+- 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，25 个测试全部通过；新增测试覆盖 UTF-16 composition range、frozen bottom index 随 history 增长上移、history 到上限后跟随 live selection 行偏移；仍保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 手工验证未执行，仍需在真实持续输出和系统中文输入法场景确认只有选中行冻结、其他行刷新、候选框位置和预编辑高亮稳定

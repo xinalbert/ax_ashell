@@ -222,10 +222,8 @@ impl Render for AxShell {
                 if window.focused(cx) == Some(this.focus_handle.clone()) {
                     if let Some(text) = this.active_terminal_selection_text() {
                         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
-                        if let Some(active_id) = &this.active_tab {
-                            if let Some(tab) = this.tabs.iter_mut().find(|tab| &tab.id == active_id) {
-                                tab.clear_selection();
-                            }
+                        if let Some(active_id) = this.active_tab.clone() {
+                            this.clear_terminal_selection_for_tab(&active_id);
                         }
                         window.prevent_default();
                         cx.stop_propagation();

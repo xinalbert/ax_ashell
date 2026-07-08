@@ -84,8 +84,13 @@ impl AxShell {
                 };
                 let tab_id_clone2 = tab_id.clone();
                 let focus_handle = this.focus_handle.clone();
-                let marked_text = if is_focused {
-                    this.terminal_marked_text.clone()
+                let composition = if is_focused {
+                    this.terminal_composition_for_tab(tab_id)
+                } else {
+                    None
+                };
+                let frozen_selection = if is_focused {
+                    this.terminal_frozen_selection_for_tab(tab_id)
                 } else {
                     None
                 };
@@ -114,7 +119,8 @@ impl AxShell {
                         cx.entity(),
                         focus_handle,
                         snapshot,
-                        marked_text,
+                        composition,
+                        frozen_selection,
                         font_family,
                         font_size,
                         line_height,

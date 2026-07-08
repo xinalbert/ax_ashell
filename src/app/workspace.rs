@@ -269,12 +269,33 @@ impl AxShell {
         cell_width: f32,
         line_height: f32,
     ) -> Option<Bounds<Pixels>> {
+        let active_id = self.active_tab.as_ref()?;
         let snapshot = self.active_snapshot()?;
-        let cursor = snapshot.cursor?;
+        let (row, col, range_start) = self
+            .terminal_composition
+            .as_ref()
+            .filter(|composition| composition.tab_id == *active_id)
+            .map(|composition| {
+                (
+                    composition.anchor_row,
+                    composition.anchor_col,
+                    range_utf16
+                        .start
+                        .min(composition.text.encode_utf16().count()),
+                )
+            })
+            .or_else(|| {
+                snapshot
+                    .cursor
+                    .map(|cursor| (cursor.row, cursor.col, range_utf16.start))
+            })?;
+
+        let row = row.min(snapshot.rows.saturating_sub(1));
+        let col = col.min(snapshot.cols.saturating_sub(1));
         let x = element_bounds.origin.x
-            + px(cell_width) * cursor.col as f32
-            + px(cell_width) * range_utf16.start as f32;
-        let y = element_bounds.origin.y + px(line_height) * cursor.row as f32;
+            + px(cell_width) * col as f32
+            + px(cell_width) * range_start as f32;
+        let y = element_bounds.origin.y + px(line_height) * row as f32;
         Some(Bounds::new(
             point(x, y),
             size(px(cell_width), px(line_height)),

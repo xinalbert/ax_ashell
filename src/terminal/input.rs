@@ -9,7 +9,9 @@ use gpui::{
 
 use crate::{
     AxShell, TerminalBacktabKey, TerminalTabKey,
-    terminal::{BackendCommand, encode_key},
+    terminal::{
+        BackendCommand, FrozenRenderCell, TerminalComposition, TerminalFrozenSelection, encode_key,
+    },
 };
 
 thread_local! {
@@ -183,9 +185,8 @@ impl AxShell {
             if tab.render_snapshot().display_offset > 0 {
                 tab.scroll_to_bottom();
             }
-            tab.clear_selection();
         }
-        self.flush_active_terminal_output();
+        self.clear_terminal_selection_for_tab(&active_id);
 
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
             return;
@@ -227,10 +228,8 @@ impl AxShell {
             if tab.render_snapshot().display_offset > 0 {
                 tab.scroll_to_bottom();
             }
-
-            tab.clear_selection();
         }
-        self.flush_active_terminal_output();
+        self.clear_terminal_selection_for_tab(&active_id);
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
             return;
         };
@@ -242,6 +241,14 @@ impl AxShell {
 
     pub(crate) fn active_terminal_selection_text(&self) -> Option<String> {
         let active_id = self.active_tab.as_ref()?;
+        if let Some(frozen) = self
+            .terminal_frozen_selection
+            .as_ref()
+            .filter(|frozen| frozen.tab_id == *active_id && !frozen.text.is_empty())
+        {
+            return Some(frozen.text.clone());
+        }
+
         self.tabs
             .iter()
             .find(|tab| &tab.id == active_id)
@@ -265,9 +272,8 @@ impl AxShell {
             if tab.render_snapshot().display_offset > 0 {
                 tab.scroll_to_bottom();
             }
-            tab.clear_selection();
         }
-        self.flush_active_terminal_output();
+        self.clear_terminal_selection_for_tab(&active_id);
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
             return;
         };
@@ -282,18 +288,77 @@ impl AxShell {
     }
 
     pub(crate) fn terminal_marked_text_range(&self) -> Option<Range<usize>> {
-        self.terminal_marked_text
+        let active_id = self.active_tab.as_ref()?;
+        self.terminal_composition
             .as_ref()
-            .map(|text| 0..text.encode_utf16().count())
+            .filter(|composition| composition.tab_id == *active_id)
+            .map(|composition| 0..composition.text.encode_utf16().count())
+    }
+
+    pub(crate) fn terminal_composition_for_tab(&self, tab_id: &str) -> Option<TerminalComposition> {
+        self.terminal_composition
+            .as_ref()
+            .filter(|composition| composition.tab_id == tab_id && !composition.text.is_empty())
+            .cloned()
+    }
+
+    pub(crate) fn terminal_frozen_selection_for_tab(
+        &self,
+        tab_id: &str,
+    ) -> Option<TerminalFrozenSelection> {
+        self.terminal_frozen_selection
+            .as_ref()
+            .filter(|frozen| frozen.tab_id == tab_id)
+            .cloned()
+    }
+
+    pub(crate) fn clear_terminal_selection_for_tab(&mut self, tab_id: &str) {
+        if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id) {
+            tab.clear_selection();
+        }
+        if self
+            .terminal_frozen_selection
+            .as_ref()
+            .is_some_and(|frozen| frozen.tab_id == tab_id)
+        {
+            self.terminal_frozen_selection = None;
+        }
     }
 
     pub(crate) fn set_terminal_marked_text(
         &mut self,
         text: String,
+        selected_range_utf16: Option<Range<usize>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.terminal_marked_text = if text.is_empty() { None } else { Some(text) };
+        let Some(active_id) = self.active_tab.clone() else {
+            return;
+        };
+
+        if text.is_empty() {
+            self.clear_terminal_marked_text(window, cx);
+            return;
+        }
+
+        let selected_range_utf16 = normalize_utf16_range(selected_range_utf16, &text);
+        let existing_anchor = self
+            .terminal_composition
+            .as_ref()
+            .filter(|composition| composition.tab_id == active_id)
+            .map(|composition| (composition.anchor_row, composition.anchor_col));
+        let cursor_anchor = self
+            .active_snapshot()
+            .and_then(|snapshot| snapshot.cursor.map(|cursor| (cursor.row, cursor.col)));
+        let (anchor_row, anchor_col) = existing_anchor.or(cursor_anchor).unwrap_or((0, 0));
+
+        self.terminal_composition = Some(TerminalComposition {
+            tab_id: active_id,
+            text,
+            selected_range_utf16,
+            anchor_row,
+            anchor_col,
+        });
         window.invalidate_character_coordinates();
         cx.notify();
     }
@@ -303,8 +368,7 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.terminal_marked_text.take().is_some() {
-            self.flush_active_terminal_output();
+        if self.terminal_composition.take().is_some() {
             window.invalidate_character_coordinates();
             cx.notify();
         }
@@ -319,17 +383,22 @@ impl AxShell {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
+        {
+            let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
+                return;
+            };
+            if tab.render_snapshot().display_offset > 0 {
+                tab.scroll_to_bottom();
+            }
+        }
+        self.clear_terminal_selection_for_tab(&active_id);
+        self.terminal_composition = None;
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
             return;
         };
-
-        if tab.render_snapshot().display_offset > 0 {
-            tab.scroll_to_bottom();
+        if !text.is_empty() {
+            tab.send_backend(BackendCommand::Input(text.as_bytes().to_vec()));
         }
-        tab.clear_selection();
-        self.terminal_marked_text = None;
-        tab.send_backend(BackendCommand::Input(text.as_bytes().to_vec()));
-        self.flush_active_terminal_output();
         window.invalidate_character_coordinates();
         cx.notify();
     }
@@ -351,11 +420,8 @@ impl AxShell {
 
                 let active_id = self.active_tab.clone();
                 if let Some(active_id) = active_id {
-                    if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) {
-                        tab.clear_selection();
-                    }
+                    self.clear_terminal_selection_for_tab(&active_id);
                 }
-                self.flush_active_terminal_output();
                 cx.notify();
                 handled = true;
             }
@@ -393,8 +459,9 @@ impl AxShell {
         if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) {
             tab.begin_selection(row, col, side, selection_type);
             self.terminal_selecting = true;
-            cx.notify();
         }
+        self.capture_active_terminal_frozen_selection();
+        cx.notify();
     }
 
     pub(crate) fn on_terminal_mouse_move(
@@ -501,8 +568,9 @@ impl AxShell {
                 tab.scroll_history(scroll_delta);
             }
             tab.update_selection(row, col, side);
-            cx.notify();
         }
+        self.capture_active_terminal_frozen_selection();
+        cx.notify();
     }
 
     pub(crate) fn on_terminal_mouse_up(
@@ -661,5 +729,103 @@ impl AxShell {
             cx.stop_propagation();
             cx.notify();
         }
+    }
+}
+
+impl AxShell {
+    fn capture_active_terminal_frozen_selection(&mut self) {
+        let Some(active_id) = self.active_tab.clone() else {
+            self.terminal_frozen_selection = None;
+            return;
+        };
+        let Some(tab) = self.tabs.iter().find(|tab| tab.id == active_id) else {
+            self.terminal_frozen_selection = None;
+            return;
+        };
+
+        let snapshot = tab.render_snapshot();
+        let Some(selection) = snapshot.selection else {
+            self.terminal_frozen_selection = None;
+            return;
+        };
+        let (start_row, end_row) = selection_row_range(selection);
+        let cells = snapshot
+            .cells
+            .iter()
+            .filter(|cell| {
+                let row = cell.row.max(0) as usize;
+                row >= start_row && row <= end_row
+            })
+            .filter_map(|cell| {
+                let bottom_index = bottom_index_for_row(snapshot.rows, cell.row)?;
+                Some(FrozenRenderCell {
+                    bottom_index,
+                    col: cell.col,
+                    cell: cell.cell.clone(),
+                })
+            })
+            .collect();
+        let highlights = snapshot
+            .highlights
+            .iter()
+            .filter_map(|(&(row, col), &color)| {
+                let row_usize = row.max(0) as usize;
+                if row_usize < start_row || row_usize > end_row {
+                    return None;
+                }
+                let bottom_index = bottom_index_for_row(snapshot.rows, row)?;
+                Some(((bottom_index, col), color))
+            })
+            .collect();
+
+        self.terminal_frozen_selection = Some(TerminalFrozenSelection {
+            tab_id: active_id,
+            selection,
+            viewport_rows: snapshot.rows,
+            history_size: snapshot.history_size,
+            display_offset: snapshot.display_offset,
+            cells,
+            highlights,
+            text: tab.selection_text().unwrap_or_default(),
+        });
+    }
+}
+
+fn selection_row_range(selection: crate::terminal::ViewportSelection) -> (usize, usize) {
+    (
+        selection.start_row.min(selection.end_row),
+        selection.start_row.max(selection.end_row),
+    )
+}
+
+fn bottom_index_for_row(rows: usize, row: i32) -> Option<usize> {
+    let row = usize::try_from(row).ok()?;
+    (row < rows).then_some(rows.saturating_sub(1).saturating_sub(row))
+}
+
+fn normalize_utf16_range(range: Option<Range<usize>>, text: &str) -> Option<Range<usize>> {
+    let len = text.encode_utf16().count();
+    let range = range?;
+    let start = range.start.min(len);
+    let end = range.end.min(len);
+    if start <= end {
+        Some(start..end)
+    } else {
+        Some(end..start)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_utf16_range;
+
+    #[test]
+    fn terminal_ime_selection_range_is_clamped_to_utf16_len() {
+        assert_eq!(normalize_utf16_range(Some(1..99), "a中"), Some(1..2));
+    }
+
+    #[test]
+    fn terminal_ime_selection_range_handles_surrogate_pairs() {
+        assert_eq!(normalize_utf16_range(Some(0..99), "a🏀"), Some(0..3));
     }
 }

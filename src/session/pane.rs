@@ -431,9 +431,6 @@ impl AxShell {
         let mut path = Vec::new();
         if find_path(&self.pane_root, &tab_id, &mut path) {
             let changed = self.active_tab.as_deref() != Some(tab_id.as_str());
-            if changed && let Some(previous_id) = self.active_tab.clone() {
-                self.flush_terminal_output_for_tab(&previous_id);
-            }
             self.focused_pane_path = path;
             self.active_tab = Some(tab_id);
             if changed && self.search_active {

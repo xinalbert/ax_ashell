@@ -12,8 +12,6 @@ struct DrainResult {
 }
 
 impl AxShell {
-    const TERMINAL_REFRESH_THROTTLE_MS: u64 = 100;
-
     pub(crate) fn start_event_pump(&self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let mut idle_frames = 0u32;
@@ -167,14 +165,18 @@ impl AxShell {
         while let Ok(event) = self.events_rx.try_recv() {
             match event {
                 BackendEvent::Output { tab_id, bytes } => {
-                    let should_defer = self.should_defer_terminal_output(&tab_id);
+                    let mut clear_frozen_selection = false;
                     if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                         tab.backend_initialized = true;
-                        if should_defer {
-                            tab.defer_output(&bytes);
-                        } else {
-                            result.terminal_changed |= tab.feed(&bytes);
-                        }
+                        result.terminal_changed |= tab.feed(&bytes);
+                        clear_frozen_selection = self
+                            .terminal_frozen_selection
+                            .as_ref()
+                            .is_some_and(|frozen| frozen.tab_id == tab_id)
+                            && !tab.selection_active();
+                    }
+                    if clear_frozen_selection {
+                        self.terminal_frozen_selection = None;
                     }
                 }
                 BackendEvent::Status { tab_id, text } => {
@@ -425,37 +427,6 @@ impl AxShell {
         result
     }
 
-    pub(crate) fn flush_active_terminal_output(&mut self) -> bool {
-        let Some(active_id) = self.active_tab.clone() else {
-            return false;
-        };
-        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
-            return false;
-        };
-        if !tab.has_deferred_output() {
-            return false;
-        }
-        let changed = tab.flush_deferred_output();
-        if changed {
-            self.schedule_terminal_refresh();
-        }
-        changed
-    }
-
-    pub(crate) fn flush_terminal_output_for_tab(&mut self, tab_id: &str) -> bool {
-        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id) else {
-            return false;
-        };
-        if !tab.has_deferred_output() {
-            return false;
-        }
-        let changed = tab.flush_deferred_output();
-        if changed {
-            self.schedule_terminal_refresh();
-        }
-        changed
-    }
-
     fn active_terminal_has_selection(&self) -> bool {
         self.terminal_selecting
             || self
@@ -463,18 +434,6 @@ impl AxShell {
                 .as_ref()
                 .and_then(|active_id| self.tabs.iter().find(|tab| &tab.id == active_id))
                 .is_some_and(crate::terminal::TerminalTab::selection_active)
-    }
-
-    fn terminal_interaction_lock_active(&self) -> bool {
-        self.active_terminal_has_selection()
-            || self
-                .terminal_marked_text
-                .as_ref()
-                .is_some_and(|text| !text.is_empty())
-    }
-
-    fn should_defer_terminal_output(&self, tab_id: &str) -> bool {
-        self.active_tab.as_deref() == Some(tab_id) && self.terminal_interaction_lock_active()
     }
 
     fn schedule_terminal_refresh(&mut self) {
@@ -486,12 +445,7 @@ impl AxShell {
             return false;
         }
 
-        if !self.terminal_interaction_lock_active() {
-            return true;
-        }
-
-        std::time::Instant::now().duration_since(self.last_terminal_refresh)
-            >= std::time::Duration::from_millis(Self::TERMINAL_REFRESH_THROTTLE_MS)
+        true
     }
 
     fn mark_terminal_refresh_flushed(&mut self, now: std::time::Instant) {

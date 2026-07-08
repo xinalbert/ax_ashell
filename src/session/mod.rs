@@ -1027,11 +1027,8 @@ impl AxShell {
                 if let Some(text) = self.active_terminal_selection_text() {
                     if !text.is_empty() {
                         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
-                        if let Some(active_id) = &self.active_tab {
-                            if let Some(tab) = self.tabs.iter_mut().find(|tab| &tab.id == active_id)
-                            {
-                                tab.clear_selection();
-                            }
+                        if let Some(active_id) = self.active_tab.clone() {
+                            self.clear_terminal_selection_for_tab(&active_id);
                         }
                     }
                 }
