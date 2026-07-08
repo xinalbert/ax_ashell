@@ -202,15 +202,16 @@ jobs:
           set -euo pipefail
 
           current_tag="${GITHUB_REF_NAME}"
+          repository_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
           current_commit="$(git rev-list -n 1 "$current_tag")"
           previous_tag="$(git describe --tags --abbrev=0 "${current_commit}^" 2>/dev/null || true)"
 
           if [ -n "$previous_tag" ]; then
             range="${previous_tag}..${current_tag}"
-            comparison_label="${previous_tag}...${current_tag}"
+            comparison_url="${repository_url}/compare/${previous_tag}...${current_tag}"
           else
             range="$current_tag"
-            comparison_label="$current_tag"
+            comparison_url="${repository_url}/commits/${current_tag}"
           fi
 
           mkdir -p release
@@ -218,13 +219,13 @@ jobs:
           commits="release/commits.tsv"
           seen_commits="release/seen-commits.txt"
 
-          git log --format='%h%x09%s' "$range" > "$commits"
+          git log --format='%h%x09%H%x09%s' "$range" > "$commits"
           : > "$seen_commits"
 
           cat > "$body" <<EOF
           ## Highlights
 
-          _Automatically selected from commits in \`${comparison_label}\`._
+          [Full changelog](${comparison_url})
 
           EOF
 
@@ -234,7 +235,11 @@ jobs:
             local limit="${3:-8}"
             local tmp="release/${title// /_}.md"
 
-            awk -F '\t' -v pattern="$pattern" -v limit="$limit" -v seen_file="$seen_commits" '
+            awk -F '\t' \
+              -v pattern="$pattern" \
+              -v limit="$limit" \
+              -v seen_file="$seen_commits" \
+              -v repository_url="$repository_url" '
               BEGIN {
                 count = 0
                 while ((getline seen_commit < seen_file) > 0) {
@@ -242,13 +247,20 @@ jobs:
                 }
                 close(seen_file)
               }
-              tolower($2) ~ /implementation tracking|tracking records|project[- ]implementation|env audit/ {
+              {
+                subject = $3
+                for (field_index = 4; field_index <= NF; field_index++) {
+                  subject = subject FS $field_index
+                }
+                subject_lower = tolower(subject)
+              }
+              subject_lower ~ /implementation tracking|tracking records|tracking docs|project[- ]implementation|env audit|record .* tracking/ {
                 next
               }
-              !($1 in seen) && tolower($2) ~ pattern {
-                print "- `" $1 "` " $2
-                print $1 >> seen_file
-                seen[$1] = 1
+              !($2 in seen) && subject_lower ~ pattern {
+                print "- " subject " ([#" $1 "](" repository_url "/commit/" $2 "))"
+                print $2 >> seen_file
+                seen[$2] = 1
                 count++
                 if (count >= limit) {
                   exit
@@ -263,33 +275,40 @@ jobs:
             fi
           }
 
-          add_section "Settings and themes" 'settings|custom|theme|brightness|foreground|font'
-          add_section "App UI and assets" 'monitoring|titlebar|window|input|focus|icon|asset'
-          add_section "Terminal rendering" 'terminal url|url highlighting|ansi|truecolor|scrollback|split-screen'
-          add_section "SSH and compatibility" 'ssh|sftp|russh|legacy|fallback|algorithm|x11|xquartz'
-          add_section "Development workflow" 'dev-reload|reload|logging|rebuild|format|startup'
-          add_section "Release and packaging" 'release|workflow|artifact|publish|package|packaging|cask|version'
-          add_section "Dependency updates" 'upgrade|dependency|dependencies|crate|russh|alacritty|official'
+          word_boundary='(^|[^[:alnum:]_])'
+          word_end='([^[:alnum:]_]|$)'
 
-          if ! grep -q '^- `' "$body"; then
+          add_section "App UI and assets" "${word_boundary}(monitoring|titlebar|window|input|focus|icon|asset|menus|visibility)${word_end}"
+          add_section "Terminal" "${word_boundary}(terminal|ime|selection|scrollback|split-screen|ansi|truecolor|terminal url|url highlighting)${word_end}"
+          add_section "SFTP" "${word_boundary}(sftp|file transfer|remote file|browser)${word_end}"
+          add_section "SSH and compatibility" "${word_boundary}(ssh|russh|legacy|fallback|algorithm|x11|xquartz)${word_end}"
+          add_section "Settings and themes" "${word_boundary}(settings|custom|theme|brightness|foreground|font)${word_end}"
+          add_section "Development workflow" 'dev-reload|reload|logging|rebuild|format|startup'
+          add_section "Packaging" "${word_boundary}(release tags?|workflow|artifact|publish|package|packaging|cask|version|bundle)${word_end}"
+          add_section "Dependency updates" "${word_boundary}(upgrade|dependency|dependencies|crate|russh|alacritty|official)${word_end}"
+
+          if ! grep -q '^- ' "$body"; then
             cat >> "$body" <<EOF
           No high-signal commit keywords were detected. See the generated release notes below for the full changelog.
 
           EOF
           fi
 
-          cat >> "$body" <<EOF
-          ## Keyword Rules
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Release Highlight Keyword Rules
 
+          - Terminal: \`terminal\`, \`ime\`, \`selection\`, \`scrollback\`, \`split-screen\`, \`ansi\`, \`truecolor\`, \`terminal url\`, \`url highlighting\`
+          - SFTP: \`sftp\`, \`file transfer\`, \`remote file\`, \`browser\`
+          - SSH and compatibility: \`ssh\`, \`russh\`, \`legacy\`, \`fallback\`, \`algorithm\`, \`x11\`, \`xquartz\`
           - Settings and themes: \`settings\`, \`custom\`, \`theme\`, \`brightness\`, \`foreground\`, \`font\`
-          - App UI and assets: \`monitoring\`, \`titlebar\`, \`window\`, \`input\`, \`focus\`, \`icon\`, \`asset\`
-          - Terminal rendering: \`terminal url\`, \`url highlighting\`, \`ansi\`, \`truecolor\`, \`scrollback\`, \`split-screen\`
-          - SSH and compatibility: \`ssh\`, \`sftp\`, \`russh\`, \`legacy\`, \`fallback\`, \`algorithm\`, \`x11\`, \`xquartz\`
+          - App UI and assets: \`monitoring\`, \`titlebar\`, \`window\`, \`input\`, \`focus\`, \`icon\`, \`asset\`, \`menus\`, \`visibility\`
           - Development workflow: \`dev-reload\`, \`reload\`, \`logging\`, \`rebuild\`, \`format\`, \`startup\`
-          - Release and packaging: \`release\`, \`workflow\`, \`artifact\`, \`publish\`, \`package\`, \`packaging\`, \`cask\`, \`version\`
+          - Packaging: \`release tag\`, \`workflow\`, \`artifact\`, \`publish\`, \`package\`, \`packaging\`, \`cask\`, \`version\`, \`bundle\`
           - Dependencies: \`upgrade\`, \`dependency\`, \`dependencies\`, \`crate\`, \`russh\`, \`alacritty\`, \`official\`
 
           EOF
+          fi
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v3
