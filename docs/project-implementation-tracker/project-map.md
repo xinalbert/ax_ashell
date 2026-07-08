@@ -22,7 +22,7 @@
 | `src/terminal/` | 终端渲染、颜色、字体 metrics 和交互 | custom theme brightness、终端颜色语义、字体间距、PTY resize 或鼠标命中需要联动时 | 本轮改 `element.rs` 与 `input.rs`，让字体实测 metrics 统一驱动渲染和输入命中 |
 | `src/sync/` | 会话配置加密同步 payload | 判断新增会话字段是否会自动进入同步上传/下载时 | 本轮预计不改传输逻辑，只依赖 `Session` 序列化扩展 |
 | `src/main.rs` | 应用初始化入口 | 增加全局初始化、custom theme watch/load、补入口初始化顺序时 | 本轮在 `main()` 第一行注册 panic hook，保证早期启动 panic 可落 crash 文件 |
-| `locales/` | 中英文界面文案 | 新增 custom theme 分组、提示、保存说明和错误消息时 | 需要同步 `en.yml` 和 `zh-CN.yml` |
+| `locales/` | 中英文界面文案 | 新增 custom theme 分组、提示、保存说明、日志入口和错误消息时 | 需要同步 `en.yml` 和 `zh-CN.yml` |
 | `.github/workflows/` | CI / Release 构建和打包元数据 | 改二进制名、artifact 名、macOS bundle Info.plist 或发布路径时 | `release.yml` 手工组装 `.app`，需要与 Cargo 包名一致 |
 | `scripts/` | 本地开发/打包脚本与发布辅助脚本 | 改 macOS `.app` 名称、bundle id、图标文件名、签名逻辑、tag/version 映射或发布前 manifest 同步时 | `package-macos-app.sh` 会运行 `cargo build --release` 并组装 bundle；本轮将新增共享版本脚本 |
 | `assets/*.desktop` | Linux desktop entry | 改应用显示名、Exec、Icon、StartupWMClass 或 Debian metadata 时 | 当前 desktop 文件为 `assets/ax_shell.desktop` |
@@ -34,7 +34,7 @@
 | --- | --- | --- | --- |
 | `src/session/config.rs` | 本地配置文件模型、路径和 getter/setter | `ConfigFile`，`ConfigStore::load/save`，`config_root_dir_path`，config path helpers | 改配置目录、旧目录迁移、sync 默认对象名、custom theme draft 和 registry file 路径 |
 | `src/app/theme.rs` | 主题注册、当前主题应用和 custom theme 逻辑 | `load_embedded_themes`，`load_user_themes`，`apply_theme_preferences`，`save_custom_appearance` | 本轮已改成“真实 ThemeConfig + theme file 持久化 + registry 即时应用/监听” |
-| `src/app/startup.rs` | 启动辅助、日志初始化和窗口打开 | `init_logging`，`open_main_window`，platform launch helpers | 增加运行日志、crash 日志、panic hook、窗口打开错误记录或启动期诊断时 |
+| `src/app/startup.rs` | 启动辅助、日志初始化和窗口打开 | `init_logging`，`runtime_log_dir`，`crash_report_dir`，`open_main_window`，platform launch helpers | 增加运行日志、crash 日志、panic hook、窗口打开错误记录、日志目录入口或启动期诊断时 |
 | `src/app/mod.rs` | 全局 UI 状态结构和 app 子模块出口 | `AxShell` fields，type re-exports | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel 或跨模块共享类型时 |
 | `src/app/init.rs` | `AxShell` 初始化和默认状态装配 | `AxShell::new` | 新增输入框、默认配置读取、初始 theme/font/system 状态、订阅或 event pump 启动时 |
 | `src/app/event_loop.rs` | 输入事件、后台事件分发、系统采样和主题同步 | `on_input_event`，`start_event_pump`，`drain_backend_events`，`sample_system_if_due` | 改 backend event 处理、SFTP event 更新、connection progress、system monitor sampling 或 follow-system theme 同步时 |
@@ -62,7 +62,7 @@
 
 ## 常用定位
 
-- `rg -n 'init_logging|panic|crash|open_main_window|current_window_title' src/main.rs src/app/startup.rs`
+- `rg -n 'init_logging|runtime_log_dir|crash_report_dir|panic|crash|open_main_window|current_window_title' src/main.rs src/app/startup.rs src/app/dialogs.rs`
 - `rg -n 'AxAshell|ax_ashell|AX_ASHELL|AxShell|ax_shell|AX_SHELL' Cargo.toml Cargo.lock src examples scripts .github assets README.md README.en.md docs`
 - `rg -n 'GITHUB_REF_NAME|refs/tags|CFBundleShortVersionString|CARGO_PKG_VERSION|version = ' .github/workflows scripts src Cargo.toml Cargo.lock`
 - `rg -n 'sidebar\\(|render_collapsed_sidebar|saved_session_groups|open_local' src/app/ui.rs src/session/mod.rs`
@@ -81,8 +81,8 @@
 ## 刷新规则
 
 - 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics、app/session/sftp/backend 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`Cargo.toml`，`Cargo.lock`，`src/app/constants.rs`，`src/app/dialogs.rs`，`src/app/startup.rs`，`src/backend/auth.rs`，`src/backend/ssh.rs`，`src/sftp/mod.rs`，`src/sftp/auth.rs`，`src/sftp/path.rs`
+- 最近依据：`Cargo.toml`，`Cargo.lock`，`src/app/dialogs.rs`，`src/app/startup.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/development.md`，`docs/development.en.md`
 
 ## 最后更新时间
 
-- 2026-07-08 11:12 CST
+- 2026-07-08 11:34 CST

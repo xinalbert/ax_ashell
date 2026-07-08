@@ -145,13 +145,15 @@ Runtime logs are written to:
 ~/.config/ax_shell/log
 ```
 
+The app logs `ax_shell=info,warn` by default. Override with `RUST_LOG` when needed, for example `RUST_LOG=ax_shell=debug,russh=debug`. Runtime logs roll by minute and keep the latest 48 files by default. The About page can open the runtime log directory directly.
+
 When the app crashes because of a Rust panic, the panic hook also writes a crash report to:
 
 ```text
 ~/.config/ax_shell/crash/ax_shell-crash-*.log
 ```
 
-Crash reports include the panic location, version, thread, runtime log directory, and backtrace. When filing an issue at `https://github.com/xinalbert/ax_shell/issues`, attach the crash file and the latest runtime logs.
+Crash reports include the panic location, version, thread, runtime log directory, and backtrace. The About page can open the crash report directory directly. When filing an issue at `https://github.com/xinalbert/axshell/issues`, attach the crash file and the latest runtime logs.
 
 ## Related Docs
 

@@ -536,3 +536,13 @@
 - 计划状态变更：无
 - 验证结果：`rustfmt` 通过；`cargo check` 通过；`cargo test` 通过，13 个测试全部通过；仍保留既有 `block v0.1.6` future-incompat warning
 - 对 plan 的更新：本轮验证入口固定为格式化、全仓编译、全仓测试和 tracking docs 校验；真实 SSH / SFTP 联机验证不在自动验证范围内
+
+## 2026-07-08 刷新环境记录到运行日志可观测性增强
+
+- 时间：2026-07-08 11:34 +0800
+- 触发原因：用户确认继续实施日志建议，需要把环境/验证边界切换到运行日志入口、启动摘要和保留策略增强
+- 执行内容：复查 `src/app/startup.rs`、`src/app/dialogs.rs`、`src/main.rs`、`docs/development.md` 和现有 env/tracking 记录；确认本轮不新增依赖、不需要联网和外部服务；实现后执行格式化、编译、测试和 tracking docs 校验
+- 影响文件：`src/app/startup.rs`，`src/app/dialogs.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/development.md`，`docs/development.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt` 通过；`cargo check` 通过；`cargo test` 通过，15 个测试全部通过；仍保留既有 `block v0.1.6` future-incompat warning；GUI 打开目录行为未手工验证
+- 对 plan 的更新：本轮验证入口固定为格式化、全仓编译、全仓测试和 tracking docs 校验；日志目录按钮的实际系统打开行为留作手工验证

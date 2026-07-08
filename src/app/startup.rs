@@ -11,6 +11,7 @@ use crate::session::config::ConfigStore;
 const INSTANCE_KIND_ENV: &str = "AX_SHELL_INSTANCE_KIND";
 const INSTANCE_APP_ID_ENV: &str = "AX_SHELL_APP_ID";
 const DEV_RELOAD_INSTANCE_KIND: &str = "dev-reload";
+const LOG_FILES_TO_KEEP: usize = 48;
 static CRASH_HOOK: Once = Once::new();
 
 fn current_instance_kind() -> Option<String> {
@@ -54,11 +55,11 @@ fn app_config_dir() -> PathBuf {
     ConfigStore::config_root_dir_path().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-fn app_log_dir() -> PathBuf {
+pub(crate) fn runtime_log_dir() -> PathBuf {
     app_config_dir().join("log")
 }
 
-fn app_crash_dir() -> PathBuf {
+pub(crate) fn crash_report_dir() -> PathBuf {
     app_config_dir().join("crash")
 }
 
@@ -103,8 +104,8 @@ impl LocalMinutelyRoller {
                         .and_then(|m| m.modified())
                         .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
                 });
-                if files.len() > 6 {
-                    for file in files.iter().take(files.len() - 6) {
+                if files.len() > LOG_FILES_TO_KEEP {
+                    for file in files.iter().take(files.len() - LOG_FILES_TO_KEEP) {
                         let _ = std::fs::remove_file(file.path());
                     }
                 }
@@ -137,7 +138,7 @@ impl std::io::Write for LocalMinutelyRoller {
 pub(crate) fn init_logging() {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-    let log_dir = app_log_dir();
+    let log_dir = runtime_log_dir();
 
     std::fs::create_dir_all(&log_dir).ok();
 
@@ -148,7 +149,7 @@ pub(crate) fn init_logging() {
     std::mem::forget(_guard);
 
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("ax_shell=info,warn"));
 
     let stdout_layer = if cfg!(debug_assertions) {
         Some(
@@ -171,6 +172,29 @@ pub(crate) fn init_logging() {
         .with(stdout_layer)
         .with(file_layer)
         .init();
+
+    log_startup_summary(&log_dir);
+}
+
+fn log_startup_summary(log_dir: &std::path::Path) {
+    let instance_kind = current_instance_kind().unwrap_or_else(|| "default".to_string());
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        os = std::env::consts::OS,
+        arch = std::env::consts::ARCH,
+        profile,
+        instance_kind,
+        config_dir = %app_config_dir().display(),
+        log_dir = %log_dir.display(),
+        crash_dir = %crash_report_dir().display(),
+        log_files_to_keep = LOG_FILES_TO_KEEP,
+        "AxShell startup"
+    );
 }
 
 pub(crate) fn install_crash_hook() {
@@ -211,7 +235,7 @@ pub(crate) fn install_crash_hook() {
 }
 
 fn write_crash_report(panic_info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf> {
-    let crash_dir = app_crash_dir();
+    let crash_dir = crash_report_dir();
     if std::fs::create_dir_all(&crash_dir).is_err() {
         return None;
     }
@@ -268,7 +292,7 @@ fn build_crash_report(
     let _ = writeln!(report, "thread: {thread_name}");
     let _ = writeln!(report, "location: {location}");
     let _ = writeln!(report, "panic: {panic_payload}");
-    let _ = writeln!(report, "runtime_log_dir: {}", app_log_dir().display());
+    let _ = writeln!(report, "runtime_log_dir: {}", runtime_log_dir().display());
     let _ = writeln!(report, "feedback: {ISSUES_URL}");
     let _ = writeln!(report);
     let _ = writeln!(report, "backtrace:");
