@@ -4,7 +4,7 @@
 
 ## 环境要求
 
-- Rust `1.85.0` 或更高版本
+- Rust `1.88.0` 或更高版本
 - 可用的 Cargo 工具链
 - macOS、Linux 或 Windows 桌面环境
 

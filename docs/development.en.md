@@ -4,7 +4,7 @@
 
 ## Requirements
 
-- Rust `1.85.0` or newer
+- Rust `1.88.0` or newer
 - A working Cargo toolchain
 - A desktop environment on macOS, Linux, or Windows
 
