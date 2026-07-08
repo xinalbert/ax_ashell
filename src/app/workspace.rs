@@ -1,0 +1,361 @@
+use std::ops::Range;
+
+use gpui::{Bounds, Context, Pixels, Window, point, px, size};
+use rust_i18n::t;
+
+use crate::{
+    AxShell,
+    app::{ConnectionProgress, WorkspacePage},
+    session::config::ConfigStore,
+};
+
+impl AxShell {
+    pub(crate) fn transfer_source_title(&self, tab_id: &str) -> String {
+        self.tabs
+            .iter()
+            .find(|tab| tab.id == tab_id)
+            .map(|tab| tab.title.clone())
+            .or_else(|| {
+                self.tab_groups
+                    .iter()
+                    .find(|group| group.id == tab_id)
+                    .map(|group| group.title.clone())
+            })
+            .or_else(|| {
+                self.tab_groups
+                    .iter()
+                    .find(|group| group.pane_root.contains(tab_id))
+                    .map(|group| group.title.clone())
+            })
+            .unwrap_or_else(|| "Unknown".to_string())
+    }
+
+    pub(crate) fn set_workspace_page(&mut self, page: WorkspacePage, cx: &mut Context<Self>) {
+        if self.workspace_page == page {
+            return;
+        }
+
+        if self.workspace_page == WorkspacePage::Settings {
+            self.keybinds_suspended = false;
+            self.recording_action = None;
+            self.keybind_error = None;
+            crate::app::keybinding_recorder::bind_workspace_keys_from_config(cx, &self.config);
+        }
+
+        if page == WorkspacePage::Settings {
+            crate::app::keybinding_recorder::unbind_all_workspace_keys(cx, &self.config);
+            self.keybinds_suspended = true;
+            self.search_active = false;
+            self.search_query.clear();
+            self.search_matches.clear();
+            self.search_current = 0;
+            self.search_target_tab = None;
+        }
+
+        self.workspace_page = page;
+        cx.notify();
+    }
+
+    pub(crate) fn open_settings_page(&mut self, cx: &mut Context<Self>) {
+        self.settings_page_open = true;
+        self.set_workspace_page(WorkspacePage::Settings, cx);
+    }
+
+    pub(crate) fn close_settings_page(&mut self, cx: &mut Context<Self>) {
+        self.settings_page_open = false;
+        if self.workspace_page == WorkspacePage::Settings {
+            self.set_workspace_page(WorkspacePage::Terminal, cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn switch_workspace_tab(
+        &mut self,
+        step: isize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let settings_index = self.tab_groups.len();
+        let total_tabs = settings_index + usize::from(self.settings_page_open);
+        if total_tabs <= 1 {
+            return;
+        }
+
+        let current_index =
+            if self.workspace_page == WorkspacePage::Settings && self.settings_page_open {
+                settings_index
+            } else {
+                self.active_group
+                    .as_ref()
+                    .and_then(|gid| self.tab_groups.iter().position(|group| group.id == *gid))
+                    .unwrap_or(0)
+            };
+
+        let next_index = (current_index as isize + step).rem_euclid(total_tabs as isize) as usize;
+        if self.settings_page_open && next_index == settings_index {
+            self.open_settings_page(cx);
+            return;
+        }
+
+        let Some(group_id) = self
+            .tab_groups
+            .get(next_index)
+            .map(|group| group.id.clone())
+        else {
+            return;
+        };
+        self.activate_group(group_id, window, cx);
+    }
+
+    pub(crate) fn request_active_system_snapshot(&mut self) {
+        if !self.is_monitoring_visible() {
+            return;
+        }
+        let Some(ref tab_id) = self.system_tab_id.clone() else {
+            return;
+        };
+        let Some(backend) = (|| {
+            let tab = self.tabs.iter().find(|t| t.id == *tab_id)?;
+            if !tab.connected {
+                return None;
+            }
+            Some(tab.backend.clone())
+        })() else {
+            return;
+        };
+        if self.remote_sample_in_flight {
+            return;
+        }
+        self.remote_sample_in_flight = true;
+        if let Ok(backend) = backend.lock() {
+            backend.send(crate::terminal::BackendCommand::SampleMetrics);
+        }
+    }
+
+    pub(crate) fn is_monitoring_visible(&self) -> bool {
+        if !self.config.show_monitoring_dashboard() {
+            return false;
+        }
+        match self.config.monitoring_position() {
+            "Bottom" => true,
+            "Sidebar" => !self.sidebar_collapsed,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn terminal_ime_bounds_for_range(
+        &self,
+        range_utf16: Range<usize>,
+        element_bounds: Bounds<Pixels>,
+        cell_width: f32,
+        line_height: f32,
+    ) -> Option<Bounds<Pixels>> {
+        let snapshot = self.active_snapshot()?;
+        let cursor = snapshot.cursor?;
+        let x = element_bounds.origin.x
+            + px(cell_width) * cursor.col as f32
+            + px(cell_width) * range_utf16.start as f32;
+        let y = element_bounds.origin.y + px(line_height) * cursor.row as f32;
+        Some(Bounds::new(
+            point(x, y),
+            size(px(cell_width), px(line_height)),
+        ))
+    }
+
+    pub(crate) fn remove_transfer(&mut self, transfer_id: &str, cx: &mut Context<Self>) {
+        self.transfers.retain(|t| t.info.id != transfer_id);
+        self.config.set_transfers(self.transfers.clone());
+        cx.notify();
+    }
+
+    pub(crate) fn retry_connection_progress(&mut self, cx: &mut Context<Self>) {
+        let Some(progress) = self.connection_progress.clone() else {
+            return;
+        };
+        self.connection_progress = None;
+        let mut retry_tabs = Vec::new();
+        for (ix, tab) in self.tabs.iter().enumerate() {
+            if !tab.connected && tab.session.is_some() && tab.id == progress.tab_id {
+                retry_tabs.push((ix, tab.id.clone(), tab.session.clone().unwrap()));
+            }
+        }
+
+        if retry_tabs.is_empty() {
+            cx.notify();
+            return;
+        }
+
+        for (ix, tab_id, session) in retry_tabs {
+            self.tabs[ix].send_backend(crate::terminal::BackendCommand::Close);
+
+            let backend = crate::backend::ssh::spawn_ssh_terminal(
+                self.runtime.handle(),
+                tab_id.clone(),
+                session.clone(),
+                self.tabs[ix].cols,
+                self.tabs[ix].rows,
+                self.events_tx.clone(),
+            );
+
+            self.tabs[ix].set_backend(backend);
+            self.tabs[ix].connected = false;
+            self.tabs[ix].status = "connecting".into();
+            self.tabs[ix].disconnected_reason = None;
+            self.tabs[ix].backend_initialized = false;
+
+            if let Some(group) = self
+                .tab_groups
+                .iter()
+                .find(|g| g.pane_root.contains(&tab_id))
+            {
+                let group_id = group.id.clone();
+                let group_session = self
+                    .tabs
+                    .iter()
+                    .find(|t| group.pane_root.contains(&t.id) && t.session.is_some())
+                    .and_then(|t| t.session.clone());
+
+                if let Some(session) = group_session {
+                    if let Some(old_handle) = self.sftp_handles.remove(&group_id) {
+                        old_handle.close();
+                    }
+                    let sftp_handle = crate::sftp::spawn_sftp(
+                        self.runtime.handle(),
+                        group_id.clone(),
+                        session,
+                        self.events_tx.clone(),
+                    );
+                    self.sftp_handles.insert(group_id.clone(), sftp_handle);
+
+                    if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == group_id) {
+                        if let Some(sftp) = group.sftp.as_mut() {
+                            sftp.status = rust_i18n::t!("sftp_connecting").to_string();
+                        }
+                    }
+                }
+            }
+        }
+
+        self.connection_progress = Some(ConnectionProgress {
+            tab_id: progress.tab_id.clone(),
+            title: t!("connecting").into(),
+            lines: vec![t!("starting_connection").into()],
+            failed: false,
+        });
+        self.status = "ssh tabs retrying".into();
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_connection_progress(&mut self, cx: &mut Context<Self>) {
+        if let Some(progress) = &self.connection_progress {
+            let tab_id = progress.tab_id.clone();
+            self.connection_progress = None;
+            self.handle_tab_close(tab_id);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn save_layout_state(&self, window: &mut gpui::Window, cx: &gpui::App) {
+        if self.is_layout_reset {
+            tracing::info!("[ui] layout was reset, skipping save layout state.");
+            return;
+        }
+        let current_bounds = window.window_bounds();
+        let bounds = match current_bounds {
+            gpui::WindowBounds::Fullscreen(b) => b,
+            gpui::WindowBounds::Maximized(b) => b,
+            gpui::WindowBounds::Windowed(b) => b,
+        };
+        let size = bounds.size;
+        if size.width.as_f32() > 400.0 && size.height.as_f32() > 300.0 {
+            tracing::info!("[ui] saving layout state...");
+            let mut config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
+            let saved_bounds = match current_bounds {
+                gpui::WindowBounds::Fullscreen(b) => {
+                    crate::session::config::SavedWindowBounds::Fullscreen {
+                        x: b.origin.x.into(),
+                        y: b.origin.y.into(),
+                        width: b.size.width.into(),
+                        height: b.size.height.into(),
+                    }
+                }
+                gpui::WindowBounds::Maximized(b) => {
+                    let mut restore_bounds = (
+                        b.origin.x.into(),
+                        b.origin.y.into(),
+                        b.size.width.into(),
+                        b.size.height.into(),
+                    );
+                    if let Some(existing_bounds) = config.window_bounds() {
+                        match existing_bounds {
+                            crate::session::config::SavedWindowBounds::Windowed {
+                                x,
+                                y,
+                                width,
+                                height,
+                            } => {
+                                restore_bounds = (*x, *y, *width, *height);
+                            }
+                            crate::session::config::SavedWindowBounds::Maximized {
+                                x,
+                                y,
+                                width,
+                                height,
+                            } => {
+                                restore_bounds = (*x, *y, *width, *height);
+                            }
+                            _ => {}
+                        }
+                    }
+                    crate::session::config::SavedWindowBounds::Maximized {
+                        x: restore_bounds.0,
+                        y: restore_bounds.1,
+                        width: restore_bounds.2,
+                        height: restore_bounds.3,
+                    }
+                }
+                gpui::WindowBounds::Windowed(b) => {
+                    crate::session::config::SavedWindowBounds::Windowed {
+                        x: b.origin.x.into(),
+                        y: b.origin.y.into(),
+                        width: b.size.width.into(),
+                        height: b.size.height.into(),
+                    }
+                }
+            };
+            let workspace_sizes: Vec<f32> = self
+                .workspace_panels
+                .read(cx)
+                .sizes()
+                .iter()
+                .map(|s| s.into())
+                .collect();
+            let mut body_sizes: Vec<f32> = self
+                .body_panels
+                .read(cx)
+                .sizes()
+                .iter()
+                .map(|s| s.into())
+                .collect();
+
+            if self.sftp_panel_minimized {
+                if let Some(prev) = self.prev_monitoring_size {
+                    if body_sizes.len() > 1 {
+                        body_sizes[1] = prev.into();
+                    }
+                }
+            }
+
+            config.set_layout_state(Some(saved_bounds), Some(workspace_sizes), Some(body_sizes));
+            config.set_sidebar_collapsed(self.sidebar_collapsed);
+            config.set_sftp_panel_minimized(self.sftp_panel_minimized);
+            let _ = config.save();
+        } else {
+            tracing::warn!(
+                "[ui] window size is too small ({:?}), skipping save layout state to prevent corrupting saved bounds.",
+                size
+            );
+        }
+    }
+}

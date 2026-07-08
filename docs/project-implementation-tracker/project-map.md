@@ -3,20 +3,21 @@
 ## 项目概览
 
 - 用途：基于 Rust 和 GPUI 的 SSH / 本地终端桌面客户端
-- 主要入口：`src/main.rs`，`src/app/startup.rs`，`src/app/ui.rs`，`src/app/theme.rs`，`src/session/mod.rs`
+- 主要入口：`src/main.rs`，`src/app/startup.rs`，`src/app/mod.rs`，`src/app/init.rs`，`src/app/ui.rs`，`src/session/mod.rs`
 
 ## 索引范围
 
 - 根目录：`<repo-root>`
-- 覆盖：`src/app/`，`src/session/`，`src/terminal/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
+- 覆盖：`src/app/`，`src/session/`，`src/sftp/`，`src/terminal/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
 - 排除：`.git/`，`target/`，`assets/` 批量图标/字体资源，构建产物与外部依赖缓存
 
 ## 目录地图
 
 | Path | Purpose | Open When | Notes |
 | --- | --- | --- | --- |
-| `src/session/` | 配置持久化、会话模型、本地终端动作和本地配置目录路径 | 改 config root、旧配置迁移、custom theme 持久化字段、theme file 输出路径、配置兼容逻辑或本地终端打开逻辑时 | `ConfigStore::load()` 创建/迁移配置目录；`open_local(cx)` 创建本地终端 tab/group |
-| `src/app/` | 启动、日志、侧栏、设置页、弹窗、主题、字体选择与工作区 UI | 调整应用显示名、启动日志、crash hook、SAVED 侧栏入口、Custom 页面、theme list、字体下拉、主题应用逻辑和工作区动作时 | `startup.rs` 负责窗口标题、日志/crash 路径和平台启动辅助；`ui.rs` 负责展开/收起侧栏；`theme.rs` 负责注册/生成/apply |
+| `src/session/` | 配置持久化、会话模型、本地终端动作、saved session 分组和 pane 状态管理 | 改 config root、会话连接、saved session 分组/重命名、pane split/focus、tab/group 生命周期或本地配置兼容逻辑时 | `mod.rs` 保留会话连接和 tab 生命周期；`pane.rs` 管 pane tree；`saved_sessions.rs` 管 selector 与 saved group |
+| `src/app/` | 启动、日志、应用状态、事件泵、侧栏、设置页、弹窗、主题、字体选择与工作区 UI | 调整应用显示名、启动日志、crash hook、AxShell 状态字段、SAVED 侧栏入口、Custom 页面、theme list、字体下拉、主题应用逻辑和工作区动作时 | `mod.rs` 保留状态结构；`init.rs` 负责 `AxShell::new`；`event_loop.rs` 负责后台事件泵；`ui.rs` / `dialogs.rs` 仍是主要渲染热点 |
+| `src/sftp/` | SFTP 命令循环、认证、远程路径 helper、文件传输、预览和本地文件操作 | 改 SFTP 连接认证、key 解析、远程路径拼接、上传/下载、远程删除、预览、编辑远程文件或本地文件浏览时 | `mod.rs` 保留命令循环和传输实现；`auth.rs` 管 SFTP SSH 认证；`path.rs` 管路径/格式化 helper；`ops.rs` 管 UI 侧 SFTP/local file 操作 |
 | `src/terminal/` | 终端渲染、颜色、字体 metrics 和交互 | custom theme brightness、终端颜色语义、字体间距、PTY resize 或鼠标命中需要联动时 | 本轮改 `element.rs` 与 `input.rs`，让字体实测 metrics 统一驱动渲染和输入命中 |
 | `src/sync/` | 会话配置加密同步 payload | 判断新增会话字段是否会自动进入同步上传/下载时 | 本轮预计不改传输逻辑，只依赖 `Session` 序列化扩展 |
 | `src/main.rs` | 应用初始化入口 | 增加全局初始化、custom theme watch/load、补入口初始化顺序时 | 本轮在 `main()` 第一行注册 panic hook，保证早期启动 panic 可落 crash 文件 |
@@ -33,9 +34,19 @@
 | `src/session/config.rs` | 本地配置文件模型、路径和 getter/setter | `ConfigFile`，`ConfigStore::load/save`，`config_root_dir_path`，config path helpers | 改配置目录、旧目录迁移、sync 默认对象名、custom theme draft 和 registry file 路径 |
 | `src/app/theme.rs` | 主题注册、当前主题应用和 custom theme 逻辑 | `load_embedded_themes`，`load_user_themes`，`apply_theme_preferences`，`save_custom_appearance` | 本轮已改成“真实 ThemeConfig + theme file 持久化 + registry 即时应用/监听” |
 | `src/app/startup.rs` | 启动辅助、日志初始化和窗口打开 | `init_logging`，`open_main_window`，platform launch helpers | 增加运行日志、crash 日志、panic hook、窗口打开错误记录或启动期诊断时 |
-| `src/app/mod.rs` | 全局 UI 状态、设置页输入实体和终端 metrics 缓存 | `AxShell` fields，`new(...)`，`TerminalFontMetrics` | custom theme 编辑器字段数量、终端字体 metrics 缓存、滚动条状态或输入状态变化时 |
+| `src/app/mod.rs` | 全局 UI 状态结构和 app 子模块出口 | `AxShell` fields，type re-exports | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel 或跨模块共享类型时 |
+| `src/app/init.rs` | `AxShell` 初始化和默认状态装配 | `AxShell::new` | 新增输入框、默认配置读取、初始 theme/font/system 状态、订阅或 event pump 启动时 |
+| `src/app/event_loop.rs` | 输入事件、后台事件分发、系统采样和主题同步 | `on_input_event`，`start_event_pump`，`drain_backend_events`，`sample_system_if_due` | 改 backend event 处理、SFTP event 更新、connection progress、system monitor sampling 或 follow-system theme 同步时 |
+| `src/app/types.rs` | app/session/UI 共享类型 | `PaneLayout`，`TabGroup`，`TerminalScrollbarHandle`，`WorkspacePage` | 改 pane tree 类型、tab group、terminal scrollbar 或工作区页面枚举时 |
+| `src/app/workspace.rs` | 工作区页面、连接进度、远程采样请求和布局持久化辅助 | `set_workspace_page`，`request_active_system_snapshot`，`retry_connection_progress`，`save_layout_state` | 改设置页 tab 生命周期、监控可见性采样、连接重试或窗口布局保存时 |
 | `src/app/dialogs.rs` | 设置页渲染 | `render_settings_page`，`terminal_font_names`，Custom page groups/items | 设置页字体选择、General 页主题下拉、Custom 页色槽编辑 |
 | `src/app/ui.rs` | 主 UI、展开/收起侧栏、SAVED 列表和顶部标签 | `sidebar`，`render_collapsed_sidebar`，`render_tab_bar` | 增加固定 Local Terminal 入口、调整 saved session 分组、侧栏折叠态或顶部标签交互时 |
+| `src/session/mod.rs` | 会话连接、SSH 表单、tab 生命周期和 active session 查询 | `open_local`，`connect_ssh`，`open_ssh_session`，`handle_tab_close`，`active_snapshot` | 改本地/SSH tab 创建、SSH 表单加载/重置、断线重试、关闭 tab/group 或 active session 查询时 |
+| `src/session/pane.rs` | pane tree 操作和 group activation | `split_current_pane`，`focus_adjacent_pane`，`activate_group`，`sync_system_tab_to_active_group` | 改 split pane、pane focus、splitter drag、active group 切换或监控 tab 跟随 group 时 |
+| `src/session/saved_sessions.rs` | session selector 和 saved group 管理 | `selector_entries`，`on_selector_key_down`，`saved_session_groups`，`commit_saved_group_rename` | 改选择器键盘行为、saved session 分组、组名展示或重命名时 |
+| `src/sftp/mod.rs` | SFTP 命令循环、上传/下载/预览/删除实现 | `spawn_sftp`，`run_sftp`，`download_path_impl`，`upload_paths_impl`，`recursive_delete` | 改 SFTP runtime 命令、传输进度、远程编辑、递归删除、archive 下载或预览实现时 |
+| `src/sftp/auth.rs` | SFTP 连接认证和 private key 解析 | `connect_and_authenticate`，`SftpClientHandler` | 改 SFTP SSH 认证、key path/inline key 读取、RSA hash algorithm fallback 或 server key 策略时 |
+| `src/sftp/path.rs` | SFTP 远程路径和格式化 helper | `join_remote`，`parent_dir`，`format_mtime`，`shell_quote` | 改远程路径拼接、父目录解析、mtime 展示、shell quote 或文件大小格式化时 |
 | `src/terminal/element.rs` | terminal 前景色、高亮、字体 metrics 测量、等宽字体保护与网格渲染 | `TerminalElement`，`terminal_font_is_monospace`，`terminal_monospace_font_family`，`layout_grid`，`cell_run_style` | 终端文本、背景块、光标、PTY resize、比例字体 fallback 或字体间距问题 |
 | `src/terminal/input.rs` | terminal 键盘、鼠标、滚动和 IME 输入 | `terminal_grid_point_and_side`，`on_terminal_scroll` | 鼠标命中、选择、滚动行高或 IME 候选框位置与终端网格不一致时 |
 | `src/main.rs` | 应用启动初始化顺序 | `main()` | 新增用户 theme 文件初始加载和 watch 入口 |
@@ -52,6 +63,8 @@
 - `rg -n 'AxAshell|ax_ashell|AX_ASHELL|AxShell|ax_shell|AX_SHELL' Cargo.toml Cargo.lock src examples scripts .github assets README.md README.en.md docs`
 - `rg -n 'GITHUB_REF_NAME|refs/tags|CFBundleShortVersionString|CARGO_PKG_VERSION|version = ' .github/workflows scripts src Cargo.toml Cargo.lock`
 - `rg -n 'sidebar\\(|render_collapsed_sidebar|saved_session_groups|open_local' src/app/ui.rs src/session/mod.rs`
+- `rg -n 'split_current_pane|focus_adjacent_pane|activate_group|sync_system_tab_to_active_group' src/session`
+- `rg -n 'spawn_sftp|run_sftp|connect_and_authenticate|join_remote|parent_dir' src/sftp`
 - `rg -n 'custom_theme|ThemeRegistry|load_embedded_themes|apply_theme_preferences|save_custom' src/app src/session src/main.rs`
 - `rg -n 'terminal_font_metrics|terminal_font_is_monospace|terminal_cell_width|terminal_line_height|layout_grid' src/app src/session src/terminal`
 - `rg -n 'ThemeConfig|ThemeSet|try_parse_color|watch_dir|default_light_theme|default_dark_theme' ~/.cargo/git/checkouts/gpui-component-*`
@@ -59,14 +72,14 @@
 
 ## 忽略与未索引
 
-- `src/backend/ssh.rs` 未细化索引：本轮不改 SSH 协议或连接实现
+- `src/backend/ssh.rs` 未细化索引：本轮未改 SSH 协议或连接实现
 - `assets/icons/`、`assets/fonts/`、`target/` 未索引：本轮不涉及批量图标/字体资源或构建产物
 
 ## 刷新规则
 
-- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics 或用户文档范围发生变化时刷新
-- 最近依据：`Cargo.toml`，`Cargo.lock`，`src/app/constants.rs`，`src/app/startup.rs`，`scripts/package-macos-app.sh`，`.github/workflows/release.yml`，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`
+- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics、app/session/sftp 模块拆分或用户文档范围发生变化时刷新
+- 最近依据：`Cargo.toml`，`Cargo.lock`，`src/app/mod.rs`，`src/app/init.rs`，`src/app/event_loop.rs`，`src/app/types.rs`，`src/app/workspace.rs`，`src/session/mod.rs`，`src/session/pane.rs`，`src/session/saved_sessions.rs`，`src/sftp/mod.rs`，`src/sftp/auth.rs`，`src/sftp/path.rs`
 
 ## 最后更新时间
 
-- 2026-07-07 20:52 CST
+- 2026-07-08 10:33 CST

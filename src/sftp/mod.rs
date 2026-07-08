@@ -1,4 +1,6 @@
+mod auth;
 pub mod ops;
+mod path;
 
 use std::{
     fs,
@@ -7,14 +9,8 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use chrono::{DateTime, TimeZone, Utc};
-use directories::BaseDirs;
 use flate2::read::GzDecoder;
-use russh::{
-    Disconnect,
-    client::{self, Handler},
-    keys::{HashAlg, PrivateKey, decode_secret_key, key::PrivateKeyWithHashAlg, load_secret_key},
-};
+use russh::Disconnect;
 use russh_sftp::client::SftpSession;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -27,10 +23,15 @@ use zip::read::ZipArchive;
 
 use rust_i18n::t;
 
-use crate::{
-    session::config::{AuthMethod, Session},
-    terminal::BackendEvent,
+use crate::{session::config::Session, terminal::BackendEvent};
+
+use self::{
+    auth::{SftpClientHandler, connect_and_authenticate},
+    path::{base_name, format_bytes, remote_parent, shell_quote, strip_archive_suffix},
 };
+
+pub use self::path::format_mtime;
+pub(crate) use self::path::{join_remote, parent_dir};
 
 #[derive(Debug, Clone)]
 pub struct RemoteEntry {
@@ -822,226 +823,6 @@ async fn emit_entries(
     Ok(())
 }
 
-async fn connect_and_authenticate(
-    session: &Session,
-) -> Result<Arc<russh::client::Handle<SftpClientHandler>>> {
-    let config = Arc::new(client::Config {
-        inactivity_timeout: Some(std::time::Duration::from_secs(600)),
-        keepalive_interval: Some(std::time::Duration::from_secs(3)),
-        keepalive_max: 2,
-        ..Default::default()
-    });
-    let addr = format!("{}:{}", session.host, session.port);
-    let stream = crate::session::config::connect_proxy(session).await?;
-    let mut handle = client::connect_stream(config, stream, SftpClientHandler)
-        .await
-        .with_context(|| format!("connect {addr} failed"))?;
-
-    let authed = match session.auth {
-        AuthMethod::Password => handle
-            .authenticate_password(&session.user, &session.password)
-            .await
-            .context("password authentication failed")?
-            .success(),
-        AuthMethod::Key => {
-            let keypair = load_session_private_key(session)?;
-            let keys = private_keys_with_algs(keypair).context("invalid private key")?;
-            let mut success = false;
-            for key in keys {
-                match handle.authenticate_publickey(&session.user, key).await {
-                    Ok(result) if result.success() => {
-                        success = true;
-                        break;
-                    }
-                    Ok(_) => {
-                        tracing::debug!(
-                            "[sftp] public key auth failed with algorithm, trying next"
-                        );
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::debug!("[sftp] public key auth error: {:?}, trying next", e);
-                        continue;
-                    }
-                }
-            }
-            if !success {
-                return Err(anyhow!(
-                    "public key authentication failed for {}@{}:{}",
-                    session.user,
-                    session.host,
-                    session.port
-                ));
-            }
-            success
-        }
-    };
-
-    if !authed {
-        let _ = handle
-            .disconnect(Disconnect::ByApplication, "auth failed", "")
-            .await;
-        return Err(anyhow!(
-            "authentication failed: server rejected {} authentication for {}@{}:{}",
-            match session.auth {
-                AuthMethod::Password => "password",
-                AuthMethod::Key => "public key",
-            },
-            session.user,
-            session.host,
-            session.port
-        ));
-    }
-
-    Ok(Arc::new(handle))
-}
-
-fn load_session_private_key(session: &Session) -> Result<PrivateKey> {
-    let inline_key = normalize_inline_private_key(&session.private_key_inline);
-    let key_path = expand_key_path(session.private_key_path.trim());
-    let passphrase = session.passphrase.trim();
-    let passphrase = (!passphrase.is_empty()).then_some(passphrase);
-    let has_inline = !inline_key.is_empty();
-    let has_path = key_path.is_some();
-
-    if !has_inline && !has_path {
-        return Err(anyhow!("private key content or path is required"));
-    }
-
-    let mut errors = Vec::new();
-
-    if has_inline {
-        match decode_secret_key(&inline_key, passphrase) {
-            Ok(key) => return Ok(key),
-            Err(err) => errors.push(format!("decode private key content: {err}")),
-        }
-    }
-
-    if let Some(path) = key_path {
-        match load_secret_key(path.as_path(), passphrase) {
-            Ok(key) => return Ok(key),
-            Err(err) => errors.push(format!("load key {}: {err}", path.display())),
-        }
-    }
-
-    Err(anyhow!(errors.join("; ")))
-}
-
-fn private_keys_with_algs(keypair: PrivateKey) -> Result<Vec<PrivateKeyWithHashAlg>> {
-    let mut algs = Vec::new();
-    let key_arc = Arc::new(keypair);
-
-    if key_arc.algorithm().is_rsa() {
-        algs.push(PrivateKeyWithHashAlg::new(
-            key_arc.clone(),
-            Some(HashAlg::Sha512),
-        ));
-        algs.push(PrivateKeyWithHashAlg::new(
-            key_arc.clone(),
-            Some(HashAlg::Sha256),
-        ));
-        algs.push(PrivateKeyWithHashAlg::new(key_arc.clone(), None));
-    } else {
-        algs.push(PrivateKeyWithHashAlg::new(key_arc.clone(), None));
-    }
-
-    if algs.is_empty() {
-        return Err(anyhow!(
-            "Failed to construct PrivateKeyWithHashAlg for any supported hash algorithm"
-        ));
-    }
-
-    Ok(algs)
-}
-
-fn normalize_inline_private_key(value: &str) -> String {
-    let mut normalized = value
-        .trim()
-        .replace("\\r\\n", "\n")
-        .replace("\\n", "\n")
-        .replace("\r\n", "\n");
-    if !normalized.ends_with('\n') {
-        normalized.push('\n');
-    }
-    normalized
-}
-
-fn expand_key_path(value: &str) -> Option<PathBuf> {
-    if value.is_empty() {
-        return None;
-    }
-    if value == "~" {
-        return BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
-    }
-    if let Some(rest) = value.strip_prefix("~/") {
-        return BaseDirs::new().map(|dirs| dirs.home_dir().join(rest));
-    }
-    Some(Path::new(value).to_path_buf())
-}
-
-fn base_name(path: &str) -> String {
-    let sep = |c: char| c == '/' || c == '\\';
-    path.trim_end_matches(sep)
-        .rsplit(sep)
-        .next()
-        .unwrap_or(path)
-        .to_string()
-}
-
-pub(crate) fn parent_dir(path: &str) -> Option<String> {
-    if path == "/" || path.is_empty() {
-        return None;
-    }
-    let trimmed = path.trim_end_matches('/');
-    if let Some(idx) = trimmed.rfind('/') {
-        if idx == 0 {
-            Some("/".to_string())
-        } else {
-            Some(trimmed[..idx].to_string())
-        }
-    } else {
-        Some("/".to_string())
-    }
-}
-
-pub(crate) fn join_remote(parent: &str, child: &str) -> String {
-    if parent == "/" {
-        format!("/{child}")
-    } else {
-        format!("{}/{}", parent.trim_end_matches('/'), child)
-    }
-}
-
-#[allow(dead_code)]
-fn strip_archive_suffix(name: &str) -> &str {
-    for suffix in [".tar.gz", ".tgz", ".zip", ".tar"] {
-        if let Some(stripped) = name.strip_suffix(suffix) {
-            return stripped;
-        }
-    }
-    name
-}
-
-fn format_bytes(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
-}
-
-pub fn format_mtime(ts: u32) -> String {
-    let dt: DateTime<Utc> = Utc
-        .timestamp_opt(ts as i64, 0)
-        .single()
-        .unwrap_or_else(Utc::now);
-    dt.format("%Y-%m-%d %H:%M").to_string()
-}
-
 async fn list_dir_impl(sftp: &SftpSession, path: &str) -> Result<Vec<RemoteEntry>> {
     let raw = sftp
         .read_dir(path)
@@ -1645,26 +1426,6 @@ async fn exec_remote_command(
     }
 }
 
-fn remote_parent(path: &str) -> String {
-    if path == "/" {
-        "/".to_string()
-    } else {
-        path.rsplit_once('/')
-            .map(|(parent, _)| {
-                if parent.is_empty() {
-                    "/".to_string()
-                } else {
-                    parent.to_string()
-                }
-            })
-            .unwrap_or_else(|| "/".to_string())
-    }
-}
-
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
-}
-
 #[allow(dead_code)]
 async fn maybe_extract_archive(path: &Path) -> Result<Option<PathBuf>> {
     let Some(file_name) = path
@@ -1791,18 +1552,4 @@ async fn extract_archive_to(path: &Path, target_dir: &Path) -> Result<()> {
     .context("extract archive task join failure")??;
 
     Ok(())
-}
-
-#[derive(Clone)]
-struct SftpClientHandler;
-
-impl Handler for SftpClientHandler {
-    type Error = anyhow::Error;
-
-    async fn check_server_key(
-        &mut self,
-        _server_public_key: &russh::keys::ssh_key::PublicKey,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
-    }
 }
