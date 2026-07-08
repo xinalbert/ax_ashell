@@ -178,8 +178,7 @@ impl AxShell {
             tracing::info!("[sftp] navigating to directory: '{}'", path);
             handle.list_dir(path.clone());
             if let Some(sftp) = self.active_sftp_mut() {
-                sftp.current_path = path;
-                self.pending_sftp_path_sync = Some(sftp.current_path.clone());
+                sftp.status = path;
             }
             cx.notify();
         }

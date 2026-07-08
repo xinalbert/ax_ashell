@@ -36,6 +36,8 @@ use self::{
 pub use self::path::format_mtime;
 pub(crate) use self::path::{join_remote, parent_dir};
 
+const SFTP_BROWSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 #[derive(Debug, Clone)]
 pub struct RemoteEntry {
     pub name: String,
@@ -310,17 +312,7 @@ async fn run_sftp(
         session_id,
         mode: connected_mode,
     });
-    let channel = handle
-        .channel_open_session()
-        .await
-        .context("open sftp channel")?;
-    channel
-        .request_subsystem(true, "sftp")
-        .await
-        .context("request sftp subsystem")?;
-    let sftp = SftpSession::new(channel.into_stream())
-        .await
-        .context("sftp handshake")?;
+    let sftp = open_sftp_session(&handle).await?;
 
     let home = sftp
         .canonicalize(".")
@@ -332,7 +324,7 @@ async fn run_sftp(
         home: home.clone(),
     });
 
-    emit_entries(&events, &tab_id, &sftp, &home).await?;
+    emit_entries_with_timeout(&events, &tab_id, &sftp, &home).await?;
 
     let mut active_transfers: std::collections::HashMap<String, TransferStateFlag> =
         std::collections::HashMap::new();
@@ -367,7 +359,9 @@ async fn run_sftp(
                     path
                 };
 
-                if let Err(err) = emit_entries(&events, &tab_id, &sftp, &actual_path).await {
+                if let Err(err) =
+                    emit_entries_from_fresh_session(&events, &tab_id, &handle, &actual_path).await
+                {
                     let _ = events.send(BackendEvent::SftpStatus {
                         tab_id: tab_id.clone(),
                         text: format!("list failed: {err:#}"),
@@ -785,6 +779,22 @@ async fn run_sftp(
     Ok(())
 }
 
+async fn open_sftp_session(
+    handle: &russh::client::Handle<SftpClientHandler>,
+) -> Result<SftpSession> {
+    let channel = handle
+        .channel_open_session()
+        .await
+        .context("open sftp channel")?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .context("request sftp subsystem")?;
+    SftpSession::new(channel.into_stream())
+        .await
+        .context("sftp handshake")
+}
+
 use std::future::Future;
 use std::pin::Pin;
 
@@ -845,6 +855,44 @@ async fn emit_entries(
         text: path.to_string(),
     });
     Ok(())
+}
+
+async fn emit_entries_with_timeout(
+    events: &std::sync::mpsc::Sender<BackendEvent>,
+    tab_id: &str,
+    sftp: &SftpSession,
+    path: &str,
+) -> Result<()> {
+    tokio::time::timeout(
+        SFTP_BROWSE_TIMEOUT,
+        emit_entries(events, tab_id, sftp, path),
+    )
+    .await
+    .map_err(|_| {
+        anyhow!(
+            "list directory timed out after {}s: {path}",
+            SFTP_BROWSE_TIMEOUT.as_secs()
+        )
+    })?
+}
+
+async fn emit_entries_from_fresh_session(
+    events: &std::sync::mpsc::Sender<BackendEvent>,
+    tab_id: &str,
+    handle: &russh::client::Handle<SftpClientHandler>,
+    path: &str,
+) -> Result<()> {
+    tokio::time::timeout(SFTP_BROWSE_TIMEOUT, async {
+        let sftp = open_sftp_session(handle).await?;
+        emit_entries(events, tab_id, &sftp, path).await
+    })
+    .await
+    .map_err(|_| {
+        anyhow!(
+            "list directory timed out after {}s: {path}",
+            SFTP_BROWSE_TIMEOUT.as_secs()
+        )
+    })?
 }
 
 async fn list_dir_impl(sftp: &SftpSession, path: &str) -> Result<Vec<RemoteEntry>> {
