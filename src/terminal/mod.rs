@@ -1,8 +1,9 @@
 pub mod custom_blocks;
 pub mod element;
-pub mod input;
 pub mod highlight;
+pub mod input;
 
+use std::hash::{Hash, Hasher};
 use std::sync::mpsc::Sender;
 
 use alacritty_terminal::{
@@ -11,6 +12,7 @@ use alacritty_terminal::{
     index::{Column, Line, Point, Side},
     selection::{Selection, SelectionRange, SelectionType},
     term::{Config, Term, TermMode, cell::Cell, point_to_viewport, viewport_to_point},
+    vte::ansi::Color as AnsiColor,
     vte::ansi::{CursorShape, Processor},
 };
 use gpui::Keystroke;
@@ -139,7 +141,13 @@ pub struct TerminalTab {
     pub rows: u16,
     pub backend: std::sync::Arc<std::sync::Mutex<BackendTx>>,
     pub scroll_pixel_y: f32,
-    pub(crate) highlight_cache: std::cell::RefCell<Option<(Vec<RenderCell>, std::collections::HashMap<(i32, i32), gpui::Hsla>)>>,
+    pub(crate) highlight_cache: std::cell::RefCell<
+        Option<(
+            Vec<RenderCell>,
+            std::collections::HashMap<(i32, i32), gpui::Hsla>,
+        )>,
+    >,
+    viewport_signature: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -166,6 +174,11 @@ pub struct RenderSnapshot {
     pub rows: usize,
     pub cols: usize,
     pub highlights: std::collections::HashMap<(i32, i32), gpui::Hsla>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct ViewportSignature {
+    pub value: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -236,7 +249,7 @@ impl TerminalTab {
         events: std::sync::mpsc::Sender<BackendEvent>,
     ) -> Self {
         let shared_backend = std::sync::Arc::new(std::sync::Mutex::new(backend));
-        Self {
+        let mut this = Self {
             id: id.clone(),
             title,
             kind,
@@ -253,11 +266,15 @@ impl TerminalTab {
             backend: shared_backend,
             scroll_pixel_y: 0.0,
             highlight_cache: std::cell::RefCell::new(None),
-        }
+            viewport_signature: 0,
+        };
+        this.refresh_viewport_signature();
+        this
     }
 
-    pub fn feed(&mut self, bytes: &[u8]) {
+    pub fn feed(&mut self, bytes: &[u8]) -> bool {
         self.processor.advance(&mut self.term, bytes);
+        self.refresh_viewport_signature()
     }
 
     /// Send a command to the backend. Thread-safe via the shared Arc<Mutex>.
@@ -288,6 +305,7 @@ impl TerminalTab {
                 self.rows
             );
             self.term.resize(TerminalSize::new(self.cols, self.rows));
+            self.refresh_viewport_signature();
             self.send_backend(BackendCommand::Resize { cols, rows });
         }
     }
@@ -353,9 +371,9 @@ impl TerminalTab {
 
         let highlights = if is_enabled {
             let mut cache = self.highlight_cache.borrow_mut();
-            let cache_valid = cache.as_ref().is_some_and(|(cached_cells, _)| {
-                cached_cells == &cells
-            });
+            let cache_valid = cache
+                .as_ref()
+                .is_some_and(|(cached_cells, _)| cached_cells == &cells);
             if cache_valid {
                 cache.as_ref().unwrap().1.clone()
             } else {
@@ -415,23 +433,27 @@ impl TerminalTab {
     pub fn scroll_history(&mut self, delta: i32) {
         if delta != 0 {
             self.term.scroll_display(Scroll::Delta(delta));
+            self.refresh_viewport_signature();
         }
     }
 
     pub fn scroll_up_by(&mut self, lines: usize) {
         if lines != 0 {
             self.term.scroll_display(Scroll::Delta(lines as i32));
+            self.refresh_viewport_signature();
         }
     }
 
     pub fn scroll_down_by(&mut self, lines: usize) {
         if lines != 0 {
             self.term.scroll_display(Scroll::Delta(-(lines as i32)));
+            self.refresh_viewport_signature();
         }
     }
 
     pub fn scroll_to_bottom(&mut self) {
         self.term.scroll_display(Scroll::Bottom);
+        self.refresh_viewport_signature();
     }
 
     #[allow(dead_code)]
@@ -439,6 +461,10 @@ impl TerminalTab {
         self.term
             .selection_to_string()
             .is_some_and(|text| !text.is_empty())
+    }
+
+    pub fn selection_active(&self) -> bool {
+        self.term.selection.is_some()
     }
 
     pub fn clear_selection(&mut self) {
@@ -493,6 +519,54 @@ impl TerminalTab {
 
         self.send_backend(BackendCommand::Input(bytes));
     }
+
+    pub fn refresh_viewport_signature(&mut self) -> bool {
+        let signature = self.compute_viewport_signature().value;
+        let changed = self.viewport_signature != signature;
+        self.viewport_signature = signature;
+        changed
+    }
+
+    fn compute_viewport_signature(&self) -> ViewportSignature {
+        let content = self.term.renderable_content();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+
+        self.rows.hash(&mut hasher);
+        self.cols.hash(&mut hasher);
+        content.display_offset.hash(&mut hasher);
+        self.term.grid().history_size().hash(&mut hasher);
+
+        if content.display_offset == 0 {
+            if let Some(cursor) = self.cursor_state() {
+                cursor.row.hash(&mut hasher);
+                cursor.col.hash(&mut hasher);
+                std::mem::discriminant(&cursor.shape).hash(&mut hasher);
+            } else {
+                0usize.hash(&mut hasher);
+            }
+        } else {
+            usize::MAX.hash(&mut hasher);
+        }
+
+        for indexed in content.display_iter {
+            let cell = indexed.cell;
+            let point = indexed.point;
+
+            point.line.0.hash(&mut hasher);
+            point.column.0.hash(&mut hasher);
+            cell.c.hash(&mut hasher);
+            hash_ansi_color(cell.fg, &mut hasher);
+            hash_ansi_color(cell.bg, &mut hasher);
+            cell.flags.bits().hash(&mut hasher);
+            if let Some(zerowidth) = cell.zerowidth() {
+                zerowidth.hash(&mut hasher);
+            }
+        }
+
+        ViewportSignature {
+            value: hasher.finish(),
+        }
+    }
 }
 
 fn viewport_selection_from_range(
@@ -508,7 +582,10 @@ fn viewport_selection_from_range(
     } = selection.as_ref().copied()?;
 
     let top_point = viewport_to_point(display_offset, Point::new(0, Column(0)));
-    let bottom_point = viewport_to_point(display_offset, Point::new(rows.saturating_sub(1), Column(0)));
+    let bottom_point = viewport_to_point(
+        display_offset,
+        Point::new(rows.saturating_sub(1), Column(0)),
+    );
 
     let top_line = top_point.line;
     let bottom_line = bottom_point.line;
@@ -526,7 +603,10 @@ fn viewport_selection_from_range(
     } else if end.line > bottom_line {
         Point::new(rows.saturating_sub(1), Column(cols.saturating_sub(1)))
     } else {
-        point_to_viewport(display_offset, end).unwrap_or(Point::new(rows.saturating_sub(1), Column(cols.saturating_sub(1))))
+        point_to_viewport(display_offset, end).unwrap_or(Point::new(
+            rows.saturating_sub(1),
+            Column(cols.saturating_sub(1)),
+        ))
     };
 
     Some(ViewportSelection {
@@ -536,6 +616,25 @@ fn viewport_selection_from_range(
         end_col: end_vp.column.0,
         is_block,
     })
+}
+
+fn hash_ansi_color<H: Hasher>(color: AnsiColor, state: &mut H) {
+    match color {
+        AnsiColor::Named(named) => {
+            0u8.hash(state);
+            std::mem::discriminant(&named).hash(state);
+        }
+        AnsiColor::Spec(rgb) => {
+            1u8.hash(state);
+            rgb.r.hash(state);
+            rgb.g.hash(state);
+            rgb.b.hash(state);
+        }
+        AnsiColor::Indexed(index) => {
+            2u8.hash(state);
+            index.hash(state);
+        }
+    }
 }
 
 #[derive(Clone)]

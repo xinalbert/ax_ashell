@@ -170,5 +170,7 @@ pub(crate) struct AxShell {
     pub(crate) should_move_window: bool,
     pub(crate) hovered_url: Option<HoveredUrl>,
     pub(crate) cmd_ctrl_pressed: bool,
+    pub(crate) pending_terminal_refresh: bool,
+    pub(crate) last_terminal_refresh: Instant,
     pub(crate) _subscriptions: Vec<gpui::Subscription>,
 }

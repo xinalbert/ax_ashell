@@ -447,6 +447,8 @@ impl AxShell {
             should_move_window: false,
             hovered_url: None,
             cmd_ctrl_pressed: false,
+            pending_terminal_refresh: false,
+            last_terminal_refresh: Instant::now(),
             _subscriptions,
         };
 
