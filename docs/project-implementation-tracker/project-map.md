@@ -39,19 +39,19 @@
 | `src/app/mod.rs` | 全局 UI 状态结构和 app 子模块出口 | `AxShell` fields，type re-exports | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel 或跨模块共享类型时 |
 | `src/app/init.rs` | `AxShell` 初始化和默认状态装配 | `AxShell::new` | 新增输入框、默认配置读取、初始 theme/font/system 状态、订阅或 event pump 启动时 |
 | `src/app/event_loop.rs` | 输入事件、后台事件分发、系统采样和主题同步 | `on_input_event`，`start_event_pump`，`drain_backend_events`，`sample_system_if_due` | 改 backend event 处理、SFTP event 更新、connection progress、system monitor sampling 或 follow-system theme 同步时 |
-| `src/app/types.rs` | app/session/UI 共享类型 | `PaneLayout`，`TabGroup`，`TerminalScrollbarHandle`，`WorkspacePage` | 改 pane tree 类型、tab group、terminal scrollbar 或工作区页面枚举时 |
-| `src/app/workspace.rs` | 工作区页面、连接进度、远程采样请求、workspace tab 切换和布局持久化辅助 | `set_workspace_page`，`switch_workspace_tab`，`request_active_system_snapshot`，`retry_connection_progress`，`save_layout_state` | 改设置页 / SFTP 页面生命周期、workspace tab 顺序、监控可见性采样、连接重试或窗口布局保存时 |
+| `src/app/types.rs` | app/session/UI 共享类型 | `PaneLayout`，`TabGroup`，`SftpSortColumn`，`SftpTransferTab`，`TerminalScrollbarHandle`，`WorkspacePage` | 改 pane tree 类型、tab group、SFTP UI 状态、terminal scrollbar 或工作区页面枚举时 |
+| `src/app/workspace.rs` | 工作区页面、连接进度、远程采样请求、workspace tab 切换和布局持久化辅助 | `set_workspace_page`，`switch_workspace_tab`，`toggle_active_sftp_page`，`close_sftp_page`，`request_active_system_snapshot`，`retry_connection_progress`，`save_layout_state` | 改设置页 / SFTP 页面生命周期、SFTP 按需标签、workspace tab 顺序、监控可见性采样、连接重试或窗口布局保存时 |
 | `src/app/dialogs/` | 弹窗和设置页渲染目录模块 | `mod.rs`，`ssh.rs`，`selector.rs`，`transfers.rs`，`delete_confirm.rs`，`settings/` | 改 SSH 弹窗、session selector、transfer history、delete confirm、设置页和 About 页面时 |
 | `src/app/dialogs/mod.rs` | dialogs 目录模块入口和共享 imports | 子模块声明，`crate::app::dialogs` 路由 | 改 dialogs 模块可见性、共享 imports 或新增 dialog 子文件时 |
 | `src/app/dialogs/settings/` | 设置页目录模块 | `mod.rs`，`fonts.rs`，`about.rs`，`help.rs`，`keybindings.rs`，`sync.rs`，`proxy.rs` | 改设置页字体列表、About 页日志目录入口、Help 页、Keybindings 页、Sync 页或 Proxy/X11 页时；General/Custom 仍主要在 `mod.rs` |
 | `src/app/ui/` | 主 UI 目录模块，按渲染区域拆分 SFTP、监控、侧栏、顶部标签、终端 pane 和整体布局 | `mod.rs`，`helpers.rs`，`layout.rs`，`monitoring.rs`，`sftp_panel.rs`，`sidebar.rs`，`tab_bar.rs`，`terminal_panel.rs` | 增加固定 Local Terminal 入口、调整 SFTP 双列面板、saved session 分组、侧栏折叠态、顶部标签、监控面板或主布局时 |
 | `src/app/ui/mod.rs` | UI 目录模块入口和共享 imports | 子模块声明，`crate::app::ui` 路由 | 改 UI 模块可见性、共享 imports 或新增 UI 子文件时 |
 | `src/app/ui/layout.rs` | `Render for AxShell` 和顶层 workspace/body 布局 | `render`，workspace page route，resizable workspace/body panels，dialog/sheet/context menu overlays，connection progress overlay | 改主布局、集成标题栏、workspace/body split、SFTP 独立页面接线或全局 overlays 时 |
-| `src/app/ui/sftp_panel.rs` | SFTP 双列页面主体和传输摘要 | `render_sftp_panel` | 改远端/本地文件列表、上传下载按钮、隐藏文件开关、SFTP 右键菜单或 SFTP 页面 footer 时 |
+| `src/app/ui/sftp_panel.rs` | SFTP 双列页面主体和传输摘要 | `render_sftp_panel`，`sort_sftp_entries`，`render_sftp_transfer_panel` | 改远端/本地文件列表、表头排序、上传下载按钮、隐藏文件开关、SFTP 右键菜单、单行省略显示或 SFTP 页面 transfer footer 时 |
 | `src/app/ui/sidebar.rs` | 展开/收起侧栏和 saved session entry 渲染 | `sidebar`，`render_collapsed_sidebar`，saved local terminal entries | 改 SAVED 列表、分组展开/重命名、折叠态入口或本地终端固定入口时 |
 | `src/app/ui/monitoring.rs` | 底部/侧栏监控面板 | `render_monitoring_panel`，`render_sidebar_monitoring_panel` | 改 CPU/MEM/NET/DISK 展示、sparkline、监控位置或滚动条时 |
-| `src/app/ui/tab_bar.rs` | 顶部 tab bar 和 split/search 操作按钮 | `render_tab_bar` | 改编号 terminal/SFTP 标签、tab 选择/关闭、settings tab、split pane 按钮或 tab bar 搜索按钮时 |
-| `src/app/ui/terminal_panel.rs` | 终端工作区、SFTP 页面、settings 页面承载和 pane tree 渲染 | `render_terminal_panel`，`render_pane_tree` | 改终端 focus/key/mouse 事件绑定、pane splitter、disconnect overlay、SFTP 页面挂载或 settings 页面承载时 |
+| `src/app/ui/tab_bar.rs` | 顶部 tab bar 和 split/search 操作按钮 | `render_tab_bar` | 改编号 terminal/SFTP 标签、SFTP 标签关闭、tab 选择/关闭、settings tab、split pane 按钮或 tab bar 搜索按钮时 |
+| `src/app/ui/terminal_panel.rs` | 终端工作区、SFTP 页面、settings 页面承载和 pane tree 渲染 | `render_terminal_panel`，`render_pane_tree` | 改终端 focus/key/mouse 事件绑定、SFTP 页面快捷键焦点、pane splitter、disconnect overlay、SFTP 页面挂载或 settings 页面承载时 |
 | `src/app/ui/helpers.rs` | UI 内部小 helper | `bind_titlebar_drag`，`collapsed_sidebar_abbrev`，`render_home_page` | 改集成标题栏拖动、折叠侧栏简称或空首页时 |
 | `src/session/mod.rs` | 会话连接、SSH 表单、tab 生命周期和 active session 查询 | `open_local`，`connect_ssh`，`open_ssh_session`，`handle_tab_close`，`active_snapshot` | 改本地/SSH tab 创建、SSH 表单加载/重置、断线重试、关闭 tab/group 或 active session 查询时 |
 | `src/session/pane.rs` | pane tree 操作和 group activation | `split_current_pane`，`focus_adjacent_pane`，`activate_group`，`activate_group_page`，`sync_system_tab_to_active_group` | 改 split pane、pane focus、splitter drag、active group + 页面联动切换或监控 tab 跟随 group 时 |
@@ -60,6 +60,7 @@
 | `src/backend/ssh.rs` | SSH 终端连接、legacy 算法兼容、远程系统采样和 X11 转发 | `spawn_ssh_terminal`，`connect_and_authenticate`，`legacy_client_config`，`key_source_label` | 改 SSH 终端认证、算法协商、状态上报、远程系统探针或 X11 转发时 |
 | `src/sftp/mod.rs` | SFTP 命令循环、上传/下载/预览/删除实现 | `spawn_sftp`，`run_sftp`，`download_path_impl`，`upload_paths_impl`，`recursive_delete` | 改 SFTP runtime 命令、传输进度、远程编辑、递归删除、archive 下载或预览实现时 |
 | `src/sftp/auth.rs` | SFTP 连接认证 | `connect_and_authenticate`，`SftpClientHandler` | 改 SFTP SSH 认证主流程或 server key 策略时；private key 解析改 `src/backend/auth.rs` |
+| `src/sftp/ops.rs` | UI 侧 SFTP 与本地文件浏览操作 | `navigate_sftp`，`select_sftp_entry`，`refresh_sftp`，`navigate_local_file_browser` | 改远端目录点击、路径输入、选中状态、刷新、上传下载入口或本地文件浏览时 |
 | `src/sftp/path.rs` | SFTP 远程路径和格式化 helper | `join_remote`，`parent_dir`，`format_mtime`，`shell_quote` | 改远程路径拼接、父目录解析、mtime 展示、shell quote 或文件大小格式化时 |
 | `src/terminal/element.rs` | terminal 前景色、高亮、字体 metrics 测量、等宽字体保护、光标对比度与网格渲染 | `TerminalElement`，`terminal_font_is_monospace`，`terminal_monospace_font_family`，`layout_grid`，`cell_run_style`，`cursor_layout` | 终端文本、背景块、光标颜色/形状、PTY resize、比例字体 fallback 或字体间距问题 |
 | `src/terminal/input.rs` | terminal 键盘、鼠标、滚动和 IME 输入 | `terminal_grid_point_and_side`，`on_terminal_scroll` | 鼠标命中、选择、滚动行高或 IME 候选框位置与终端网格不一致时 |
@@ -92,9 +93,9 @@
 
 ## 刷新规则
 
-- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics、workspace page / tab 模型、app/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`Cargo.toml`，`src/app/types.rs`，`src/app/workspace.rs`，`src/session/pane.rs`，`src/app/ui/tab_bar.rs`，`src/app/ui/layout.rs`，`src/app/ui/sftp_panel.rs`，`docs/project-env-audit/current.md`
+- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics、workspace page / tab 模型、SFTP 按需页面/标签关闭/快捷键焦点、SFTP 列表排序/传输标签面板、SFTP 目录导航失败恢复、app/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
+- 最近依据：`Cargo.toml`，`src/app/types.rs`，`src/app/workspace.rs`，`src/session/pane.rs`，`src/session/mod.rs`，`src/app/ui/tab_bar.rs`，`src/app/ui/layout.rs`，`src/app/ui/terminal_panel.rs`，`src/app/ui/sftp_panel.rs`，`src/app/resizable/mod.rs`，`src/sftp/ops.rs`，`src/sftp/mod.rs`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-08 17:33 +0800
+- 2026-07-08 22:05 +0800

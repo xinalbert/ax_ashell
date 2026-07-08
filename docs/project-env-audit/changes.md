@@ -16,6 +16,15 @@
 - 验证结果：确认本轮不需要联网和外部服务；实施验证命令收敛为 `rustfmt`、`cargo check`、`cargo test` 和 tracking docs 校验；GUI 手工验证仍需要覆盖编号标签与 SFTP 页面切换
 - 对 plan 的更新：允许继续实施 `WorkspacePage::Sftp`、编号 terminal/SFTP 标签和快捷键聚焦逻辑
 
+## 2026-07-08 刷新环境记录到 SFTP 按需页面收口任务
+
+- 触发原因：用户补充 SFTP 页面应按需打开、SFTP 页面内快捷键应返回对应 SSH、长文本应省略显示，且 SFTP 标签需要关闭按钮
+- 执行内容：复查 `src/app/types.rs`、`src/app/workspace.rs`、`src/session/mod.rs`、`src/session/pane.rs`、`src/app/ui/layout.rs`、`src/app/ui/tab_bar.rs`、`src/app/ui/terminal_panel.rs` 和 `src/app/ui/sftp_panel.rs`；确认主技术栈、依赖版本和 CI 事实未变，只刷新当前任务的 UI 状态、快捷键焦点和验证重点
+- 影响文件：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt` 通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；仍保留既有 `block v0.1.6` future-incompat warning；GUI 手工验证仍需覆盖按需 SFTP 标签、快捷键打开/返回、SFTP 标签关闭和长文本省略
+- 对 plan 的更新：允许把本轮结果收口为“不新增依赖、不改 SFTP 后端，只调整工作区页面状态、快捷键路由和 SFTP 页面显示”
+
 ## 2026-07-06 刷新当前环境记录到标签栏修复任务
 
 - 触发原因：本轮进入新的真实修复任务，原 `current.md` 停留在上一轮语境
@@ -695,3 +704,43 @@
 - 计划状态变更：无
 - 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验通过；仍保留既有 `block v0.1.6` future-incompat warning；GUI 手工验证未执行
 - 对 plan 的更新：本轮环境验证已完成；后续只需在 GUI 中补看编号标签、SFTP 页面切换和快捷键聚焦体验
+
+## 2026-07-08 刷新环境记录到 SFTP 列表排序与传输面板
+
+- 时间：2026-07-08 21:09 +0800
+- 触发原因：用户补充要求 SFTP 页面支持列表表头排序、窄窗口优先压缩 `modified` / `size` 列，并将底部替换为“正在传输/失败/已完成”三标签传输面板
+- 执行内容：复查 `Cargo.toml`、`src/app/ui/sftp_panel.rs`、`src/app/types.rs`、`src/app/mod.rs`、`src/app/init.rs`、`src/app/resizable/` 和 `src/app/dialogs/transfers.rs`；确认本轮不新增依赖、不调整配置格式、不联网、不使用多 agent
+- 影响文件：`src/app/types.rs`，`src/app/mod.rs`，`src/app/init.rs`，`src/app/ui/mod.rs`，`src/app/ui/sftp_panel.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：待执行 `rustfmt`、`cargo check`、`cargo test` 与 tracking docs 校验；GUI 表头排序、列压缩和面板拖拽仍需手工验证
+- 对 plan 的更新：验证入口保持不变；实现限定在 UI/state 层，传输后端和旧传输历史弹窗保留
+
+## 2026-07-08 完成 SFTP 列表排序与传输面板环境验证
+
+- 时间：2026-07-08 21:52 +0800
+- 触发原因：SFTP 列表排序、窄窗口列压缩和三标签传输面板代码已完成，需要回写实际本机验证结果
+- 执行内容：执行 `rustfmt --edition 2024 --config skip_children=true src/app/types.rs src/app/mod.rs src/app/init.rs src/app/ui/mod.rs src/app/ui/sftp_panel.rs src/app/ui/layout.rs src/app/ui/tab_bar.rs src/app/ui/terminal_panel.rs src/app/workspace.rs src/session/mod.rs src/session/pane.rs`、`cargo check` 和 `cargo test`；确认本轮未新增依赖，未调整 `Cargo.toml` / `Cargo.lock`
+- 影响文件：`src/app/types.rs`，`src/app/mod.rs`，`src/app/init.rs`，`src/app/ui/mod.rs`，`src/app/ui/sftp_panel.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验通过；仍保留既有 `block v0.1.6` future-incompat warning；GUI 表头排序、列压缩和面板拖拽仍需手工验证
+- 对 plan 的更新：本轮环境验证已完成；后续只需在 GUI 中补看 SFTP 页面排序、列压缩、传输标签和高度拖拽体验
+
+## 2026-07-08 刷新环境记录到 SFTP 目录失败状态恢复
+
+- 时间：2026-07-08 22:05 +0800
+- 触发原因：用户反馈远端某个 SFTP 文件夹超时或报错后，服务端列表后续不能继续点击
+- 执行内容：复查 `Cargo.toml`、`src/sftp/ops.rs`、`src/sftp/mod.rs`、`src/app/event_loop.rs`、`src/app/ui/sftp_panel.rs` 和 `src/terminal/mod.rs`；确认主技术栈与测试环境未变，本轮不新增依赖、不调整配置格式
+- 影响文件：`src/sftp/ops.rs`，`src/app/event_loop.rs`，`src/terminal/mod.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：待执行 `rustfmt`、`cargo check`、`cargo test` 与 tracking docs 校验；真实超时目录交互仍需 GUI 和远端环境手工验证
+- 对 plan 的更新：验证入口保持不变；修复限定在 SFTP UI 状态提交和事件回写路径
+
+## 2026-07-08 完成 SFTP 目录失败状态恢复环境验证
+
+- 时间：2026-07-08 22:05 +0800
+- 触发原因：SFTP 目录读取失败后的状态恢复代码已完成，需要回写实际本机验证结果
+- 执行内容：执行 `rustfmt --edition 2024 --config skip_children=true src/sftp/ops.rs src/sftp/mod.rs src/app/event_loop.rs src/terminal/mod.rs`、`cargo check` 和 `cargo test`；确认本轮未新增依赖，未调整 `Cargo.toml` / `Cargo.lock`
+- 影响文件：`src/sftp/ops.rs`，`src/sftp/mod.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验通过；仍保留既有 `block v0.1.6` future-incompat warning；真实超时目录交互仍需 GUI 和远端环境手工验证
+- 对 plan 的更新：本轮环境验证已完成；后续只需在 GUI 中补看坏目录报错后旧目录列表是否仍可点击
