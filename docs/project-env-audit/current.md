@@ -34,7 +34,7 @@
 - 外部依赖：本轮不需要联网或外部服务；终端选区与中文 IME 稳定性仍需要 GUI 手工验证
 - 工具可用性：本机 `cargo` 可正常执行；当前工程已有 Rust 测试可用于基础回归
 - 证据文件：`Cargo.toml`，`.github/workflows/ci.yml`，`src/terminal/mod.rs`，`src/terminal/input.rs`，`src/app/event_loop.rs`
-- 本轮验证结果：`rustfmt --edition 2024 src/terminal/mod.rs src/terminal/input.rs src/app/event_loop.rs src/session/pane.rs src/session/mod.rs` 通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验待执行；GUI 终端选区与中文 IME 稳定性未手工验证
+- 本轮验证结果：`rustfmt --edition 2024 src/terminal/mod.rs src/terminal/input.rs src/app/event_loop.rs src/session/pane.rs src/session/mod.rs` 通过；后续对 `src/terminal/input.rs` 的选区回归修正也已单独通过 `rustfmt --edition 2024 src/terminal/input.rs`、`cargo check` 和 `cargo test`；总计 18 个测试全部通过；tracking docs 校验待执行；GUI 终端选区与中文 IME 稳定性未手工验证
 
 ## 环境变化检查
 

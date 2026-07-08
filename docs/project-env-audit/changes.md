@@ -666,3 +666,13 @@
 - 计划状态变更：无
 - 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验待执行；仍保留既有 `block v0.1.6` future-incompat warning；GUI 终端选区与中文 IME 稳定性未手工验证
 - 对 plan 的更新：当前环境可支持活动终端交互锁期间的输出延迟与结束后冲刷；后续只需补 GUI 手工确认
+
+## 2026-07-08 修正 mouse up 立即冲刷导致的终端选区回归
+
+- 时间：2026-07-08 17:19 +0800
+- 触发原因：用户截图反馈底部文本仍“选不上”，复查后确认主因是 `on_terminal_mouse_up` 在选区刚形成时就立即冲刷积压输出
+- 执行内容：修改 `src/terminal/input.rs`，移除 `mouse up` 路径中的即时 flush；保留在真正清选区或进入下一段输入交互时再冲刷输出；随后执行 `rustfmt --edition 2024 src/terminal/input.rs`、`cargo check` 和 `cargo test`
+- 影响文件：`src/terminal/input.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验待执行；GUI 终端选区保持仍需手工确认
+- 对 plan 的更新：优先先看“松开鼠标后选区是否保持”；若仍存在最后一行命中偏差，再继续修正 terminal grid bounds 记录

@@ -515,7 +515,6 @@ impl AxShell {
             self.end_drag_split();
         }
         self.terminal_selecting = false;
-        self.flush_active_terminal_output();
         cx.notify();
     }
 
