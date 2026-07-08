@@ -458,6 +458,9 @@ fn default_custom_font_brightness() -> f32 {
     1.0
 }
 
+const CUSTOM_FONT_BRIGHTNESS_MIN: f32 = 0.6;
+const CUSTOM_FONT_BRIGHTNESS_MAX: f32 = 1.2;
+
 fn default_custom_theme_name() -> String {
     "Custom Theme".to_string()
 }
@@ -905,7 +908,7 @@ impl ConfigStore {
         if value <= 0.0 {
             default_custom_font_brightness()
         } else {
-            value.clamp(0.6, 1.6)
+            value.clamp(CUSTOM_FONT_BRIGHTNESS_MIN, CUSTOM_FONT_BRIGHTNESS_MAX)
         }
     }
 
@@ -1052,13 +1055,14 @@ impl ConfigStore {
         if value <= 0.0 {
             default_custom_font_brightness()
         } else {
-            value.clamp(0.6, 1.6)
+            value.clamp(CUSTOM_FONT_BRIGHTNESS_MIN, CUSTOM_FONT_BRIGHTNESS_MAX)
         }
     }
 
     pub fn set_custom_theme_font_brightness_for_mode(&mut self, mode: ThemeMode, brightness: f32) {
         let mut draft = self.effective_custom_theme();
-        Self::custom_theme_mode_mut(&mut draft, mode).font_brightness = brightness.clamp(0.6, 1.6);
+        Self::custom_theme_mode_mut(&mut draft, mode).font_brightness =
+            brightness.clamp(CUSTOM_FONT_BRIGHTNESS_MIN, CUSTOM_FONT_BRIGHTNESS_MAX);
         self.cache.custom_theme = draft;
     }
 

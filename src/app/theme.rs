@@ -1,8 +1,7 @@
 use anyhow::{Context as _, Result, anyhow};
-use gpui::{App, Context, Hsla, SharedString, Window, px};
+use gpui::{App, Context, SharedString, Window, px};
 use gpui_component::{
-    ActiveTheme as _, Colorize, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet,
-    try_parse_color,
+    ActiveTheme as _, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet, try_parse_color,
 };
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
@@ -350,28 +349,6 @@ pub(crate) const CUSTOM_THEME_SECTION_SPECS: &[CustomThemeSectionSpec] = &[
     },
 ];
 
-const BRIGHTNESS_THEME_KEYS: &[&str] = &[
-    "foreground",
-    "primary.foreground",
-    "secondary.foreground",
-    "accent.foreground",
-    "popover.foreground",
-    "sidebar.foreground",
-    "sidebar.primary.foreground",
-    "tab.active.foreground",
-    "tab.foreground",
-    "table.head.foreground",
-    "danger.foreground",
-];
-
-const BRIGHTNESS_HIGHLIGHT_KEYS: &[&str] = &[
-    "editor.foreground",
-    "editor.line_number",
-    "editor.active_line_number",
-];
-
-const BRIGHTNESS_SYNTAX_KEYS: &[&str] = &["keyword", "string", "function", "type", "comment"];
-
 pub(crate) fn custom_theme_name_input_key() -> &'static str {
     CUSTOM_THEME_NAME_INPUT_KEY
 }
@@ -498,13 +475,6 @@ fn custom_theme_file_path(theme_dir: &Path, theme_name: &str) -> PathBuf {
     theme_dir.join(format!("{CUSTOM_THEME_FILE_PREFIX}{slug}.json"))
 }
 
-fn adjust_text_brightness(color: Hsla, factor: f32) -> Hsla {
-    Hsla {
-        l: (color.l * factor).clamp(0.02, 0.98),
-        ..color
-    }
-}
-
 fn custom_theme_field_specs() -> impl Iterator<Item = &'static CustomThemeFieldSpec> {
     CUSTOM_THEME_SECTION_SPECS
         .iter()
@@ -522,35 +492,6 @@ fn is_highlight_status_key(key: &str) -> bool {
         || key.starts_with("info.")
         || key.starts_with("success.")
         || key.starts_with("hint.")
-}
-
-fn adjust_color_value(value: &str, factor: f32) -> Option<String> {
-    let color = try_parse_color(value).ok()?;
-    Some(adjust_text_brightness(color, factor).to_hex())
-}
-
-fn adjust_json_string(object: &mut JsonMap<String, JsonValue>, key: &str, factor: f32) {
-    let Some(JsonValue::String(value)) = object.get_mut(key) else {
-        return;
-    };
-    if let Some(adjusted) = adjust_color_value(value, factor) {
-        *value = adjusted;
-    }
-}
-
-fn adjust_syntax_color(object: &mut JsonMap<String, JsonValue>, token: &str, factor: f32) {
-    let Some(JsonValue::Object(syntax)) = object.get_mut("syntax") else {
-        return;
-    };
-    let Some(JsonValue::Object(style)) = syntax.get_mut(token) else {
-        return;
-    };
-    let Some(JsonValue::String(color)) = style.get_mut("color") else {
-        return;
-    };
-    if let Some(adjusted) = adjust_color_value(color, factor) {
-        *color = adjusted;
-    }
 }
 
 fn set_syntax_override(
@@ -579,26 +520,6 @@ fn set_syntax_override(
         .ok_or_else(|| anyhow!("syntax style entry is not an object"))?;
     style.insert("color".to_string(), JsonValue::String(value.to_string()));
     Ok(())
-}
-
-fn apply_brightness(
-    colors: &mut JsonMap<String, JsonValue>,
-    highlight: &mut JsonMap<String, JsonValue>,
-    brightness: f32,
-) {
-    if (brightness - 1.0).abs() <= f32::EPSILON {
-        return;
-    }
-
-    for key in BRIGHTNESS_THEME_KEYS {
-        adjust_json_string(colors, key, brightness);
-    }
-    for key in BRIGHTNESS_HIGHLIGHT_KEYS {
-        adjust_json_string(highlight, key, brightness);
-    }
-    for token in BRIGHTNESS_SYNTAX_KEYS {
-        adjust_syntax_color(highlight, token, brightness);
-    }
 }
 
 fn build_custom_theme_config(
@@ -652,8 +573,6 @@ fn build_custom_theme_config(
             }
         }
     }
-
-    apply_brightness(&mut colors, &mut highlight, mode_config.font_brightness);
 
     object.insert("colors".to_string(), JsonValue::Object(colors));
     object.insert("highlight".to_string(), JsonValue::Object(highlight));
@@ -920,10 +839,10 @@ impl AxShell {
                 match field.domain {
                     CustomThemeFieldDomain::Brightness => {
                         let brightness = match value.parse::<f32>() {
-                            Ok(value) if (0.6..=1.6).contains(&value) => value,
+                            Ok(value) if (0.6..=1.2).contains(&value) => value,
                             _ => {
                                 self.status = format!(
-                                    "invalid {} value, use 0.60-1.60",
+                                    "invalid {} value, use 0.60-1.20",
                                     field.label.to_lowercase()
                                 )
                                 .into();

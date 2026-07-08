@@ -16,7 +16,7 @@
 | Path | Purpose | Open When | Notes |
 | --- | --- | --- | --- |
 | `src/session/` | 配置持久化、会话模型、本地终端动作、saved session 分组和 pane 状态管理 | 改 config root、会话连接、saved session 分组/重命名、pane split/focus、tab/group 生命周期或本地配置兼容逻辑时 | `mod.rs` 保留会话连接和 tab 生命周期；`pane.rs` 管 pane tree；`saved_sessions.rs` 管 selector 与 saved group |
-| `src/app/` | 启动、日志、应用状态、事件泵、侧栏、设置页、弹窗、主题、字体选择与工作区 UI | 调整应用显示名、启动日志、crash hook、AxShell 状态字段、SAVED 侧栏入口、Custom 页面、theme list、字体下拉、主题应用逻辑和工作区动作时 | `mod.rs` 保留状态结构；`init.rs` 负责 `AxShell::new`；`event_loop.rs` 负责后台事件泵；`ui/` 和 `dialogs/settings/mod.rs` 仍是主要渲染热点 |
+| `src/app/` | 启动、日志、应用状态、事件泵、侧栏、设置页、弹窗、主题、字体选择、原生菜单和工作区 UI | 调整应用显示名、启动日志、crash hook、AxShell 状态字段、SAVED 侧栏入口、Custom 页面、theme list、字体下拉、主题应用逻辑、原生菜单或工作区动作时 | `mod.rs` 保留状态结构；`app_menu.rs` 管 GPUI 原生菜单注册；`init.rs` 负责 `AxShell::new`；`event_loop.rs` 负责后台事件泵；`ui/` 和 `dialogs/settings/mod.rs` 仍是主要渲染热点 |
 | `src/backend/` | 本地/SSH 后端连接、认证 helper、远程系统采样和 PTY/SSH 事件桥接 | 改 SSH 连接、private key 解析、legacy 算法 fallback、本地 shell 或后台事件输出时 | `auth.rs` 管 SSH/SFTP 共用 key 解析；`ssh.rs` 管终端 SSH 主流程；`local.rs` 管本地终端 |
 | `src/sftp/` | SFTP 命令循环、认证、远程路径 helper、文件传输、预览和本地文件操作 | 改 SFTP 连接认证、远程路径拼接、上传/下载、远程删除、预览、编辑远程文件或本地文件浏览时 | `mod.rs` 保留命令循环、传输实现和事件发送 helper；`auth.rs` 管 SFTP SSH 认证；`path.rs` 管路径/格式化 helper；`ops.rs` 管 UI 侧 SFTP/local file 操作 |
 | `src/terminal/` | 终端渲染、颜色、字体 metrics 和交互 | custom theme brightness、终端颜色语义、字体间距、PTY resize 或鼠标命中需要联动时 | 本轮改 `element.rs` 与 `input.rs`，让字体实测 metrics 统一驱动渲染和输入命中 |
@@ -35,6 +35,7 @@
 | `src/session/config.rs` | 本地配置文件模型、路径和 getter/setter | `ConfigFile`，`ConfigStore::load/save`，`config_root_dir_path`，config path helpers | 改配置目录、旧目录迁移、sync 默认对象名、custom theme draft 和 registry file 路径 |
 | `src/app/theme.rs` | 主题注册、当前主题应用和 custom theme 逻辑 | `load_embedded_themes`，`load_user_themes`，`apply_theme_preferences`，`save_custom_appearance` | 本轮已改成“真实 ThemeConfig + theme file 持久化 + registry 即时应用/监听” |
 | `src/app/startup.rs` | 启动辅助、日志初始化和窗口打开 | `init_logging`，`runtime_log_dir`，`crash_report_dir`，`open_main_window`，platform launch helpers | 增加运行日志、crash 日志、panic hook、窗口打开错误记录、日志目录入口或启动期诊断时 |
+| `src/app/app_menu.rs` | GPUI 原生应用菜单注册 | `install`，`app_menus`，`Quit` | 增加/调整系统菜单栏、菜单动作、OS copy/paste 语义或应用级 Quit 行为时 |
 | `src/app/mod.rs` | 全局 UI 状态结构和 app 子模块出口 | `AxShell` fields，type re-exports | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel 或跨模块共享类型时 |
 | `src/app/init.rs` | `AxShell` 初始化和默认状态装配 | `AxShell::new` | 新增输入框、默认配置读取、初始 theme/font/system 状态、订阅或 event pump 启动时 |
 | `src/app/event_loop.rs` | 输入事件、后台事件分发、系统采样和主题同步 | `on_input_event`，`start_event_pump`，`drain_backend_events`，`sample_system_if_due` | 改 backend event 处理、SFTP event 更新、connection progress、system monitor sampling 或 follow-system theme 同步时 |
@@ -60,7 +61,7 @@
 | `src/sftp/mod.rs` | SFTP 命令循环、上传/下载/预览/删除实现 | `spawn_sftp`，`run_sftp`，`download_path_impl`，`upload_paths_impl`，`recursive_delete` | 改 SFTP runtime 命令、传输进度、远程编辑、递归删除、archive 下载或预览实现时 |
 | `src/sftp/auth.rs` | SFTP 连接认证 | `connect_and_authenticate`，`SftpClientHandler` | 改 SFTP SSH 认证主流程或 server key 策略时；private key 解析改 `src/backend/auth.rs` |
 | `src/sftp/path.rs` | SFTP 远程路径和格式化 helper | `join_remote`，`parent_dir`，`format_mtime`，`shell_quote` | 改远程路径拼接、父目录解析、mtime 展示、shell quote 或文件大小格式化时 |
-| `src/terminal/element.rs` | terminal 前景色、高亮、字体 metrics 测量、等宽字体保护与网格渲染 | `TerminalElement`，`terminal_font_is_monospace`，`terminal_monospace_font_family`，`layout_grid`，`cell_run_style` | 终端文本、背景块、光标、PTY resize、比例字体 fallback 或字体间距问题 |
+| `src/terminal/element.rs` | terminal 前景色、高亮、字体 metrics 测量、等宽字体保护、光标对比度与网格渲染 | `TerminalElement`，`terminal_font_is_monospace`，`terminal_monospace_font_family`，`layout_grid`，`cell_run_style`，`cursor_layout` | 终端文本、背景块、光标颜色/形状、PTY resize、比例字体 fallback 或字体间距问题 |
 | `src/terminal/input.rs` | terminal 键盘、鼠标、滚动和 IME 输入 | `terminal_grid_point_and_side`，`on_terminal_scroll` | 鼠标命中、选择、滚动行高或 IME 候选框位置与终端网格不一致时 |
 | `src/main.rs` | 应用启动初始化顺序 | `main()` | 新增用户 theme 文件初始加载和 watch 入口 |
 | `Cargo.toml` | Cargo 包、依赖、Debian metadata | `[package]`，`[package.metadata.deb]` | 改 crate/package name、二进制名、deb assets 或依赖时 |
@@ -96,4 +97,4 @@
 
 ## 最后更新时间
 
-- 2026-07-08 12:08 CST
+- 2026-07-08 13:55 +0800

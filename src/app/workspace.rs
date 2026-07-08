@@ -40,6 +40,7 @@ impl AxShell {
             self.recording_action = None;
             self.keybind_error = None;
             crate::app::keybinding_recorder::bind_workspace_keys_from_config(cx, &self.config);
+            crate::app::app_menu::refresh(cx);
         }
 
         if page == WorkspacePage::Settings {

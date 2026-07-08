@@ -589,13 +589,27 @@ impl TerminalElement {
             if !show_cursor {
                 shape = CursorShape::Hidden;
             }
+            let background = self.cursor_background_color(cursor.row, cursor.col, cx);
             CursorLayout {
                 row: cursor.row,
                 col: cursor.col,
                 shape,
-                color: cx.theme().primary,
+                color: high_contrast_cursor_color(background),
             }
         })
+    }
+
+    fn cursor_background_color(&self, row: usize, col: usize, cx: &App) -> Hsla {
+        let Some(render_cell) = self
+            .snapshot
+            .cells
+            .iter()
+            .find(|cell| cell.row == row as i32 && cell.col == col as i32)
+        else {
+            return cx.theme().background;
+        };
+
+        visible_cell_background(&render_cell.cell, cx)
     }
 }
 
@@ -858,9 +872,9 @@ impl Element for TerminalElement {
                 }
                 CursorShape::Block | CursorShape::HollowBlock => {
                     let alpha = if matches!(cursor.shape, CursorShape::HollowBlock) {
-                        0.18
+                        0.35
                     } else {
-                        0.32
+                        0.72
                     };
                     window.paint_quad(fill(
                         Bounds::new(
@@ -966,6 +980,47 @@ fn adjust_terminal_foreground_brightness(color: Hsla, factor: f32) -> Hsla {
     }
 }
 
+fn visible_cell_background(cell: &alacritty_terminal::term::cell::Cell, cx: &App) -> Hsla {
+    if cell.flags.contains(Flags::INVERSE) {
+        color_to_hsla(cell.fg, false, 1.0, cx)
+    } else if is_default_bg(cell.bg) {
+        cx.theme().background
+    } else {
+        color_to_hsla(cell.bg, false, 1.0, cx)
+    }
+}
+
+fn high_contrast_cursor_color(background: Hsla) -> Hsla {
+    let black = Hsla::black();
+    let white = Hsla::white();
+
+    if contrast_ratio(black, background) >= contrast_ratio(white, background) {
+        black
+    } else {
+        white
+    }
+}
+
+fn contrast_ratio(a: Hsla, b: Hsla) -> f32 {
+    let a = relative_luminance(a);
+    let b = relative_luminance(b);
+    let (lighter, darker) = if a >= b { (a, b) } else { (b, a) };
+    (lighter + 0.05) / (darker + 0.05)
+}
+
+fn relative_luminance(color: Hsla) -> f32 {
+    let rgba = Rgba::from(color);
+    let channel = |value: f32| {
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+
+    0.2126 * channel(rgba.r) + 0.7152 * channel(rgba.g) + 0.0722 * channel(rgba.b)
+}
+
 fn color_to_hsla(color: AnsiColor, foreground: bool, font_brightness: f32, cx: &App) -> Hsla {
     let color = match color {
         AnsiColor::Spec(rgb) => Hsla::from(Rgba {
@@ -1054,11 +1109,12 @@ fn named_color(named: NamedColor, _foreground: bool, cx: &App) -> Hsla {
 
 #[cfg(test)]
 mod tests {
-    use super::keyword_highlight_allowed;
+    use super::{contrast_ratio, high_contrast_cursor_color, keyword_highlight_allowed};
     use alacritty_terminal::{
         term::cell::{Cell, Flags},
         vte::ansi::{Color as AnsiColor, NamedColor},
     };
+    use gpui::{Hsla, rgb};
 
     #[test]
     fn keyword_highlight_allows_default_cells() {
@@ -1087,5 +1143,31 @@ mod tests {
         cell.flags.insert(Flags::INVERSE);
 
         assert!(!keyword_highlight_allowed(&cell));
+    }
+
+    #[test]
+    fn cursor_contrast_uses_white_on_dark_background() {
+        let background = Hsla::from(rgb(0x101010));
+        assert_eq!(high_contrast_cursor_color(background), Hsla::white());
+    }
+
+    #[test]
+    fn cursor_contrast_uses_black_on_light_background() {
+        let background = Hsla::from(rgb(0xf5f5f5));
+        assert_eq!(high_contrast_cursor_color(background), Hsla::black());
+    }
+
+    #[test]
+    fn cursor_contrast_selects_stronger_black_or_white_ratio() {
+        let background = Hsla::from(rgb(0x777777));
+        let cursor = high_contrast_cursor_color(background);
+        let selected = contrast_ratio(cursor, background);
+        let alternative = if cursor == Hsla::black() {
+            contrast_ratio(Hsla::white(), background)
+        } else {
+            contrast_ratio(Hsla::black(), background)
+        };
+
+        assert!(selected >= alternative);
     }
 }

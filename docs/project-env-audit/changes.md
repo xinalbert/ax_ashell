@@ -576,3 +576,63 @@
 - 计划状态变更：无
 - 验证结果：`rustfmt` 通过；`cargo check` 通过；`cargo test` 通过，15 个测试全部通过；tracking docs 校验通过；仍保留既有 `block v0.1.6` future-incompat warning
 - 对 plan 的更新：本轮验证入口不变；GUI 设置页行为仍需手工验证
+
+## 2026-07-08 刷新环境记录到原生菜单栏接入
+
+- 时间：2026-07-08 13:14 +0800
+- 触发原因：用户确认可以使用各系统原生菜单，需要在上一轮提交后进入菜单栏真实实现
+- 执行内容：复查 `Cargo.toml`、`src/main.rs`、`src/app/mod.rs`、`src/app/keybinding_recorder.rs`、`src/app/ui/layout.rs` 和 GPUI `set_menus` API；确认本轮不新增依赖、不需要联网和外部服务
+- 影响文件：`src/main.rs`，`src/app/mod.rs`，`src/app/app_menu.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：验证入口固定为 `rustfmt`、`cargo check`、`cargo test` 和 tracking docs 校验；原生菜单实际显示需 macOS / Windows / Linux GUI 手工确认
+- 对 plan 的更新：菜单栏将作为现有 action 的薄触发层实现，避免复制设置页、会话、pane 和终端复制粘贴逻辑
+
+## 2026-07-08 完成原生菜单栏接入环境验证
+
+- 时间：2026-07-08 13:25 +0800
+- 触发原因：GPUI 原生菜单栏代码已接入，需要把实际验证结果回写到环境记忆
+- 执行内容：执行 `rustfmt --edition 2024 --config skip_children=true src/main.rs src/app/mod.rs src/app/app_menu.rs`、`cargo check`、`cargo test`；确认本轮未新增依赖，未调整 `Cargo.toml` / `Cargo.lock`
+- 影响文件：`src/app/app_menu.rs`，`src/app/mod.rs`，`src/main.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，15 个测试全部通过；仍保留既有 `block v0.1.6` future-incompat warning；GUI 原生菜单显示未手工验证
+- 对 plan 的更新：当前环境可支持 GPUI `App::set_menus` 接入；后续平台差异需通过三端 GUI 验证确认
+
+## 2026-07-08 刷新环境记录到菜单快捷键显示补充
+
+- 时间：2026-07-08 13:36 +0800
+- 触发原因：用户补充要求菜单栏使用各系统默认快捷键，并在菜单项后显示快捷键
+- 执行内容：复查 GPUI macOS / Windows / Linux 平台菜单实现和项目快捷键配置路径；确认 macOS 会从 `keymap` 生成菜单项 key equivalent，Windows / Linux 当前 GPUI 平台层不保证系统菜单右侧快捷键展示；项目侧补齐退出 Settings、恢复 workspace keymap 后的菜单刷新
+- 影响文件：`src/app/app_menu.rs`，`src/app/workspace.rs`，`src/app/dialogs/settings/mod.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt` 通过；`cargo check` 通过；`cargo test` 通过，15 个测试全部通过；tracking docs 校验通过；GUI 原生菜单快捷键展示仍需实机确认
+- 对 plan 的更新：验证入口不变；重点确认 keymap 改动后菜单注册会重新执行
+
+## 2026-07-08 刷新环境记录到终端光标自动反差色
+
+- 时间：2026-07-08 13:47 +0800
+- 触发原因：用户确认实现光标颜色自动随背景变化，以提升终端光标可见性
+- 执行内容：复查 `Cargo.toml`、`src/terminal/element.rs` 和 `src/terminal/mod.rs`；确认本轮只改终端渲染层，不新增依赖、不调整配置格式、不联网
+- 影响文件：`src/terminal/element.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：待执行 `rustfmt`、`cargo check`、`cargo test` 和 tracking docs 校验；终端光标视觉效果仍需 GUI 手工确认
+- 对 plan 的更新：验证入口保持不变；本轮默认做自动反差色，不先加入自定义颜色设置
+
+## 2026-07-08 完成终端光标自动反差色环境验证
+
+- 时间：2026-07-08 13:55 +0800
+- 触发原因：终端光标自动反差色代码已实现，需要回写实际验证结果
+- 执行内容：执行 `rustfmt --edition 2024 --config skip_children=true src/terminal/element.rs`、`cargo check`、`cargo test`；确认本轮未新增依赖，未调整配置格式
+- 影响文件：`src/terminal/element.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验通过；仍保留既有 `block v0.1.6` future-incompat warning；GUI 终端光标视觉效果未手工验证
+- 对 plan 的更新：本轮自动反差色实现已通过本机静态和单元测试验证；后续如需用户精确控制颜色，可再扩展配置项
+
+## 2026-07-08 刷新环境记录到终端字体亮度作用域和范围收口
+
+- 时间：2026-07-08 15:23 +0800
+- 触发原因：用户确认亮度范围使用 0.60-1.20，并要求亮度控制只影响命令行显示部分
+- 执行内容：复查 `src/app/theme.rs`、`src/session/config.rs`、`src/terminal/element.rs` 和 `locales/`；确认本轮不新增依赖、不调整配置格式、不联网、不使用多 agent；亮度设置保留在 terminal 前景色渲染路径，移除 theme 生成阶段的全局颜色改写
+- 影响文件：`src/app/theme.rs`，`src/session/config.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt` 通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验通过；仍保留既有 `block v0.1.6` future-incompat warning；GUI 设置页和终端亮度视觉效果未手工验证
+- 对 plan 的更新：验证入口保持不变；后续如需控制非 terminal 页面亮度，应单独设计为页面主题设置而非复用终端字体亮度

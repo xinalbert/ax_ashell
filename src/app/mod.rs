@@ -1,3 +1,4 @@
+pub mod app_menu;
 pub mod config_sync;
 pub mod constants;
 pub mod dialogs;
