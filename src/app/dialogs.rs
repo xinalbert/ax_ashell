@@ -3063,10 +3063,10 @@ impl AxShell {
                                                         )
                                                         .child(
                                                             Button::new("github-link")
-                                                                .label("https://github.com/xinalbert/ax_shell")
+                                                                .label("https://github.com/xinalbert/axshell")
                                                                 .ghost()
                                                                 .on_click(|_, _window, _cx| {
-                                                                    let _ = open::that("https://github.com/xinalbert/ax_shell");
+                                                                    let _ = open::that("https://github.com/xinalbert/axshell");
                                                                 }),
                                                         )
                                                 }))
