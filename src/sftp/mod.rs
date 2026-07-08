@@ -303,7 +303,13 @@ async fn run_sftp(
         text: t!("sftp_connecting").to_string(),
     });
 
-    let handle = connect_and_authenticate(&session).await?;
+    let session_id = session.id.clone();
+    let (handle, connected_mode) = connect_and_authenticate(&session).await?;
+    let _ = events.send(BackendEvent::SshConnectionModeResolved {
+        tab_id: tab_id.clone(),
+        session_id,
+        mode: connected_mode,
+    });
     let channel = handle
         .channel_open_session()
         .await

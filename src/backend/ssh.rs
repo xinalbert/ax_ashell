@@ -20,7 +20,9 @@ use tokio::{
 
 use crate::{
     backend::auth::{load_session_private_key, private_keys_with_algs},
-    session::config::{AuthMethod, ConfigStore, Session},
+    session::config::{
+        AuthMethod, ConfigStore, Session, SshConnectionMode, ordered_ssh_connection_modes,
+    },
     system::{SystemSnapshot, remote_snapshot_from_kv},
     terminal::{BackendCommand, BackendEvent, BackendTx},
 };
@@ -279,63 +281,8 @@ async fn connect_and_authenticate(
         text: status_text,
     });
 
-    let mut handle = match connect_with_mode(
-        session,
-        &addr,
-        SshCompatibilityMode::Default,
-        x11.clone(),
-    )
-    .await
-    {
-        Ok(handle) => handle,
-        Err(default_err) => {
-            let Some(default_details) = negotiation_error_details(&default_err) else {
-                return Err(default_err);
-            };
-            tracing::warn!(
-                "[ssh] default negotiation failed for {}@{}: {}",
-                session.user,
-                addr,
-                default_details
-            );
-            let short_reason = negotiation_error_short_reason(&default_err)
-                .unwrap_or_else(|| "algorithm mismatch".to_string());
-            let _ = events.send(BackendEvent::Status {
-                tab_id: tab_id.to_string(),
-                text: format!(
-                    "default SSH negotiation failed ({short_reason}), retrying legacy compatibility algorithms"
-                ),
-            });
-
-            match connect_with_mode(session, &addr, SshCompatibilityMode::Legacy, x11.clone()).await
-            {
-                Ok(handle) => {
-                    tracing::warn!(
-                        "[ssh] connected to {} using legacy SSH compatibility mode",
-                        addr
-                    );
-                    let _ = events.send(BackendEvent::Status {
-                        tab_id: tab_id.to_string(),
-                        text: format!("connected to {addr} using legacy SSH compatibility mode"),
-                    });
-                    handle
-                }
-                Err(legacy_err) => {
-                    let legacy_details = negotiation_error_details(&legacy_err)
-                        .unwrap_or_else(|| format!("{legacy_err:#}"));
-                    tracing::error!(
-                        "[ssh] legacy compatibility negotiation failed for {}@{}: {}",
-                        session.user,
-                        addr,
-                        legacy_details
-                    );
-                    return Err(anyhow!(
-                        "SSH negotiation failed. default mode: {default_details}. legacy compatibility mode: {legacy_details}"
-                    ));
-                }
-            }
-        }
-    };
+    let (mut handle, connected_mode) =
+        connect_with_mode_priority(tab_id, session, &addr, events, x11.clone()).await?;
 
     tracing::debug!("[ssh] tcp connected to {}", addr);
 
@@ -445,29 +392,91 @@ async fn connect_and_authenticate(
             session.user, session.host
         ),
     });
+    let _ = events.send(BackendEvent::SshConnectionModeResolved {
+        tab_id: tab_id.to_string(),
+        session_id: session.id.clone(),
+        mode: connected_mode,
+    });
 
     Ok(handle)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SshCompatibilityMode {
-    Default,
-    Legacy,
-}
+async fn connect_with_mode_priority(
+    tab_id: &str,
+    session: &Session,
+    addr: &str,
+    events: &std::sync::mpsc::Sender<BackendEvent>,
+    x11: Option<Arc<X11ForwardingState>>,
+) -> Result<(russh::client::Handle<ClientHandler>, SshConnectionMode)> {
+    let modes = ordered_ssh_connection_modes(session.last_successful_ssh_mode);
+    let mut failures = Vec::new();
 
-impl SshCompatibilityMode {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::Legacy => "legacy compatibility",
+    for (index, mode) in modes.iter().copied().enumerate() {
+        if index > 0 {
+            let _ = events.send(BackendEvent::Status {
+                tab_id: tab_id.to_string(),
+                text: format!("retrying SSH connection in {} mode", mode.label()),
+            });
+        }
+
+        match connect_with_mode(session, addr, mode, x11.clone()).await {
+            Ok(handle) => {
+                if mode == SshConnectionMode::Legacy {
+                    tracing::warn!(
+                        "[ssh] connected to {} using legacy SSH compatibility mode",
+                        addr
+                    );
+                    let _ = events.send(BackendEvent::Status {
+                        tab_id: tab_id.to_string(),
+                        text: format!("connected to {addr} using legacy SSH compatibility mode"),
+                    });
+                } else if session.last_successful_ssh_mode == Some(SshConnectionMode::Legacy) {
+                    let _ = events.send(BackendEvent::Status {
+                        tab_id: tab_id.to_string(),
+                        text: format!("connected to {addr} using default SSH mode"),
+                    });
+                }
+                return Ok((handle, mode));
+            }
+            Err(err) => {
+                let details = negotiation_error_details(&err);
+                let failure = details.clone().unwrap_or_else(|| format!("{err:#}"));
+                tracing::warn!(
+                    "[ssh] {} mode connection failed for {}@{}: {}",
+                    mode.label(),
+                    session.user,
+                    addr,
+                    failure
+                );
+                failures.push(format!("{} mode: {failure}", mode.label()));
+
+                let should_try_next = index + 1 < modes.len()
+                    && (details.is_some() || session.last_successful_ssh_mode == Some(mode));
+                if !should_try_next {
+                    return Err(anyhow!("SSH connection failed. {}", failures.join(". ")));
+                }
+
+                let next = modes[index + 1];
+                let reason = negotiation_error_short_reason(&err)
+                    .map(|reason| format!("SSH negotiation failed ({reason})"))
+                    .unwrap_or_else(|| "SSH connection failed with cached mode".to_string());
+                let _ = events.send(BackendEvent::Status {
+                    tab_id: tab_id.to_string(),
+                    text: format!("{} {reason}, retrying {} mode", mode.label(), next.label()),
+                });
+            }
         }
     }
+
+    Err(anyhow!(
+        "SSH connection failed before any mode was attempted"
+    ))
 }
 
 async fn connect_with_mode(
     session: &Session,
     addr: &str,
-    mode: SshCompatibilityMode,
+    mode: SshConnectionMode,
     x11: Option<Arc<X11ForwardingState>>,
 ) -> Result<russh::client::Handle<ClientHandler>> {
     let stream = crate::session::config::connect_proxy(session).await?;
@@ -480,14 +489,14 @@ async fn connect_with_mode(
     .with_context(|| format!("connect {addr} failed in {} mode", mode.label()))
 }
 
-fn ssh_client_config(mode: SshCompatibilityMode) -> client::Config {
+pub(crate) fn ssh_client_config(mode: SshConnectionMode) -> client::Config {
     let mut config = client::Config {
         inactivity_timeout: Some(std::time::Duration::from_secs(600)),
         keepalive_interval: Some(std::time::Duration::from_secs(3)),
         keepalive_max: 2,
         ..Default::default()
     };
-    if mode == SshCompatibilityMode::Legacy {
+    if mode == SshConnectionMode::Legacy {
         config.preferred = legacy_ssh_preferred();
     }
     config
@@ -549,7 +558,7 @@ fn negotiation_error_short_reason(err: &anyhow::Error) -> Option<String> {
     }
 }
 
-fn negotiation_error_details(err: &anyhow::Error) -> Option<String> {
+pub(crate) fn negotiation_error_details(err: &anyhow::Error) -> Option<String> {
     match russh_error_from_anyhow(err)? {
         RusshError::NoCommonAlgo { kind, ours, theirs } => Some(format!(
             "no common {} algorithm; client offers [{}]; server offers [{}]",

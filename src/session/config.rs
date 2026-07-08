@@ -17,6 +17,37 @@ pub enum AuthMethod {
     Key,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SshConnectionMode {
+    Default,
+    Legacy,
+}
+
+impl SshConnectionMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Legacy => "legacy compatibility",
+        }
+    }
+}
+
+pub fn ordered_ssh_connection_modes(
+    preferred: Option<SshConnectionMode>,
+) -> Vec<SshConnectionMode> {
+    let mut modes = Vec::with_capacity(2);
+    if let Some(preferred) = preferred {
+        modes.push(preferred);
+    }
+    for mode in [SshConnectionMode::Default, SshConnectionMode::Legacy] {
+        if !modes.contains(&mode) {
+            modes.push(mode);
+        }
+    }
+    modes
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
@@ -37,6 +68,8 @@ pub struct Session {
     pub passphrase: String,
     #[serde(default)]
     pub last_used: Option<String>,
+    #[serde(default)]
+    pub last_successful_ssh_mode: Option<SshConnectionMode>,
     #[serde(default = "default_global_proxy_type")]
     pub proxy_type: String, // "none", "socks5", "http"
     #[serde(default)]
@@ -65,6 +98,7 @@ impl Session {
             private_key_inline: String::new(),
             passphrase: String::new(),
             last_used: None,
+            last_successful_ssh_mode: None,
             proxy_type: "none".to_string(),
             proxy_host: String::new(),
             proxy_port: None,
@@ -95,6 +129,7 @@ impl Session {
             private_key_inline,
             passphrase,
             last_used: None,
+            last_successful_ssh_mode: None,
             proxy_type: "none".to_string(),
             proxy_host: String::new(),
             proxy_port: None,
@@ -1210,6 +1245,21 @@ impl ConfigStore {
         }
     }
 
+    pub fn set_session_last_successful_ssh_mode(
+        &mut self,
+        id: &str,
+        mode: SshConnectionMode,
+    ) -> bool {
+        let Some(session) = self.cache.sessions.iter_mut().find(|s| s.id == id) else {
+            return false;
+        };
+        if session.last_successful_ssh_mode == Some(mode) {
+            return false;
+        }
+        session.last_successful_ssh_mode = Some(mode);
+        true
+    }
+
     pub fn remove(&mut self, id: &str) {
         self.cache.sessions.retain(|s| s.id != id);
     }
@@ -1441,5 +1491,30 @@ pub fn active_proxy(session: &Session) -> Option<(String, String, Option<u16>)> 
         Some((proxy_type, proxy_host, proxy_port))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SshConnectionMode, ordered_ssh_connection_modes};
+
+    #[test]
+    fn ssh_connection_modes_default_to_safe_order() {
+        assert_eq!(
+            ordered_ssh_connection_modes(None),
+            vec![SshConnectionMode::Default, SshConnectionMode::Legacy]
+        );
+    }
+
+    #[test]
+    fn ssh_connection_modes_prioritize_last_successful_mode() {
+        assert_eq!(
+            ordered_ssh_connection_modes(Some(SshConnectionMode::Legacy)),
+            vec![SshConnectionMode::Legacy, SshConnectionMode::Default]
+        );
+        assert_eq!(
+            ordered_ssh_connection_modes(Some(SshConnectionMode::Default)),
+            vec![SshConnectionMode::Default, SshConnectionMode::Legacy]
+        );
     }
 }

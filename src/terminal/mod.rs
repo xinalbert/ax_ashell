@@ -15,7 +15,7 @@ use alacritty_terminal::{
 };
 use gpui::Keystroke;
 
-use crate::session::config::Session;
+use crate::session::config::{Session, SshConnectionMode};
 use crate::sftp::{PreviewData, RemoteEntry};
 use crate::system::SystemSnapshot;
 
@@ -45,6 +45,11 @@ pub enum BackendEvent {
     },
     Connected {
         tab_id: String,
+    },
+    SshConnectionModeResolved {
+        tab_id: String,
+        session_id: String,
+        mode: SshConnectionMode,
     },
     SftpEntries {
         tab_id: String,

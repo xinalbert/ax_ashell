@@ -238,6 +238,14 @@
 - 验证结果：确认本轮不需要联网和外部服务；实施验证命令收敛为 `rustfmt --edition 2024 --config skip_children=true src/session/config.rs src/session/mod.rs src/app/mod.rs src/app/dialogs.rs src/app/ui.rs` 和 `cargo check`
 - 风险/待办：最终交互效果仍需 GUI 手工确认；折叠侧栏因空间约束预计继续保留紧凑会话入口而非完整组头结构
 
+## 2026-07-08 刷新环境记录到 SSH 成功连接方法优先级缓存任务
+
+- 目的：在进入 SSH default/legacy 成功模式缓存实现前，确认当前项目环境、验证命令和外部依赖边界
+- 改动范围：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查 `Cargo.toml`、`src/session/config.rs`、`src/backend/ssh.rs`、`src/sftp/auth.rs`、`src/session/mod.rs`、`src/app/event_loop.rs` 与 `src/terminal/mod.rs`；确认主技术栈、依赖版本和 CI 事实未变，只将 current 记录的任务语境切换到 SSH 成功模式优先级缓存
+- 验证结果：`rustfmt` 通过；`cargo test ssh_connection_modes` 通过，2 个定向测试全部通过；`cargo check` 通过；`cargo test` 通过，15 个测试全部通过；仍保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：真实 SSH / SFTP 联机效果仍需目标服务器手工验证；代理路径优先级缓存不在本轮范围
+
 ## 2026-07-07 完成 SSH 会话分组任务的本机验证
 
 - 目的：在 SAVED 分组、SSH 表单组选项和组重命名实现完成后，把本轮实际验证结果回写到环境记忆

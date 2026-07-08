@@ -188,6 +188,30 @@ impl AxShell {
                         self.connection_progress = None;
                     }
                 }
+                BackendEvent::SshConnectionModeResolved {
+                    tab_id,
+                    session_id,
+                    mode,
+                } => {
+                    for tab in self.tabs.iter_mut() {
+                        if tab.id == tab_id
+                            || tab
+                                .session
+                                .as_ref()
+                                .is_some_and(|session| session.id == session_id)
+                        {
+                            if let Some(session) = tab.session.as_mut() {
+                                session.last_successful_ssh_mode = Some(mode);
+                            }
+                        }
+                    }
+                    if self
+                        .config
+                        .set_session_last_successful_ssh_mode(&session_id, mode)
+                    {
+                        let _ = self.config.save();
+                    }
+                }
                 BackendEvent::SftpEntries {
                     tab_id,
                     path,

@@ -143,10 +143,17 @@ impl AxShell {
             session_name
         };
         let existing_id = self.editing_session_id.clone();
-        let existing_last_used = existing_id
+        let existing_session = existing_id
             .as_deref()
             .and_then(|id| self.config.get(id))
+            .cloned();
+        let existing_last_used = existing_session
+            .as_ref()
             .and_then(|session| session.last_used.clone());
+        let existing_last_successful_ssh_mode = existing_session
+            .as_ref()
+            .filter(|session| session.host == host && session.port == port && session.user == user)
+            .and_then(|session| session.last_successful_ssh_mode);
 
         let mut session = match self.ssh_auth_method {
             AuthMethod::Password => Session::password(host, port, user, password),
@@ -165,6 +172,7 @@ impl AxShell {
             session.id = id;
         }
         session.last_used = existing_last_used;
+        session.last_successful_ssh_mode = existing_last_successful_ssh_mode;
         session.proxy_type = self.ssh_proxy_type.clone();
         session.proxy_host = self.proxy_host_input.read(cx).value().trim().to_string();
         session.proxy_port = self
