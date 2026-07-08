@@ -646,3 +646,23 @@
 - 计划状态变更：无
 - 验证结果：`rustfmt` 通过；`cargo check` 通过；`cargo test` 与 tracking docs 校验待执行；GUI 终端选区稳定性未手工验证
 - 对 plan 的更新：验证入口保持不变；若第一阶段收益不足，下一阶段再评估 row hash / row layout cache
+
+## 2026-07-08 刷新环境记录到终端交互期输出延迟
+
+- 时间：2026-07-08 16:53 +0800
+- 触发原因：用户补充 `Working` 是 Codex 在终端中的流式文本，并指出中文 IME 候选会被刷新打断，需要把任务从“减少刷新”收口到“交互期间延迟应用输出”
+- 执行内容：复查 `src/terminal/mod.rs`、`src/terminal/input.rs`、`src/terminal/element.rs`、`src/app/event_loop.rs`、`src/session/pane.rs` 与 `src/session/mod.rs`；确认本轮不新增依赖、不调整配置格式、不联网、不使用多 agent
+- 影响文件：`src/terminal/mod.rs`，`src/terminal/input.rs`，`src/app/event_loop.rs`，`src/session/pane.rs`，`src/session/mod.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：待执行 `rustfmt`、`cargo check`、`cargo test` 与 tracking docs 校验；GUI 终端选区与中文 IME 稳定性仍需手工验证
+- 对 plan 的更新：验证入口保持不变；实现边界改为活动终端交互锁期间的输出缓存和结束后冲刷
+
+## 2026-07-08 完成终端交互期输出延迟环境验证
+
+- 时间：2026-07-08 17:07 +0800
+- 触发原因：终端交互期输出延迟代码已实现，需要回写实际验证结果
+- 执行内容：执行 `rustfmt --edition 2024 src/terminal/mod.rs src/terminal/input.rs src/app/event_loop.rs src/session/pane.rs src/session/mod.rs`、`cargo check`、`cargo test`；确认本轮未新增依赖，未调整 `Cargo.toml` / `Cargo.lock`
+- 影响文件：`src/terminal/mod.rs`，`src/terminal/input.rs`，`src/app/event_loop.rs`，`src/session/pane.rs`，`src/session/mod.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：格式化通过；`cargo check` 通过；`cargo test` 通过，18 个测试全部通过；tracking docs 校验待执行；仍保留既有 `block v0.1.6` future-incompat warning；GUI 终端选区与中文 IME 稳定性未手工验证
+- 对 plan 的更新：当前环境可支持活动终端交互锁期间的输出延迟与结束后冲刷；后续只需补 GUI 手工确认
