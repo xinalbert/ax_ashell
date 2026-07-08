@@ -2,62 +2,67 @@
 
 ## 当前目标
 
-- 目标：修复双列 SFTP 面板顶部工具区占用过高、两列样式不一致问题
-- 交付物：远端 / 本地顶部结构一致、功能按钮压缩到单行、列表区保留更多可用高度、必要的跟踪记录更新、编译验证
+- 目标：升级 Rust 依赖集合并将项目 MSRV 收口到当前依赖要求
+- 交付物：更新后的 `Cargo.toml` / `Cargo.lock`、Rust `1.88.0` MSRV 文档、最新编译与测试验证结果、实施跟踪与环境记录
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/mod.rs`，`src/app/ui.rs`，`src/sftp/ops.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
-- 不在本轮范围内：SSH / SFTP 协议层、远端传输后端、侧栏改版、README / user-guide 大改、设置页结构调整
+- 当前范围：`Cargo.toml`，`Cargo.lock`，`docs/development.md`，`docs/development.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 不在本轮范围内：大规模源码迁移、UI 行为改动、release workflow 改造、未经验证的 git 依赖前移
 
 ## 当前状态
 
 - 阶段：已完成
 - 开工判定：允许开工
-- 是否需要联网：否
+- 是否需要联网：是，已完成
 - 多 agent：未使用
 
 ## 活动计划
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 刷新 current plan / env 记录并确认双列 SFTP 面板的代码落点 | `docs/` contract 自检，源码走查 | 实现边界已收敛到 `src/app/mod.rs`、`src/app/ui.rs`、`src/sftp/ops.rs` |
-| P2 | completed | 新增本地文件浏览状态、导航、选择和上传到当前远端目录的 helper | `cargo check` | 保持现有远端后端命令不变，复用 `UploadPaths` |
-| P3 | completed | 将 SFTP 面板拆成远端 / 本地两列并完成 tracking 校验 | `cargo check`，`python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .` | 继续保留现有远端下载目录选择器语义 |
-| P4 | completed | 根据截图修复双列容器纵向拉伸和列表区高度塌缩 | `rustfmt --edition 2024 src/app/ui.rs`，`cargo check` | 在 `h_flex` 容器和左右 pane 上补齐 `items_stretch` / `h_full` / `overflow_hidden` |
-| P5 | completed | 根据截图将远端 / 本地功能按钮压缩到同一行并统一样式 | `rustfmt --edition 2024 src/app/ui.rs`，`cargo check` | 标题独立一行，路径、上级、功能按钮合并为紧凑工具行，按钮改为图标 + tooltip |
+| P1 | completed | 刷新 tracking / env 当前态并确认本轮升级边界 | `docs/` contract 自检，`Cargo.toml` / `Cargo.lock` 走查 | 现有 `project-map.md` 已覆盖 `Cargo.toml` / `Cargo.lock`，无需刷新地图 |
+| P2 | completed | 用 Cargo registry 结果识别还能升级的依赖集合 | `cargo update --dry-run`，`cargo info`，crates.io API 查询 | 已区分 lockfile 小升级、manifest 大版本升级和需要源码迁移的候选 |
+| P3 | completed | 落地可安全升级的 lockfile / manifest 调整 | `git diff Cargo.toml Cargo.lock`，`cargo check --locked` | 已将 `rust-version` 提升到 `1.88.0`，匹配 `image` / `time` 当前要求 |
+| P4 | completed | 完成测试与 tracking docs 校验 | `cargo check --examples --locked`，`cargo test --locked`，tracking docs 校验 | 未做 GUI / 平台手工验证 |
 
 ## 已完成
 
-- 已读取 `docs/project-implementation-tracker/project-map.md`、`docs/project-env-audit/current.md` 与当前 tracking / env 历史
-- 已在 `src/app/mod.rs` 中新增本地文件浏览状态、路径输入、滚动句柄与输入订阅
-- 已在 `src/sftp/ops.rs` 中实现本地目录解析、读取、刷新、选择、全选和上传到当前远端目录的 helper
-- 已将 `src/app/ui.rs` 中的 SFTP 面板重组为远端 / 本地双列布局，并保留现有拖拽上传和远端下载行为
-- 已同步 `locales/en.yml` 与 `locales/zh-CN.yml`，补充本地列和“上传所选”文案
-- 已根据 2026-07-08 截图反馈修复双列外层 `h_flex` 未拉伸导致的左右列错位和列表区塌缩问题
-- 已根据 2026-07-08 截图反馈将远端 / 本地顶部功能按钮合并到路径行，并统一为小号图标按钮加 tooltip
+- 已读取 `docs/project-implementation-tracker/project-map.md`、`docs/project-env-audit/current.md` 与现有 tracking / env 历史
+- 已确认本轮接续当前未提交的 `Cargo.lock` / docs 改动，不回滚前一轮 `anyhow`、`open`、`uuid` 升级
+- 已确认项目地图覆盖本轮依赖文件范围，无需刷新 `project-map.md`
+- 已执行全量和逐包 `cargo update --dry-run`，并通过 crates.io API / `cargo info` 识别 manifest 级升级候选
+- 已将项目 MSRV 从 `1.85.0` 提升到 `1.88.0`，同步 `docs/development.md` 与 `docs/development.en.md`
+- 已升级直依赖约束：`directories 6`、`portable-pty 0.9`、`rfd 0.17`、`rust-i18n 4`、`thiserror 2`、`notify 8`、`zip 8`、`reqwest 0.13`
+- 已更新 lockfile：前一轮 `anyhow` / `open` / `uuid` 小升级继续保留，本轮补充 `time 0.3.53`、`reqwest 0.13.4`、`zip 8.6.0` 等解析结果
+- 已尝试 `chacha20poly1305 0.11` / `hmac 0.13` / `rand 0.10` / `sha2 0.11`，确认需要源码 API 迁移，已回退该组升级
 
 ## 验证
 
-- 已完成：项目地图、SFTP UI / backend 边界和相关 tracking / env 文档走查
-- 已完成：`rustfmt --edition 2024 src/app/mod.rs src/app/ui.rs src/sftp/ops.rs`
-- 已完成：`rustfmt --edition 2024 src/app/ui.rs`
-- 已完成：`cargo check`
-- 已完成：`python3 /Users/albertxin/.codex/skills/project-implementation-tracker/scripts/validate_tracking_docs.py .`
-- 未完成：Windows / macOS GUI 手工验证
+- 已完成：项目地图、当前 env/tracking 记录、现有未提交 diff 走查
+- 已完成：`cargo update --dry-run`
+- 已完成：逐包 `cargo update --dry-run -p <dependency>`
+- 已完成：`cargo info time@0.3.53`、`cargo info reqwest@0.13.4`
+- 已完成：crates.io API 直依赖最新版本扫描
+- 已完成：`cargo check --locked`
+- 已完成：`cargo check --examples --locked`
+- 已完成：`cargo test --locked`
+- 已完成：tracking docs 校验
+- 未完成：运行时 / GUI 手工验证
 
 ## 风险与阻塞
 
 - 阻塞：无
-- 风险一：本轮不改远端后端协议层，只在前端补本地浏览与上传联动；若后续要做“下载到当前本地列目录”而不是弹出目录选择器，需要再单独收口下载语义
-- 风险二：本轮只做代码级验证，截图反馈对应的高度和工具条问题已从布局约束层修复，但 Windows / macOS 实际窗口尺寸下仍需手工确认无挤压和遮挡
+- 风险一：本轮未做 GUI / 平台手工回归；依赖升级已通过编译、examples 和单元测试，但仍需后续实际启动验证
+- 风险二：加密相关依赖的新主版本会改变 `rand` / `hmac` API，已明确不纳入本次无源码迁移升级
+- 风险三：仍保留既有 `block v0.1.6` future-incompat warning，来源于 GPUI / cocoa 传递依赖
 
 ## 下一步
 
-- 重新运行应用并确认远端 / 本地两列顶部一致，功能按钮在同一行，列表内容有足够显示高度
-- 若后续要统一双栏交互语义，再把远端下载目标改成当前本地列目录
+- 如需继续清理依赖，单独规划加密依赖 API 迁移或 GPUI git 依赖前移
+- 如需发布，使用 Rust `1.88.0` 或更新工具链构建
 
 ## 最后更新时间
 
-- 2026-07-08 07:00 CST
+- 2026-07-08 08:08 CST

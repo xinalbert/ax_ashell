@@ -258,6 +258,38 @@
 
 - 目的：在进入 custom theme 从运行时 override 迁移到真实 registry/save 流程前，确认当前项目环境、验证命令和本轮外部依赖边界
 - 改动范围：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+
+## 2026-07-08 刷新环境记录到依赖小升级任务
+
+- 目的：在进入 `anyhow` / `open` / `uuid` lockfile 小版本升级前，确认当前项目环境、依赖边界和验证命令
+- 改动范围：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：复查 `Cargo.toml`、`Cargo.lock`、`.github/workflows/ci.yml` 与前一轮 `cargo update --dry-run` / `cargo info` 结果；将 current 记录从 SFTP UI 任务切换到依赖小升级语境
+- 验证结果：确认主技术栈、`rust-version = 1.85.0` 和 CI 构建入口未变；本轮实施验证命令收敛为 `cargo update -p anyhow -p open -p uuid`、`cargo check` 与 tracking docs 校验
+- 风险/待办：更大版本升级与 `zed` git 依赖前移仍受当前 Rust 版本限制，不在本轮范围
+
+## 2026-07-08 完成依赖小升级任务的本机验证
+
+- 目的：在 lockfile 小版本升级完成后，把本轮实际执行的升级结果和本机验证回写到环境记忆
+- 改动范围：`Cargo.lock`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：执行 `cargo update -p anyhow -p open -p uuid`，确认 `Cargo.lock` 中 `anyhow`、`open`、`uuid` 已升级；复查额外传递依赖变化；执行 `cargo check` 与 tracking docs 校验
+- 验证结果：编译检查通过，tracking docs 校验通过；本轮除目标依赖升级外，仅额外移除了 `pathdiff` 并让 `tempfile` 改用 `getrandom 0.3.4`；仍保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：若继续推进依赖更新，下一步需先决定是否提升 `rust-version`，否则 `zed` 相关 git 依赖和多项较新 crate 仍会被工具链卡住
+
+## 2026-07-08 刷新环境记录到继续升级其他依赖任务
+
+- 目的：在最新 stable Rust 验证通过后，继续尝试升级除 `anyhow` / `open` / `uuid` 之外的其他 Rust 依赖
+- 改动范围：`Cargo.toml`，`Cargo.lock`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：复查 `Cargo.toml`、`Cargo.lock`、CI 构建入口和当前未提交 diff；确认主技术栈、`rust-version = 1.85.0` 和本机 `rustc 1.96.1` 事实未变；将 current 记录切换到继续升级其他依赖的预检态
+- 验证结果：确认本轮需要访问 Cargo registry / git index 获取最新兼容解；实施验证命令收敛为 `cargo update --dry-run`、`cargo check --locked`、`cargo test --locked` 和 tracking docs 校验
+- 风险/待办：当前已有前一轮 lockfile diff；若本轮继续升级成功，最终 `Cargo.lock` diff 会包含前一轮和本轮依赖变化
+
+## 2026-07-08 完成 Rust 依赖集合升级的本机验证
+
+- 目的：在继续升级其他依赖完成后，把实际 MSRV 调整、依赖变更和验证结果回写到环境记忆
+- 改动范围：`Cargo.toml`，`Cargo.lock`，`docs/development.md`，`docs/development.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 执行内容：将 `rust-version` 从 `1.85.0` 提升到 `1.88.0`；升级 `directories`、`portable-pty`、`rfd`、`rust-i18n`、`thiserror`、`notify`、`zip`、`reqwest` 等直依赖约束；更新 lockfile；同步开发文档中的 Rust 版本要求
+- 验证结果：`cargo check --locked` 通过；`cargo check --examples --locked` 通过；`cargo test --locked` 通过，13 个测试全部通过；仍保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：`chacha20poly1305` / `hmac` / `rand` / `sha2` 新主版本需要源码 API 迁移，未纳入本轮；GUI / 平台手工验证仍需后续执行
 - 执行内容：复查 `Cargo.toml`、`src/app/theme.rs`、`src/app/dialogs.rs`、`src/app/mod.rs`、`src/session/config.rs`、`src/terminal/element.rs` 与 `gpui-component` theme registry/schema；确认主技术栈和依赖版本未变，只将 current 记录切换到 custom theme 注册化任务语境
 - 验证结果：确认本轮不需要联网和外部服务；实施验证命令收敛为 `rustfmt --edition 2024 --config skip_children=true src/app/theme.rs src/app/mod.rs src/app/dialogs.rs src/session/config.rs src/terminal/element.rs src/main.rs`、`cargo check`、`cargo test` 和 tracking docs 校验
 - 风险/待办：GUI 手工验证仍需本机确认；同名 custom theme 保存时需要避免当前会话继续吃旧 registry 缓存
