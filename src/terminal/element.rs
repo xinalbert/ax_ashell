@@ -436,11 +436,11 @@ impl TerminalElement {
         let frozen_cells = frozen_cells_by_position(self.frozen_selection.as_ref(), &self.snapshot);
         let frozen_highlights =
             frozen_highlights_by_position(self.frozen_selection.as_ref(), &self.snapshot);
-        let active_selection = self
-            .frozen_selection
-            .as_ref()
-            .and_then(|frozen| remap_frozen_selection(frozen, &self.snapshot))
-            .or(self.snapshot.selection);
+        let active_selection = if let Some(frozen) = self.frozen_selection.as_ref() {
+            remap_frozen_selection(frozen, &self.snapshot)
+        } else {
+            self.snapshot.selection
+        };
 
         for render_cell in &self.snapshot.cells {
             let render_cell = frozen_cells
@@ -1030,15 +1030,13 @@ fn frozen_cells_by_position(
     let frozen_selection = frozen_selection?;
     let mut cells = std::collections::HashMap::with_capacity(frozen_selection.cells.len());
     for cell in &frozen_selection.cells {
-        let Some(row) =
-            remap_frozen_bottom_index_for_snapshot(cell.bottom_index, frozen_selection, snapshot)
-        else {
+        if cell.row < 0 || cell.row >= snapshot.rows as i32 {
             continue;
-        };
+        }
         cells.insert(
-            (row, cell.col),
+            (cell.row, cell.col),
             RenderCell {
-                row,
+                row: cell.row,
                 col: cell.col,
                 cell: cell.cell.clone(),
             },
@@ -1054,63 +1052,21 @@ fn frozen_highlights_by_position(
     let frozen_selection = frozen_selection?;
     let mut highlights =
         std::collections::HashMap::with_capacity(frozen_selection.highlights.len());
-    for ((bottom_index, col), color) in &frozen_selection.highlights {
-        let Some(row) =
-            remap_frozen_bottom_index_for_snapshot(*bottom_index, frozen_selection, snapshot)
-        else {
+    for ((row, col), color) in &frozen_selection.highlights {
+        if *row < 0 || *row >= snapshot.rows as i32 {
             continue;
-        };
-        highlights.insert((row, *col), *color);
+        }
+        highlights.insert((*row, *col), *color);
     }
     Some(highlights)
-}
-
-fn frozen_stream_delta(
-    frozen_selection: &TerminalFrozenSelection,
-    snapshot: &RenderSnapshot,
-) -> usize {
-    if frozen_selection.display_offset == 0 && snapshot.display_offset == 0 {
-        snapshot
-            .history_size
-            .saturating_sub(frozen_selection.history_size)
-    } else {
-        0
-    }
-}
-
-fn frozen_row_offset(frozen_selection: &TerminalFrozenSelection, snapshot: &RenderSnapshot) -> i32 {
-    if let Some(selection) = snapshot.selection {
-        return selection.start_row as i32 - frozen_selection.selection.start_row as i32;
-    }
-
-    -(frozen_stream_delta(frozen_selection, snapshot) as i32)
-}
-
-fn remap_frozen_bottom_index_for_snapshot(
-    bottom_index: usize,
-    frozen_selection: &TerminalFrozenSelection,
-    snapshot: &RenderSnapshot,
-) -> Option<i32> {
-    let original_row = frozen_selection.viewport_rows as i32 - 1 - bottom_index as i32;
-    let row = original_row + frozen_row_offset(frozen_selection, snapshot);
-    (row >= 0 && row < snapshot.rows as i32).then_some(row)
 }
 
 fn remap_frozen_selection(
     frozen_selection: &TerminalFrozenSelection,
     snapshot: &RenderSnapshot,
 ) -> Option<ViewportSelection> {
-    if let Some(selection) = snapshot.selection {
-        return Some(selection);
-    }
-
-    let offset = frozen_row_offset(frozen_selection, snapshot);
-    let map_row = |row: usize| {
-        let original_row = row as i32;
-        original_row + offset
-    };
-    let raw_start = map_row(frozen_selection.selection.start_row);
-    let raw_end = map_row(frozen_selection.selection.end_row);
+    let raw_start = frozen_selection.selection.start_row as i32;
+    let raw_end = frozen_selection.selection.end_row as i32;
     let rows = snapshot.rows as i32;
     if raw_end < 0 || raw_start >= rows {
         return None;
@@ -1383,10 +1339,12 @@ fn named_color(named: NamedColor, _foreground: bool, cx: &App) -> Hsla {
 mod tests {
     use super::{
         byte_index_for_utf16_offset, composition_selected_byte_range, contrast_ratio,
-        high_contrast_cursor_color, keyword_highlight_allowed,
-        remap_frozen_bottom_index_for_snapshot, remap_frozen_selection,
+        frozen_cells_by_position, high_contrast_cursor_color, keyword_highlight_allowed,
+        remap_frozen_selection,
     };
-    use crate::terminal::{RenderSnapshot, TerminalFrozenSelection, ViewportSelection};
+    use crate::terminal::{
+        FrozenRenderCell, RenderSnapshot, TerminalFrozenSelection, ViewportSelection,
+    };
     use alacritty_terminal::{
         term::cell::{Cell, Flags},
         vte::ansi::{Color as AnsiColor, NamedColor},
@@ -1480,23 +1438,19 @@ mod tests {
     }
 
     #[test]
-    fn frozen_bottom_index_moves_up_with_stream_history() {
-        let frozen = frozen_selection(10, 5, 8, 8);
+    fn frozen_selection_stays_at_viewport_position_with_stream_history() {
+        let frozen = frozen_selection(8, 8);
         let snapshot = snapshot(10, 7);
 
         assert_eq!(
-            remap_frozen_bottom_index_for_snapshot(1, &frozen, &snapshot),
-            Some(6)
-        );
-        assert_eq!(
             remap_frozen_selection(&frozen, &snapshot).map(|selection| selection.start_row),
-            Some(6)
+            Some(8)
         );
     }
 
     #[test]
-    fn frozen_bottom_index_follows_live_selection_when_history_saturates() {
-        let frozen = frozen_selection(10, 2000, 8, 8);
+    fn frozen_selection_ignores_live_selection_after_refresh() {
+        let frozen = frozen_selection(8, 8);
         let live_selection = ViewportSelection {
             start_row: 6,
             start_col: 0,
@@ -1507,21 +1461,30 @@ mod tests {
         let snapshot = snapshot_with_selection(10, 2000, Some(live_selection));
 
         assert_eq!(
-            remap_frozen_bottom_index_for_snapshot(1, &frozen, &snapshot),
-            Some(6)
-        );
-        assert_eq!(
             remap_frozen_selection(&frozen, &snapshot).map(|selection| selection.start_row),
-            Some(6)
+            Some(8)
         );
     }
 
-    fn frozen_selection(
-        viewport_rows: usize,
-        history_size: usize,
-        start_row: usize,
-        end_row: usize,
-    ) -> TerminalFrozenSelection {
+    #[test]
+    fn frozen_cells_stay_at_captured_viewport_rows() {
+        let mut frozen = frozen_selection(8, 8);
+        let mut cell = Cell::default();
+        cell.c = 'x';
+        frozen.cells.push(FrozenRenderCell {
+            row: 8,
+            col: 2,
+            cell,
+        });
+        let snapshot = snapshot(10, 7);
+
+        let cells = frozen_cells_by_position(Some(&frozen), &snapshot).unwrap();
+
+        assert!(cells.contains_key(&(8, 2)));
+        assert!(!cells.contains_key(&(6, 2)));
+    }
+
+    fn frozen_selection(start_row: usize, end_row: usize) -> TerminalFrozenSelection {
         TerminalFrozenSelection {
             tab_id: "tab".to_string(),
             selection: ViewportSelection {
@@ -1531,9 +1494,6 @@ mod tests {
                 end_col: 3,
                 is_block: false,
             },
-            viewport_rows,
-            history_size,
-            display_offset: 0,
             cells: Vec::new(),
             highlights: HashMap::new(),
             text: "text".to_string(),

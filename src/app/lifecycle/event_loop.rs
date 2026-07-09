@@ -175,18 +175,9 @@ impl AxShell {
         while let Ok(event) = self.runtime_state.events_rx.try_recv() {
             match event {
                 BackendEvent::Output { tab_id, bytes } => {
-                    let mut clear_frozen_selection = false;
                     if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                         tab.backend_initialized = true;
                         result.terminal_changed |= tab.feed(&bytes);
-                        clear_frozen_selection = self
-                            .terminal_frozen_selection
-                            .as_ref()
-                            .is_some_and(|frozen| frozen.tab_id == tab_id)
-                            && !tab.selection_active();
-                    }
-                    if clear_frozen_selection {
-                        self.terminal_frozen_selection = None;
                     }
                 }
                 BackendEvent::Status { tab_id, text } => {
@@ -472,11 +463,19 @@ impl AxShell {
     }
 
     fn active_terminal_has_selection(&self) -> bool {
+        let Some(active_id) = self.active_tab.as_ref() else {
+            return self.terminal_selecting;
+        };
+
         self.terminal_selecting
             || self
-                .active_tab
+                .terminal_frozen_selection
                 .as_ref()
-                .and_then(|active_id| self.tabs.iter().find(|tab| &tab.id == active_id))
+                .is_some_and(|frozen| frozen.tab_id == *active_id)
+            || self
+                .tabs
+                .iter()
+                .find(|tab| &tab.id == active_id)
                 .is_some_and(crate::terminal::TerminalTab::selection_active)
     }
 

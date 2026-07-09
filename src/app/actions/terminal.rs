@@ -754,13 +754,10 @@ impl AxShell {
                 let row = cell.row.max(0) as usize;
                 row >= start_row && row <= end_row
             })
-            .filter_map(|cell| {
-                let bottom_index = bottom_index_for_row(snapshot.rows, cell.row)?;
-                Some(FrozenRenderCell {
-                    bottom_index,
-                    col: cell.col,
-                    cell: cell.cell.clone(),
-                })
+            .map(|cell| FrozenRenderCell {
+                row: cell.row,
+                col: cell.col,
+                cell: cell.cell.clone(),
             })
             .collect();
         let highlights = snapshot
@@ -771,17 +768,13 @@ impl AxShell {
                 if row_usize < start_row || row_usize > end_row {
                     return None;
                 }
-                let bottom_index = bottom_index_for_row(snapshot.rows, row)?;
-                Some(((bottom_index, col), color))
+                Some(((row, col), color))
             })
             .collect();
 
         self.terminal_frozen_selection = Some(TerminalFrozenSelection {
             tab_id: active_id,
             selection,
-            viewport_rows: snapshot.rows,
-            history_size: snapshot.history_size,
-            display_offset: snapshot.display_offset,
             cells,
             highlights,
             text: tab.selection_text().unwrap_or_default(),
@@ -794,11 +787,6 @@ fn selection_row_range(selection: crate::terminal::ViewportSelection) -> (usize,
         selection.start_row.min(selection.end_row),
         selection.start_row.max(selection.end_row),
     )
-}
-
-fn bottom_index_for_row(rows: usize, row: i32) -> Option<usize> {
-    let row = usize::try_from(row).ok()?;
-    (row < rows).then_some(rows.saturating_sub(1).saturating_sub(row))
 }
 
 fn normalize_utf16_range(range: Option<Range<usize>>, text: &str) -> Option<Range<usize>> {
