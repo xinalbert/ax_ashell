@@ -1,15 +1,21 @@
-use std::sync::Arc;
+use std::{io, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, anyhow};
 use russh::{Disconnect, client};
+use tokio::time::sleep;
 
 use crate::{
     backend::auth::{load_session_private_key, private_keys_with_algs},
-    session::config::{AuthMethod, Session, SshConnectionMode, ordered_ssh_connection_modes},
+    session::config::{
+        AuthMethod, ProxyStream, Session, SshConnectionMode, ordered_ssh_connection_modes,
+    },
     terminal::BackendEvent,
 };
 
 use super::{ClientHandler, X11ForwardingState, legacy};
+
+const TRANSPORT_CONNECT_RETRY_DELAYS: [Duration; 2] =
+    [Duration::from_millis(500), Duration::from_millis(1500)];
 
 pub(super) async fn connect_and_authenticate(
     tab_id: &str,
@@ -178,7 +184,7 @@ async fn connect_with_mode_priority(
             });
         }
 
-        match connect_with_mode(session, addr, mode, x11.clone()).await {
+        match connect_with_mode(tab_id, session, addr, mode, events, x11.clone()).await {
             Ok(handle) => {
                 if mode == SshConnectionMode::Legacy {
                     tracing::warn!(
@@ -209,7 +215,9 @@ async fn connect_with_mode_priority(
                 );
                 failures.push(format!("{} mode: {failure}", mode.label()));
 
+                let is_transport_error = is_retryable_transport_error(&err);
                 let should_try_next = index + 1 < modes.len()
+                    && !is_transport_error
                     && (details.is_some() || session.last_successful_ssh_mode == Some(mode));
                 if !should_try_next {
                     return Err(anyhow!("SSH connection failed. {}", failures.join(". ")));
@@ -233,12 +241,14 @@ async fn connect_with_mode_priority(
 }
 
 async fn connect_with_mode(
+    tab_id: &str,
     session: &Session,
     addr: &str,
     mode: SshConnectionMode,
+    events: &std::sync::mpsc::Sender<BackendEvent>,
     x11: Option<Arc<X11ForwardingState>>,
 ) -> Result<russh::client::Handle<ClientHandler>> {
-    let stream = crate::session::config::connect_proxy(session).await?;
+    let stream = connect_transport_with_retries(tab_id, session, addr, mode, events).await?;
     client::connect_stream(
         Arc::new(legacy::ssh_client_config(mode)),
         stream,
@@ -246,6 +256,76 @@ async fn connect_with_mode(
     )
     .await
     .with_context(|| format!("connect {addr} failed in {} mode", mode.label()))
+}
+
+async fn connect_transport_with_retries(
+    tab_id: &str,
+    session: &Session,
+    addr: &str,
+    mode: SshConnectionMode,
+    events: &std::sync::mpsc::Sender<BackendEvent>,
+) -> Result<Box<dyn ProxyStream>> {
+    let mut attempt = 0usize;
+
+    loop {
+        match crate::session::config::connect_proxy(session).await {
+            Ok(stream) => return Ok(stream),
+            Err(err) => {
+                let Some(delay) = TRANSPORT_CONNECT_RETRY_DELAYS.get(attempt).copied() else {
+                    return Err(err);
+                };
+                if !is_retryable_transport_error(&err) {
+                    return Err(err);
+                }
+
+                attempt += 1;
+                tracing::warn!(
+                    "[ssh] transport connection to {} failed in {} mode on attempt {}: {:#}; retrying in {:?}",
+                    addr,
+                    mode.label(),
+                    attempt,
+                    err,
+                    delay
+                );
+                let _ = events.send(BackendEvent::Status {
+                    tab_id: tab_id.to_string(),
+                    text: format!(
+                        "tcp connection to {addr} failed ({err}); retrying in {:.1}s",
+                        delay.as_secs_f32()
+                    ),
+                });
+                sleep(delay).await;
+            }
+        }
+    }
+}
+
+fn is_retryable_transport_error(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<io::Error>()
+            .is_some_and(is_retryable_io_error)
+    })
+}
+
+fn is_retryable_io_error(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::TimedOut
+            | io::ErrorKind::NotConnected
+            | io::ErrorKind::AddrNotAvailable
+    ) || matches!(
+        err.raw_os_error(),
+        // macOS/BSD: EHOSTDOWN, EHOSTUNREACH, ENETUNREACH, ETIMEDOUT, ECONNREFUSED
+        Some(64 | 65 | 51 | 60 | 61)
+            // Linux: EHOSTUNREACH, ENETUNREACH, ETIMEDOUT, ECONNREFUSED
+            | Some(113 | 101 | 110 | 111)
+            // Windows: WSAEHOSTUNREACH, WSAENETUNREACH, WSAETIMEDOUT, WSAECONNREFUSED
+            | Some(10065 | 10051 | 10060 | 10061)
+    )
 }
 
 fn key_source_label(session: &Session) -> String {
@@ -256,5 +336,35 @@ fn key_source_label(session: &Session) -> String {
         (true, false) => path.to_string(),
         (false, true) => "inline key text".to_string(),
         (false, false) => "unknown key source".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retries_macos_no_route_to_host() {
+        let err = anyhow::Error::new(io::Error::from_raw_os_error(65));
+
+        assert!(is_retryable_transport_error(&err));
+    }
+
+    #[test]
+    fn retries_wrapped_connection_refused() {
+        let err = anyhow::Error::new(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        ))
+        .context("connect target failed");
+
+        assert!(is_retryable_transport_error(&err));
+    }
+
+    #[test]
+    fn does_not_retry_non_transport_error() {
+        let err = anyhow!("authentication failed");
+
+        assert!(!is_retryable_transport_error(&err));
     }
 }
