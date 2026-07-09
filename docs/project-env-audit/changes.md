@@ -997,3 +997,19 @@
 - 执行内容：将 `TerminalFrozenSelection` 收窄为只保存 tab、viewport selection 和复制文本；选择捕获不再保存旧 terminal cell 或 highlight；渲染层移除 frozen cell/highlight 覆盖，改为按 captured selection 独立绘制背景矩形并继续绘制实时 terminal snapshot
 - 验证结果：`rustfmt --edition 2024 src/terminal.rs src/terminal/element.rs src/app/actions/terminal.rs` 通过；`cargo check` 通过；`cargo test --quiet frozen_ -- --nocapture` 通过，3 个相关测试全部通过；`cargo test --quiet` 通过，46 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过；仍保留既有 `block v0.1.6` future-incompat warning
 - 风险/待办：GUI 手工持续输出拖选验证仍需实机执行；复制内容仍是选择时文本快照，终端画面文字不再冻结
+
+## 2026-07-10 刷新环境记录到仓库级 AGENTS 指令
+
+- 目的：在新增仓库级 agent 指令文件前，确认 Codex 默认加载规则和本项目约束入口
+- 改动范围：`AGENTS.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：检索官方 Codex 文档确认默认 repo guidance 文件是 `AGENTS.md`，并确认 `.agent` 不是默认加载文件名；复查项目 release tag 规则、Rust 模块布局和 tracker 记录要求
+- 验证结果：已确认本轮不修改 Rust 源码、不新增依赖；后续只需执行 `git diff --check` 与 tracking docs validator
+- 风险/待办：如果未来确实要使用 `.agent` 作为文件名，需要在 Codex 配置中加入 fallback 文件名并重启/新开会话
+
+## 2026-07-10 完成仓库级 AGENTS 指令环境验证
+
+- 目的：在新增仓库级 `AGENTS.md` 后，把文档验证结果和剩余使用边界回写到环境记忆
+- 改动范围：`AGENTS.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：新增 `AGENTS.md`，写入 Codex 默认指令文件说明、Rust 现代模块布局、项目模块例外、implementation tracking、验证命令、release tag 规则和 git hygiene；刷新项目地图入口
+- 验证结果：`git diff --check` 通过；tracking docs validator 通过；本轮未修改 Rust 源码，未运行 `cargo check` 或 `cargo test`
+- 风险/待办：`.agent` 仍不是默认 Codex 指令文件名；如需该名字必须配置 fallback

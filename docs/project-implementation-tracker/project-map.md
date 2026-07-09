@@ -8,13 +8,14 @@
 ## 索引范围
 
 - 根目录：`<repo-root>`
-- 覆盖：`src/app/`，`src/session/`，`src/sftp/`，`src/terminal/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
+- 覆盖：`AGENTS.md`，`src/app/`，`src/session/`，`src/sftp/`，`src/terminal/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
 - 排除：`.git/`，`target/`，`assets/` 批量图标/字体资源，构建产物与外部依赖缓存
 
 ## 目录地图
 
 | Path | Purpose | Open When | Notes |
 | --- | --- | --- | --- |
+| `AGENTS.md` | Codex 仓库级持久指令 | 改 agent 默认约束、Rust 模块布局规则、验证/提交/tag 习惯或长期项目工作约定时 | Codex 默认读取 `AGENTS.md`；`.agent` 不是默认加载文件名，除非客户端配置了 fallback |
 | `src/app.rs` | 应用壳入口，声明 app 子模块、`AxShell` 状态结构和 type re-export | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel、模块出口或跨模块共享类型时 | 现代 Rust 具名入口；不再使用 `src/app.rs` |
 | `src/app/` | 应用壳实现目录，启动/事件/输入/主题/同步/终端搜索/工作区分别落到功能子目录 | 调整应用显示名、启动日志、crash hook、SAVED 侧栏入口、Custom 页面、theme list、字体下拉、主题应用逻辑、原生菜单或工作区动作时 | 真实实现分布在 `lifecycle/`、`input/`、`theme/`、`syncing/`、`terminal/`、`workspace/`、`state/`、`actions/`、`views/`、`dialogs/` |
 | `src/app/actions.rs` | 应用动作层入口 | 改 actions 模块导出时 | 子模块在 `src/app/actions/`；由原 `session/mod.rs`、`session/pane.rs`、`session/saved_sessions.rs`、`sftp/ops.rs`、`terminal/input.rs` 迁入 |
@@ -47,6 +48,7 @@
 
 | Path | Role | Key Symbols / Sections | Read For |
 | --- | --- | --- | --- |
+| `AGENTS.md` | Codex agents 默认读取的项目约束文件 | Rust module layout，verification，release tags，git hygiene | 新增模块、拆分文件、准备 release tag、提交或判断项目级 agent 行为时 |
 | `src/config/store.rs` | 本地配置文件模型、路径、getter/setter、proxy/X11 helper 和 `ConfigStore` 实现 | `ConfigFile`，`ConfigStore::load/save`，`config_root_dir_path`，config path helpers，`connect_proxy`，`active_proxy` | 改配置目录、旧目录迁移、sync 默认对象名、custom theme draft、registry file 路径、proxy 或 X11 配置时 |
 | `src/session/config.rs` | 旧配置导入路径兼容层 | `pub use crate::config::store::*`，`pub use crate::session::model::*` | 需要保持旧 `crate::session::config::*` 调用兼容时；不要在这里新增真实配置逻辑 |
 | `src/session/model.rs` | 会话、SSH 连接模式、窗口 bounds、标题栏、光标和 custom theme 序列化模型 | `Session`，`AuthMethod`，`SshConnectionMode`，`ordered_ssh_connection_modes`，`SavedWindowBounds`，`TitleBarStyle`，`CursorStyle`，`CustomThemeConfig` | 改配置文件里的模型字段、serde 默认值或同步 payload 模型时 |
@@ -124,9 +126,9 @@
 
 ## 刷新规则
 
-- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics、workspace page / tab 模型、SFTP 按需页面/标签关闭/快捷键焦点、SFTP 列表排序/传输标签面板、SFTP 目录导航失败恢复、SSH 连接认证/legacy/远程系统探针/X11 relay、settings General/Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`Cargo.toml`，`src/app.rs`，`src/app/theme.rs`，`src/app/core/constants.rs`，`src/app/core/types.rs`，`src/app/input/app_menu.rs`，`src/app/input/keybinding_recorder.rs`，`src/app/lifecycle/startup.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/syncing/config_sync.rs`，`src/app/terminal/search.rs`，`src/app/workspace/workspace.rs`，`src/app/state.rs`，`src/app/actions.rs`，`src/config.rs`，`src/config/store.rs`，`src/session.rs`，`src/session/model.rs`，`src/session/config.rs`，`src/app/dialogs.rs`，`src/app/dialogs/settings.rs`，`src/app/dialogs/settings/general.rs`，`src/app/dialogs/settings/custom.rs`，`src/app/dialogs/settings/shell.rs`，`src/app/views.rs`，`src/app/views/tab_bar.rs`，`src/app/views/layout.rs`，`src/app/views/terminal_panel.rs`，`src/app/views/sftp_panel.rs`，`src/app/views/sftp_panel/sort.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`src/backend.rs`，`src/backend/auth.rs`，`src/backend/local.rs`，`src/backend/ssh.rs`，`src/backend/ssh/connection.rs`，`src/backend/ssh/legacy.rs`，`src/backend/ssh/system_probe.rs`，`src/backend/ssh/x11.rs`，`src/sftp.rs`，`src/terminal.rs`，`docs/project-env-audit/current.md`
+- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、Rust 模块布局约束、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics、workspace page / tab 模型、SFTP 按需页面/标签关闭/快捷键焦点、SFTP 列表排序/传输标签面板、SFTP 目录导航失败恢复、SSH 连接认证/legacy/远程系统探针/X11 relay、settings General/Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
+- 最近依据：`AGENTS.md`，`Cargo.toml`，`src/app.rs`，`src/app/theme.rs`，`src/app/core/constants.rs`，`src/app/input/app_menu.rs`，`src/app/input/keybinding_recorder.rs`，`src/app/lifecycle/startup.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/syncing/config_sync.rs`，`src/app/terminal/search.rs`，`src/app/workspace/workspace.rs`，`src/app/state.rs`，`src/app/actions.rs`，`src/config.rs`，`src/config/store.rs`，`src/session.rs`，`src/session/model.rs`，`src/session/config.rs`，`src/app/dialogs.rs`，`src/app/dialogs/settings.rs`，`src/app/dialogs/settings/general.rs`，`src/app/dialogs/settings/custom.rs`，`src/app/dialogs/settings/shell.rs`，`src/app/views.rs`，`src/app/views/tab_bar.rs`，`src/app/views/layout.rs`，`src/app/views/terminal_panel.rs`，`src/app/views/sftp_panel.rs`，`src/app/views/sftp_panel/sort.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`src/backend.rs`，`src/backend/auth.rs`，`src/backend/local.rs`，`src/backend/ssh.rs`，`src/backend/ssh/connection.rs`，`src/backend/ssh/legacy.rs`，`src/backend/ssh/system_probe.rs`，`src/backend/ssh/x11.rs`，`src/sftp.rs`，`src/terminal.rs`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-09 21:30 +0800
+- 2026-07-10 06:57 +0800
