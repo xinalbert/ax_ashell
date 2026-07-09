@@ -155,19 +155,20 @@ impl AxShell {
                                 .py_1()
                                 .bg(cx.theme().danger.opacity(0.15))
                                 .child(
-                                    div()
-                                        .text_size(rems(0.85))
-                                        .text_color(cx.theme().danger)
-                                        .child(
-                                            t!("session_disconnected", "reason" = reason)
-                                                .to_string(),
-                                        ),
+                                    selectable_plain_text(
+                                        "terminal-disconnected-reason",
+                                        t!("session_disconnected", "reason" = reason).to_string(),
+                                    )
+                                    .text_size(rems(0.85))
+                                    .text_color(cx.theme().danger),
                                 )
                                 .child(
-                                    div()
-                                        .text_size(rems(0.85))
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(format!("— {}", t!("press_enter_to_reconnect"))),
+                                    selectable_plain_text(
+                                        "terminal-reconnect-hint",
+                                        format!("— {}", t!("press_enter_to_reconnect")),
+                                    )
+                                    .text_size(rems(0.85))
+                                    .text_color(cx.theme().muted_foreground),
                                 )
                                 .on_mouse_down(
                                     MouseButton::Left,

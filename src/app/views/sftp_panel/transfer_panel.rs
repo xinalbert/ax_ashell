@@ -82,13 +82,15 @@ impl AxShell {
                             .track_scroll(&scroll_handle)
                             .pr(px(14.))
                             .child(if rows.is_empty() {
-                                div()
-                                    .size_full()
-                                    .p_4()
-                                    .text_center()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(t!("no_transfers_yet").to_string())
-                                    .into_any_element()
+                                selectable_plain_text(
+                                    "sftp-transfers-empty",
+                                    t!("no_transfers_yet").to_string(),
+                                )
+                                .size_full()
+                                .p_4()
+                                .text_center()
+                                .text_color(cx.theme().muted_foreground)
+                                .into_any_element()
                             } else {
                                 v_flex().w_full().children(rows).into_any_element()
                             }),
@@ -135,6 +137,7 @@ impl AxShell {
             crate::terminal::TransferType::Download => IconName::ArrowDown,
         };
         let status_text = sftp_transfer_status_text(&transfer);
+        let transfer_id = transfer.info.id.clone();
         let mut actions = h_flex().flex_none().items_center().gap_1();
 
         match &transfer.state {
@@ -248,40 +251,46 @@ impl AxShell {
                     .text_color(cx.theme().primary),
             )
             .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.))
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .whitespace_nowrap()
-                    .text_size(rems(0.917))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(cx.theme().foreground)
-                    .child(transfer.info.name.clone()),
+                selectable_plain_text(
+                    ElementId::Name(format!("sftp-transfer-name-{transfer_id}").into()),
+                    transfer.info.name.clone(),
+                )
+                .flex_1()
+                .min_w(px(0.))
+                .overflow_hidden()
+                .text_ellipsis()
+                .whitespace_nowrap()
+                .text_size(rems(0.917))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(cx.theme().foreground),
             )
             .child(
-                div()
-                    .w(px(180.))
-                    .min_w(px(0.))
-                    .flex_shrink_1()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .whitespace_nowrap()
-                    .text_size(rems(0.833))
-                    .text_color(cx.theme().muted_foreground)
-                    .child(status_text),
+                selectable_plain_text(
+                    ElementId::Name(format!("sftp-transfer-status-{transfer_id}").into()),
+                    status_text,
+                )
+                .w(px(180.))
+                .min_w(px(0.))
+                .flex_shrink_1()
+                .overflow_hidden()
+                .text_ellipsis()
+                .whitespace_nowrap()
+                .text_size(rems(0.833))
+                .text_color(cx.theme().muted_foreground),
             )
             .child(
-                div()
-                    .w(px(140.))
-                    .min_w(px(0.))
-                    .flex_shrink_1()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .whitespace_nowrap()
-                    .text_size(rems(0.833))
-                    .text_color(cx.theme().muted_foreground)
-                    .child(transfer.tab_title),
+                selectable_plain_text(
+                    ElementId::Name(format!("sftp-transfer-session-{transfer_id}").into()),
+                    transfer.tab_title,
+                )
+                .w(px(140.))
+                .min_w(px(0.))
+                .flex_shrink_1()
+                .overflow_hidden()
+                .text_ellipsis()
+                .whitespace_nowrap()
+                .text_size(rems(0.833))
+                .text_color(cx.theme().muted_foreground),
             )
             .child(actions)
             .into_any_element()

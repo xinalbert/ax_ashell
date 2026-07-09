@@ -64,17 +64,21 @@ impl AxShell {
                                 h_flex()
                                     .items_baseline()
                                     .child(
-                                        div()
-                                            .text_lg()
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .child(t!("transfers").to_string()),
+                                        selectable_plain_text(
+                                            "transfers-title",
+                                            t!("transfers").to_string(),
+                                        )
+                                        .text_lg()
+                                        .font_weight(FontWeight::SEMIBOLD),
                                     )
                                     .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .ml_2()
-                                            .child(t!("transfers_limit").to_string()),
+                                        selectable_plain_text(
+                                            "transfers-limit",
+                                            t!("transfers_limit").to_string(),
+                                        )
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .ml_2(),
                                     ),
                             )
                             .child(
@@ -104,11 +108,13 @@ impl AxShell {
                         if transfers.is_empty() {
                             return content.child(
                                 v_flex().gap_2().child(header).child(
-                                    div()
-                                        .p_4()
-                                        .text_center()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(t!("no_transfers_yet").to_string()),
+                                    selectable_plain_text(
+                                        "transfers-empty",
+                                        t!("no_transfers_yet").to_string(),
+                                    )
+                                    .p_4()
+                                    .text_center()
+                                    .text_color(cx.theme().muted_foreground),
                                 ),
                             );
                         }
@@ -314,6 +320,7 @@ impl AxShell {
                                     .map(|tot| t.transferred as f64 / tot as f64 * 100.0)
                                     .unwrap_or(0.0),
                             };
+                            let transfer_id = t.info.id.clone();
 
                             v_flex()
                                 .gap_1()
@@ -342,29 +349,48 @@ impl AxShell {
                                                 .min_w(px(0.))
                                                 .overflow_hidden()
                                                 .child(
-                                                    div()
-                                                        .text_size(px(12.))
-                                                        .font_weight(FontWeight::SEMIBOLD)
-                                                        .text_color(cx.theme().foreground)
-                                                        .overflow_hidden()
-                                                        .child(t.info.name.clone()),
+                                                    selectable_plain_text(
+                                                        ElementId::Name(
+                                                            format!("transfer-name-{transfer_id}")
+                                                                .into(),
+                                                        ),
+                                                        t.info.name.clone(),
+                                                    )
+                                                    .text_size(px(12.))
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .text_color(cx.theme().foreground)
+                                                    .overflow_hidden(),
                                                 )
                                                 .child(
-                                                    div()
-                                                        .text_size(px(10.))
-                                                        .text_color(cx.theme().muted_foreground)
-                                                        .overflow_hidden()
-                                                        .child(format!(
+                                                    selectable_plain_text(
+                                                        ElementId::Name(
+                                                            format!(
+                                                                "transfer-session-{transfer_id}"
+                                                            )
+                                                            .into(),
+                                                        ),
+                                                        format!(
                                                             "{}: {}",
                                                             t!("session"),
                                                             t.tab_title
-                                                        )),
+                                                        ),
+                                                    )
+                                                    .text_size(px(10.))
+                                                    .text_color(cx.theme().muted_foreground)
+                                                    .overflow_hidden(),
                                                 )
                                                 .child(
-                                                    div()
-                                                        .text_size(px(11.))
-                                                        .text_color(cx.theme().muted_foreground)
-                                                        .child(status_text.clone()),
+                                                    selectable_plain_text(
+                                                        ElementId::Name(
+                                                            format!(
+                                                                "transfer-status-{transfer_id}"
+                                                            )
+                                                            .into(),
+                                                        ),
+                                                        status_text.clone(),
+                                                    )
+                                                    .text_size(px(11.))
+                                                    .text_color(cx.theme().muted_foreground),
                                                 ),
                                         )
                                         .child(actions),

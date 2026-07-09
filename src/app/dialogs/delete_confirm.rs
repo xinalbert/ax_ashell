@@ -114,12 +114,16 @@ impl AxShell {
                                     .overflow_y_scroll()
                                     .p_2()
                                     .gap_1()
-                                    .children(selected_paths.into_iter().map(|path| {
-                                        div()
+                                    .children(selected_paths.into_iter().enumerate().map(
+                                        |(path_ix, path)| {
+                                            selectable_plain_text(
+                                                ("delete-path", path_ix),
+                                                path.as_str(),
+                                            )
                                             .text_size(rems(0.917))
                                             .text_color(cx.theme().muted_foreground)
-                                            .child(path)
-                                    })),
+                                        },
+                                    )),
                             )
                             .child(
                                 div().absolute().top_0().bottom_0().right_0().child(
@@ -136,16 +140,20 @@ impl AxShell {
                                 .gap_2()
                                 .children(warning_block)
                                 .child(
-                                    div().text_size(rems(1.0)).mb_2().child(
-                                        t!(
-                                            "confirm_delete_desc",
-                                            count = view
-                                                .read(cx)
-                                                .active_sftp()
-                                                .map(|s| s.selected_entries.len())
-                                                .unwrap_or(0)
+                                    div().mb_2().child(
+                                        selectable_plain_text(
+                                            "delete-confirm-description",
+                                            t!(
+                                                "confirm_delete_desc",
+                                                count = view
+                                                    .read(cx)
+                                                    .active_sftp()
+                                                    .map(|s| s.selected_entries.len())
+                                                    .unwrap_or(0)
+                                            )
+                                            .to_string(),
                                         )
-                                        .to_string(),
+                                        .text_size(rems(1.0)),
                                     ),
                                 )
                                 .child(paths_list),

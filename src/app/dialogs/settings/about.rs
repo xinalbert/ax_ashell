@@ -17,27 +17,26 @@ pub(super) fn settings_about_page() -> SettingPage {
                     .gap_2()
                     .items_center()
                     .child(
-                        div()
+                        selectable_plain_text("about-app-name", "AxShell")
                             .text_size(rems(1.5))
-                            .font_weight(FontWeight::BOLD)
-                            .child("AxShell"),
+                            .font_weight(FontWeight::BOLD),
                     )
                     .child(
-                        div()
-                            .text_size(rems(0.9))
-                            .child(format!("Version {}", version)),
+                        selectable_plain_text("about-version", format!("Version {}", version))
+                            .text_size(rems(0.9)),
                     )
                     .child(
-                        div()
-                            .text_size(rems(0.9))
-                            .text_color(cx.theme().muted_foreground)
-                            .child("A GPUI Component based SSH and local terminal client"),
+                        selectable_plain_text(
+                            "about-description",
+                            "A GPUI Component based SSH and local terminal client",
+                        )
+                        .text_size(rems(0.9))
+                        .text_color(cx.theme().muted_foreground),
                     )
                     .child(
-                        div()
+                        selectable_plain_text("about-feedback-hint", t!("about_feedback_hint"))
                             .text_size(rems(0.9))
-                            .text_color(cx.theme().muted_foreground)
-                            .child(t!("about_feedback_hint")),
+                            .text_color(cx.theme().muted_foreground),
                     )
                     .child(
                         Button::new("github-link")
@@ -52,24 +51,28 @@ pub(super) fn settings_about_page() -> SettingPage {
                             .gap_1()
                             .items_center()
                             .child(
-                                div()
-                                    .text_size(rems(0.8))
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(format!(
+                                selectable_plain_text(
+                                    "about-runtime-log-dir",
+                                    format!(
                                         "{}: {}",
                                         t!("about_runtime_log_dir"),
                                         runtime_log_dir_label
-                                    )),
+                                    ),
+                                )
+                                .text_size(rems(0.8))
+                                .text_color(cx.theme().muted_foreground),
                             )
                             .child(
-                                div()
-                                    .text_size(rems(0.8))
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(format!(
+                                selectable_plain_text(
+                                    "about-crash-report-dir",
+                                    format!(
                                         "{}: {}",
                                         t!("about_crash_report_dir"),
                                         crash_report_dir_label
-                                    )),
+                                    ),
+                                )
+                                .text_size(rems(0.8))
+                                .text_color(cx.theme().muted_foreground),
                             ),
                     )
                     .child({

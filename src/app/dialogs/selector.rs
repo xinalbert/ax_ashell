@@ -85,16 +85,20 @@ impl AxShell {
                                             v_flex()
                                                 .gap_1()
                                                 .child(
-                                                    div()
-                                                        .text_size(rems(1.0))
-                                                        .font_weight(FontWeight::SEMIBOLD)
-                                                        .child(t!("local_terminal")),
+                                                    selectable_plain_text(
+                                                        "selector-local-title",
+                                                        t!("local_terminal"),
+                                                    )
+                                                    .text_size(rems(1.0))
+                                                    .font_weight(FontWeight::SEMIBOLD),
                                                 )
                                                 .child(
-                                                    div()
-                                                        .text_size(rems(0.917))
-                                                        .text_color(_cx.theme().muted_foreground)
-                                                        .child(t!("open_local_shell_tab")),
+                                                    selectable_plain_text(
+                                                        "selector-local-description",
+                                                        t!("open_local_shell_tab"),
+                                                    )
+                                                    .text_size(rems(0.917))
+                                                    .text_color(_cx.theme().muted_foreground),
                                                 ),
                                         ),
                                 )
@@ -129,16 +133,20 @@ impl AxShell {
                                             v_flex()
                                                 .gap_1()
                                                 .child(
-                                                    div()
-                                                        .text_size(rems(1.0))
-                                                        .font_weight(FontWeight::SEMIBOLD)
-                                                        .child(t!("new_ssh_connection")),
+                                                    selectable_plain_text(
+                                                        "selector-new-ssh-title",
+                                                        t!("new_ssh_connection"),
+                                                    )
+                                                    .text_size(rems(1.0))
+                                                    .font_weight(FontWeight::SEMIBOLD),
                                                 )
                                                 .child(
-                                                    div()
-                                                        .text_size(rems(0.917))
-                                                        .text_color(_cx.theme().muted_foreground)
-                                                        .child(t!("create_or_edit_ssh_session")),
+                                                    selectable_plain_text(
+                                                        "selector-new-ssh-description",
+                                                        t!("create_or_edit_ssh_session"),
+                                                    )
+                                                    .text_size(rems(0.917))
+                                                    .text_color(_cx.theme().muted_foreground),
                                                 ),
                                         ),
                                 )
@@ -204,21 +212,35 @@ impl AxShell {
                                                         v_flex()
                                                             .gap_1()
                                                             .child(
-                                                                div()
+                                                                selectable_plain_text(
+                                                                    ElementId::Name(
+                                                                        format!(
+                                                                            "selector-session-name-{ix}"
+                                                                        )
+                                                                        .into(),
+                                                                    ),
+                                                                    name,
+                                                                )
                                                                     .text_size(rems(1.0))
                                                                     .font_weight(
                                                                         FontWeight::SEMIBOLD,
-                                                                    )
-                                                                    .child(name),
+                                                                    ),
                                                             )
                                                             .child(
-                                                                div()
+                                                                selectable_plain_text(
+                                                                    ElementId::Name(
+                                                                        format!(
+                                                                            "selector-session-detail-{ix}"
+                                                                        )
+                                                                        .into(),
+                                                                    ),
+                                                                    detail,
+                                                                )
                                                                     .text_size(rems(0.917))
                                                                     .text_color(
                                                                         _cx.theme()
                                                                             .muted_foreground,
-                                                                    )
-                                                                    .child(detail),
+                                                                    ),
                                                             ),
                                                     )
                                                         },

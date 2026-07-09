@@ -174,10 +174,12 @@ pub(super) fn settings_sync_page(view: &gpui::Entity<AxShell>, shell: &AxShell) 
                                     .child(Input::new(&encryption_password).w_full()),
                             )
                             .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(muted_foreground)
-                                    .child(t!("sync_security_hint").to_string()),
+                                selectable_plain_text(
+                                    "sync-security-hint",
+                                    t!("sync_security_hint").to_string(),
+                                )
+                                .text_sm()
+                                .text_color(muted_foreground),
                             )
                             .child(
                                 h_flex()
@@ -206,10 +208,9 @@ pub(super) fn settings_sync_page(view: &gpui::Entity<AxShell>, shell: &AxShell) 
                                     ),
                             )
                             .child(
-                                div()
+                                selectable_plain_text("sync-status", status.clone())
                                     .text_sm()
-                                    .text_color(muted_foreground)
-                                    .child(status.clone()),
+                                    .text_color(muted_foreground),
                             )
                     }
                 })),

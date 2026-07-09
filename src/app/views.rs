@@ -16,6 +16,7 @@ use gpui_component::{
     progress::Progress,
     scroll::{ScrollableElement as _, Scrollbar, ScrollbarShow},
     tab::{Tab, TabBar},
+    text::{TextView, TextViewStyle},
     v_flex,
 };
 use rust_i18n::t;
@@ -37,3 +38,25 @@ mod sftp_panel;
 mod sidebar;
 mod tab_bar;
 mod terminal_panel;
+
+fn escape_markdown_text(text: impl AsRef<str>) -> String {
+    let text = text.as_ref();
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' | '`' | '*' | '_' | '{' | '}' | '[' | ']' | '(' | ')' | '#' | '+' | '-' | '.'
+            | '!' | '|' | '>' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn selectable_plain_text(id: impl Into<ElementId>, text: impl AsRef<str>) -> TextView {
+    TextView::markdown(id, escape_markdown_text(text))
+        .style(TextViewStyle::default().paragraph_gap(rems(0.0)))
+        .selectable(true)
+}

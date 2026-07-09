@@ -64,10 +64,12 @@ pub(super) fn settings_proxy_page(view: &gpui::Entity<AxShell>, shell: &AxShell)
                             .w_full()
                             .gap_3()
                             .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(FontWeight::BOLD)
-                                    .child(t!("global_proxy_settings").to_string()),
+                                selectable_plain_text(
+                                    "global-proxy-settings-title",
+                                    t!("global_proxy_settings").to_string(),
+                                )
+                                .text_sm()
+                                .font_weight(FontWeight::BOLD),
                             )
                             .child(
                                 h_flex()
@@ -229,10 +231,12 @@ pub(super) fn settings_proxy_page(view: &gpui::Entity<AxShell>, shell: &AxShell)
                             .items_stretch()
                             .gap_3()
                             .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(FontWeight::BOLD)
-                                    .child(t!("xquartz_app_path").to_string()),
+                                selectable_plain_text(
+                                    "xquartz-app-path-title",
+                                    t!("xquartz_app_path").to_string(),
+                                )
+                                .text_sm()
+                                .font_weight(FontWeight::BOLD),
                             )
                             .child(
                                 div()
@@ -291,11 +295,13 @@ pub(super) fn settings_proxy_page(view: &gpui::Entity<AxShell>, shell: &AxShell)
                                     ),
                             )
                             .child(
-                                div()
-                                    .w_full()
-                                    .text_xs()
-                                    .text_color(muted_foreground)
-                                    .child(t!("xquartz_app_path_desc").to_string()),
+                                selectable_plain_text(
+                                    "xquartz-app-path-description",
+                                    t!("xquartz_app_path_desc").to_string(),
+                                )
+                                .w_full()
+                                .text_xs()
+                                .text_color(muted_foreground),
                             )
                     }
                 })),

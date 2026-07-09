@@ -432,6 +432,14 @@ impl AxShell {
                                             } else {
                                                 theme.muted.opacity(0.5)
                                             };
+                                            let entry_id = entry.full_path.clone();
+                                            let entry_name = entry.name.clone();
+                                            let entry_size = if entry.is_dir {
+                                                "-".to_string()
+                                            } else {
+                                                format_bytes(entry.size)
+                                            };
+                                            let entry_modified = format_mtime(entry.modified);
                                             Some(
                                                 h_flex()
                                                     .w_full()
@@ -519,19 +527,34 @@ impl AxShell {
                                                                     .child(if entry.is_dir { "📁" } else { "📄" }),
                                                             )
                                                             .child(
-                                                                div()
+                                                                selectable_plain_text(
+                                                                    ElementId::Name(
+                                                                        format!(
+                                                                            "remote-file-name-{entry_id}"
+                                                                        )
+                                                                        .into(),
+                                                                    ),
+                                                                    entry_name,
+                                                                )
                                                                     .flex_1()
                                                                     .min_w(px(0.))
                                                                     .overflow_hidden()
                                                                     .text_ellipsis()
                                                                     .whitespace_nowrap()
                                                                     .text_size(rems(1.0))
-                                                                    .text_color(name_color)
-                                                                    .child(entry.name),
+                                                                    .text_color(name_color),
                                                             ),
                                                     )
                                                     .child(
-                                                        div()
+                                                        selectable_plain_text(
+                                                            ElementId::Name(
+                                                                format!(
+                                                                    "remote-file-size-{entry_id}"
+                                                                )
+                                                                .into(),
+                                                            ),
+                                                            entry_size,
+                                                        )
                                                             .w(size_col_width)
                                                             .min_w(px(0.))
                                                             .flex_shrink_1()
@@ -539,15 +562,18 @@ impl AxShell {
                                                             .text_ellipsis()
                                                             .whitespace_nowrap()
                                                             .text_size(rems(0.917))
-                                                            .text_color(theme.muted_foreground)
-                                                            .child(if entry.is_dir {
-                                                                "-".to_string()
-                                                            } else {
-                                                                format_bytes(entry.size)
-                                                            }),
+                                                            .text_color(theme.muted_foreground),
                                                     )
                                                     .child(
-                                                        div()
+                                                        selectable_plain_text(
+                                                            ElementId::Name(
+                                                                format!(
+                                                                    "remote-file-modified-{entry_id}"
+                                                                )
+                                                                .into(),
+                                                            ),
+                                                            entry_modified,
+                                                        )
                                                             .w(modified_col_width)
                                                             .min_w(px(0.))
                                                             .flex_shrink_1()
@@ -555,8 +581,7 @@ impl AxShell {
                                                             .text_ellipsis()
                                                             .whitespace_nowrap()
                                                             .text_size(rems(0.917))
-                                                            .text_color(theme.muted_foreground)
-                                                            .child(format_mtime(entry.modified)),
+                                                            .text_color(theme.muted_foreground),
                                                     )
                                                     .child(div().w(px(12.)).flex_none())
                                                     .into_any_element(),
@@ -589,10 +614,12 @@ impl AxShell {
                                 .justify_center()
                                 .p_3()
                                 .child(
-                                    div()
-                                        .text_size(rems(1.0))
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(t!("open_ssh_tab_sftp")),
+                                    selectable_plain_text(
+                                        "sftp-remote-empty",
+                                        t!("open_ssh_tab_sftp"),
+                                    )
+                                    .text_size(rems(1.0))
+                                    .text_color(cx.theme().muted_foreground),
                                 ),
                         )
                     }),
@@ -607,7 +634,7 @@ impl AxShell {
                     .border_color(cx.theme().border)
                     .bg(cx.theme().tab_bar)
                     .child(
-                        div()
+                        selectable_plain_text("sftp-remote-status", remote_status.clone())
                             .flex_1()
                             .min_w(px(0.))
                             .overflow_hidden()
@@ -615,8 +642,7 @@ impl AxShell {
                             .whitespace_nowrap()
                             .text_size(rems(0.833))
                             .text_color(cx.theme().primary)
-                            .italic()
-                            .child(remote_status.clone()),
+                            .italic(),
                     ),
             );
 
@@ -875,6 +901,14 @@ impl AxShell {
                                         } else {
                                             theme.muted.opacity(0.5)
                                         };
+                                        let entry_id = entry.full_path.clone();
+                                        let entry_name = entry.name.clone();
+                                        let entry_size = if entry.is_dir {
+                                            "-".to_string()
+                                        } else {
+                                            format_bytes(entry.size)
+                                        };
+                                        let entry_modified = format_mtime(entry.modified);
                                         Some(
                                             h_flex()
                                                 .w_full()
@@ -938,19 +972,32 @@ impl AxShell {
                                                                 .child(if entry.is_dir { "📁" } else { "📄" }),
                                                         )
                                                         .child(
-                                                            div()
+                                                            selectable_plain_text(
+                                                                ElementId::Name(
+                                                                    format!(
+                                                                        "local-file-name-{entry_id}"
+                                                                    )
+                                                                    .into(),
+                                                                ),
+                                                                entry_name,
+                                                            )
                                                                 .flex_1()
                                                                 .min_w(px(0.))
                                                                 .overflow_hidden()
                                                                 .text_ellipsis()
                                                                 .whitespace_nowrap()
                                                                 .text_size(rems(1.0))
-                                                                .text_color(name_color)
-                                                                .child(entry.name),
+                                                                .text_color(name_color),
                                                         ),
                                                 )
                                                 .child(
-                                                    div()
+                                                    selectable_plain_text(
+                                                        ElementId::Name(
+                                                            format!("local-file-size-{entry_id}")
+                                                                .into(),
+                                                        ),
+                                                        entry_size,
+                                                    )
                                                         .w(size_col_width)
                                                         .min_w(px(0.))
                                                         .flex_shrink_1()
@@ -958,15 +1005,18 @@ impl AxShell {
                                                         .text_ellipsis()
                                                         .whitespace_nowrap()
                                                         .text_size(rems(0.917))
-                                                        .text_color(theme.muted_foreground)
-                                                        .child(if entry.is_dir {
-                                                            "-".to_string()
-                                                        } else {
-                                                            format_bytes(entry.size)
-                                                        }),
+                                                        .text_color(theme.muted_foreground),
                                                 )
                                                 .child(
-                                                    div()
+                                                    selectable_plain_text(
+                                                        ElementId::Name(
+                                                            format!(
+                                                                "local-file-modified-{entry_id}"
+                                                            )
+                                                            .into(),
+                                                        ),
+                                                        entry_modified,
+                                                    )
                                                         .w(modified_col_width)
                                                         .min_w(px(0.))
                                                         .flex_shrink_1()
@@ -974,8 +1024,7 @@ impl AxShell {
                                                         .text_ellipsis()
                                                         .whitespace_nowrap()
                                                         .text_size(rems(0.917))
-                                                        .text_color(theme.muted_foreground)
-                                                        .child(format_mtime(entry.modified)),
+                                                        .text_color(theme.muted_foreground),
                                                 )
                                                 .child(div().w(px(12.)).flex_none())
                                                 .into_any_element(),
@@ -1010,7 +1059,7 @@ impl AxShell {
                     .border_color(cx.theme().border)
                     .bg(cx.theme().tab_bar)
                     .child(
-                        div()
+                        selectable_plain_text("sftp-local-status", local_status)
                             .flex_1()
                             .min_w(px(0.))
                             .overflow_hidden()
@@ -1018,8 +1067,7 @@ impl AxShell {
                             .whitespace_nowrap()
                             .text_size(rems(0.833))
                             .text_color(cx.theme().primary)
-                            .italic()
-                            .child(local_status),
+                            .italic(),
                     ),
             );
 

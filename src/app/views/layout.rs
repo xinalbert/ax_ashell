@@ -460,15 +460,17 @@ impl Render for AxShell {
                                                         .track_scroll(&self.connection_scroll_handle)
                                                         .child(
                                                             v_flex().gap_2().children(
-                                                                progress.lines.iter().cloned().map(|line| {
-                                                                    div()
-                                                                        .text_size(rems(1.0))
-                                                                        .text_color(if progress.failed {
-                                                                            cx.theme().danger
-                                                                        } else {
-                                                                            cx.theme().muted_foreground
-                                                                        })
-                                                                        .child(line)
+                                                                progress.lines.iter().enumerate().map(|(line_ix, line)| {
+                                                                    selectable_plain_text(
+                                                                        ("connection-progress-line", line_ix),
+                                                                        line,
+                                                                    )
+                                                                    .text_size(rems(1.0))
+                                                                    .text_color(if progress.failed {
+                                                                        cx.theme().danger
+                                                                    } else {
+                                                                        cx.theme().muted_foreground
+                                                                    })
                                                                 }),
                                                             ),
                                                         )

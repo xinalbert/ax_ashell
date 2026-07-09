@@ -97,18 +97,19 @@ impl AxShell {
                     .w_full()
                     .items_center()
                     .child(
-                        div()
+                        selectable_plain_text("monitor-cpu-label", t!("cpu").to_string())
                             .text_size(rems(0.833))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(cpu_color)
-                            .child(t!("cpu").to_string()),
+                            .text_color(cpu_color),
                     )
                     .child(div().flex_1())
                     .child(
-                        div()
-                            .text_size(rems(0.833))
-                            .text_color(muted_fg)
-                            .child(format!("{:.0}%", cpu_pct * 100.0)),
+                        selectable_plain_text(
+                            "monitor-cpu-value",
+                            format!("{:.0}%", cpu_pct * 100.0),
+                        )
+                        .text_size(rems(0.833))
+                        .text_color(muted_fg),
                     ),
             )
             .child(
@@ -161,18 +162,19 @@ impl AxShell {
                     .w_full()
                     .items_center()
                     .child(
-                        div()
+                        selectable_plain_text("monitor-mem-label", t!("mem").to_string())
                             .text_size(rems(0.833))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(mem_color)
-                            .child(t!("mem").to_string()),
+                            .text_color(mem_color),
                     )
                     .child(div().flex_1())
                     .child(
-                        div()
-                            .text_size(rems(0.833))
-                            .text_color(muted_fg)
-                            .child(format!("{:.0}%", mem_pct * 100.0)),
+                        selectable_plain_text(
+                            "monitor-mem-value",
+                            format!("{:.0}%", mem_pct * 100.0),
+                        )
+                        .text_size(rems(0.833))
+                        .text_color(muted_fg),
                     ),
             )
             .child(
@@ -188,10 +190,9 @@ impl AxShell {
                             .flex_1(),
                     )
                     .child(
-                        div()
+                        selectable_plain_text("monitor-mem-detail", mem_detail)
                             .text_size(rems(0.7))
-                            .text_color(muted_fg)
-                            .child(mem_detail),
+                            .text_color(muted_fg),
                     ),
             )
             .when(self.monitoring.system.total_swap > 0, |this| {
@@ -208,10 +209,9 @@ impl AxShell {
                                 .flex_1(),
                         )
                         .child(
-                            div()
+                            selectable_plain_text("monitor-swap-detail", swap_detail)
                                 .text_size(rems(0.7))
-                                .text_color(muted_fg)
-                                .child(swap_detail),
+                                .text_color(muted_fg),
                         ),
                 )
             });
@@ -231,27 +231,30 @@ impl AxShell {
                             .w_full()
                             .items_center()
                             .child(
-                                div()
+                                selectable_plain_text("monitor-net-label", t!("net").to_string())
                                     .text_size(rems(0.833))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(net_color)
-                                    .child(t!("net").to_string()),
+                                    .text_color(net_color),
                             )
                             .child(div().flex_1())
                             .child(
                                 h_flex()
                                     .gap_1()
                                     .child(
-                                        div()
-                                            .text_size(rems(0.75))
-                                            .text_color(net_color)
-                                            .child(format!("↓{}", net_rx)),
+                                        selectable_plain_text(
+                                            "monitor-net-rx",
+                                            format!("↓{}", net_rx),
+                                        )
+                                        .text_size(rems(0.75))
+                                        .text_color(net_color),
                                     )
                                     .child(
-                                        div()
-                                            .text_size(rems(0.75))
-                                            .text_color(net_tx_color)
-                                            .child(format!("↑{}", net_tx)),
+                                        selectable_plain_text(
+                                            "monitor-net-tx",
+                                            format!("↑{}", net_tx),
+                                        )
+                                        .text_size(rems(0.75))
+                                        .text_color(net_tx_color),
                                     ),
                             ),
                     )
@@ -338,18 +341,19 @@ impl AxShell {
                             .w_full()
                             .items_center()
                             .child(
-                                div()
+                                selectable_plain_text("monitor-disk-label", t!("disk").to_string())
                                     .text_size(rems(0.833))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(disk_color)
-                                    .child(t!("disk").to_string()),
+                                    .text_color(disk_color),
                             )
                             .child(div().flex_1())
                             .child(
-                                div()
-                                    .text_size(rems(0.833))
-                                    .text_color(muted_fg)
-                                    .child(format!("{:.0}%", disk_pct)),
+                                selectable_plain_text(
+                                    "monitor-disk-value",
+                                    format!("{:.0}%", disk_pct),
+                                )
+                                .text_size(rems(0.833))
+                                .text_color(muted_fg),
                             ),
                     )
                     .child(
@@ -378,10 +382,15 @@ impl AxShell {
                                             .items_center()
                                             .gap_1()
                                             .child(
-                                                div()
-                                                    .text_size(rems(0.667))
-                                                    .text_color(muted_fg)
-                                                    .child(mount_short),
+                                                selectable_plain_text(
+                                                    ElementId::Name(
+                                                        format!("monitor-disk-mount-{mount_short}")
+                                                            .into(),
+                                                    ),
+                                                    mount_short.clone(),
+                                                )
+                                                .text_size(rems(0.667))
+                                                .text_color(muted_fg),
                                             )
                                             .child(
                                                 Progress::new(mount_id)
@@ -391,10 +400,15 @@ impl AxShell {
                                                     .flex_1(),
                                             )
                                             .child(
-                                                div()
-                                                    .text_size(rems(0.667))
-                                                    .text_color(muted_fg)
-                                                    .child(format!("{:.0}%", pct)),
+                                                selectable_plain_text(
+                                                    ElementId::Name(
+                                                        format!("monitor-disk-pct-{mount_short}")
+                                                            .into(),
+                                                    ),
+                                                    format!("{:.0}%", pct),
+                                                )
+                                                .text_size(rems(0.667))
+                                                .text_color(muted_fg),
                                             )
                                     })),
                             )
@@ -465,16 +479,17 @@ impl AxShell {
                         h_flex()
                             .justify_between()
                             .child(
-                                div()
+                                selectable_plain_text("sidebar-monitor-cpu-label", t!("cpu").to_string())
                                     .text_size(rems(0.85))
-                                    .text_color(cpu_color)
-                                    .child(t!("cpu").to_string()),
+                                    .text_color(cpu_color),
                             )
                             .child(
-                                div()
-                                    .text_size(rems(0.85))
-                                    .text_color(muted_fg)
-                                    .child(format!("{:.1}%", cpu_pct * 100.0)),
+                                selectable_plain_text(
+                                    "sidebar-monitor-cpu-value",
+                                    format!("{:.1}%", cpu_pct * 100.0),
+                                )
+                                .text_size(rems(0.85))
+                                .text_color(muted_fg),
                             ),
                     )
                     .child(
@@ -492,16 +507,17 @@ impl AxShell {
                         h_flex()
                             .justify_between()
                             .child(
-                                div()
+                                selectable_plain_text("sidebar-monitor-mem-label", t!("mem").to_string())
                                     .text_size(rems(0.85))
-                                    .text_color(mem_color)
-                                    .child(t!("mem").to_string()),
+                                    .text_color(mem_color),
                             )
                             .child(
-                                div()
-                                    .text_size(rems(0.85))
-                                    .text_color(muted_fg)
-                                    .child(self.monitoring.system.mem_detail.clone()),
+                                selectable_plain_text(
+                                    "sidebar-monitor-mem-value",
+                                    self.monitoring.system.mem_detail.clone(),
+                                )
+                                .text_size(rems(0.85))
+                                .text_color(muted_fg),
                             ),
                     )
                     .child(
@@ -519,16 +535,17 @@ impl AxShell {
                         h_flex()
                             .justify_between()
                             .child(
-                                div()
+                                selectable_plain_text("sidebar-monitor-swap-label", t!("swap").to_string())
                                     .text_size(rems(0.85))
-                                    .text_color(swap_color)
-                                    .child(t!("swap").to_string()),
+                                    .text_color(swap_color),
                             )
                             .child(
-                                div()
-                                    .text_size(rems(0.85))
-                                    .text_color(muted_fg)
-                                    .child(self.monitoring.system.swap_detail.clone()),
+                                selectable_plain_text(
+                                    "sidebar-monitor-swap-value",
+                                    self.monitoring.system.swap_detail.clone(),
+                                )
+                                .text_size(rems(0.85))
+                                .text_color(muted_fg),
                             ),
                     )
                     .child(
@@ -547,17 +564,18 @@ impl AxShell {
                             .justify_between()
                             .items_center()
                             .child(
-                                div()
+                                selectable_plain_text("sidebar-monitor-disk-label", t!("disk").to_string())
                                     .text_size(rems(0.85))
-                                    .text_color(disk_color)
-                                    .child(t!("disk").to_string()),
+                                    .text_color(disk_color),
                             )
                             .children(if self.monitoring.system.disks.len() > 3 {
                                 Some(
-                                    div()
-                                        .text_size(rems(0.65))
-                                        .text_color(muted_fg)
-                                        .child(t!("scroll").to_string()),
+                                    selectable_plain_text(
+                                        "sidebar-monitor-disk-scroll",
+                                        t!("scroll").to_string(),
+                                    )
+                                    .text_size(rems(0.65))
+                                    .text_color(muted_fg),
                                 )
                             } else {
                                 None
@@ -590,16 +608,30 @@ impl AxShell {
                                                 h_flex()
                                                     .justify_between()
                                                     .child(
-                                                        div()
-                                                            .text_size(rems(0.75))
-                                                            .text_color(muted_fg)
-                                                            .child(mount_short),
+                                                        selectable_plain_text(
+                                                            ElementId::Name(
+                                                                format!(
+                                                                    "sidebar-monitor-disk-mount-{mount_short}"
+                                                                )
+                                                                .into(),
+                                                            ),
+                                                            mount_short.clone(),
+                                                        )
+                                                        .text_size(rems(0.75))
+                                                        .text_color(muted_fg),
                                                     )
                                                     .child(
-                                                        div()
-                                                            .text_size(rems(0.75))
-                                                            .text_color(muted_fg)
-                                                            .child(format!("{:.1}%", pct)),
+                                                        selectable_plain_text(
+                                                            ElementId::Name(
+                                                                format!(
+                                                                    "sidebar-monitor-disk-pct-{mount_short}"
+                                                                )
+                                                                .into(),
+                                                            ),
+                                                            format!("{:.1}%", pct),
+                                                        )
+                                                        .text_size(rems(0.75))
+                                                        .text_color(muted_fg),
                                                     ),
                                             )
                                             .child(
@@ -632,16 +664,14 @@ impl AxShell {
                         h_flex()
                             .justify_between()
                             .child(
-                                div()
+                                selectable_plain_text("sidebar-monitor-net-label", t!("net").to_string())
                                     .text_size(rems(0.85))
-                                    .text_color(net_color)
-                                    .child(t!("net").to_string()),
+                                    .text_color(net_color),
                             )
                             .child(
-                                div()
+                                selectable_plain_text("sidebar-monitor-net-live", t!("live"))
                                     .text_size(rems(0.85))
-                                    .text_color(muted_fg)
-                                    .child(t!("live")),
+                                    .text_color(muted_fg),
                             ),
                     )
                     .child(
@@ -660,9 +690,12 @@ impl AxShell {
                                             .child("↓"),
                                     )
                                     .child(
-                                        div()
-                                            .text_size(rems(0.75))
-                                            .child(self.monitoring.system.net_rx.clone()),
+                                        selectable_plain_text(
+                                            "sidebar-monitor-net-rx",
+                                            self.monitoring.system.net_rx.clone(),
+                                        )
+                                        .text_size(rems(0.75))
+                                        .text_color(muted_fg),
                                     ),
                             )
                             .child(
@@ -678,9 +711,12 @@ impl AxShell {
                                             .child("↑"),
                                     )
                                     .child(
-                                        div()
-                                            .text_size(rems(0.75))
-                                            .child(self.monitoring.system.net_tx.clone()),
+                                        selectable_plain_text(
+                                            "sidebar-monitor-net-tx",
+                                            self.monitoring.system.net_tx.clone(),
+                                        )
+                                        .text_size(rems(0.75))
+                                        .text_color(muted_fg),
                                     ),
                             ),
                     ),

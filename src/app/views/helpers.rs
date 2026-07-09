@@ -54,10 +54,9 @@ impl AxShell {
                     .child("AxShell"),
             )
             .child(
-                div()
+                selectable_plain_text("home-open-hint", t!("open_local_or_ssh"))
                     .text_size(rems(1.083))
-                    .text_color(cx.theme().muted_foreground)
-                    .child(t!("open_local_or_ssh")),
+                    .text_color(cx.theme().muted_foreground),
             )
             .child(
                 h_flex()
