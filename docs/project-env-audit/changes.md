@@ -1013,3 +1013,19 @@
 - 执行内容：新增 `AGENTS.md`，写入 Codex 默认指令文件说明、Rust 现代模块布局、项目模块例外、implementation tracking、验证命令、release tag 规则和 git hygiene；刷新项目地图入口
 - 验证结果：`git diff --check` 通过；tracking docs validator 通过；本轮未修改 Rust 源码，未运行 `cargo check` 或 `cargo test`
 - 风险/待办：`.agent` 仍不是默认 Codex 指令文件名；如需该名字必须配置 fallback
+
+## 2026-07-10 刷新环境记录到 Settings 信息架构整理
+
+- 目的：在整理设置页前，确认当前项目环境、Settings 入口和验证边界
+- 改动范围：`src/app/dialogs/settings.rs`，`src/app/dialogs/settings/general.rs`，`src/app/dialogs/settings/`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：复查 `AGENTS.md`、环境记录、项目地图和 Settings 现状；确认 General 页混合外观、字体、终端、工作区、监控、语言和 reset layout 多类设置，本轮将拆为 focused pages / modules；确认不新增依赖、不改配置 schema、不联网、不使用多 agent
+- 验证结果：待执行 `rustfmt`、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking docs validator；GUI 设置页实际交互需人工确认
+- 风险/待办：页面拆分会改变左侧导航结构；Settings 组件 icon 枚举和移动后的闭包捕获需通过编译验证
+
+## 2026-07-10 完成 Settings 信息架构整理环境验证
+
+- 目的：在拆分 Settings General 页后，把编译测试结果和剩余 GUI 验证边界回写到环境记忆
+- 改动范围：`src/app/dialogs/settings.rs`，`src/app/dialogs/settings/general.rs`，`src/app/dialogs/settings/appearance.rs`，`src/app/dialogs/settings/font_page.rs`，`src/app/dialogs/settings/terminal.rs`，`src/app/dialogs/settings/workspace.rs`，`src/app/dialogs/settings/monitoring.rs`，`src/app/dialogs/settings/language.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：删除旧的 `settings/general.rs`；新增 Appearance、Fonts、Terminal、Workspace、Monitoring 和 Language focused pages；更新 Settings 左侧页面顺序和中英文页面标题；刷新项目地图中的 settings 子页面索引
+- 验证结果：`rustfmt --edition 2024` 覆盖本轮修改 Rust 文件并通过；`cargo check` 通过；`cargo test --quiet` 通过，46 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过；仍保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 设置页手工点击验证未执行；`sync.rs` 与 `proxy.rs` 仍可在后续继续做局部拆分

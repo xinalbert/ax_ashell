@@ -1,14 +1,19 @@
 use super::*;
 
 mod about;
+mod appearance;
 mod custom;
+mod font_page;
 mod fonts;
-mod general;
 mod help;
 mod keybindings;
+mod language;
+mod monitoring;
 mod proxy;
 mod shell;
 mod sync;
+mod terminal;
+mod workspace;
 
 impl AxShell {
     pub(crate) fn show_settings_dialog(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -23,7 +28,12 @@ impl AxShell {
         use gpui_component::setting::Settings;
 
         let view = cx.entity();
-        let general_page = general::settings_general_page(&view, self, cx);
+        let appearance_page = appearance::settings_appearance_page(&view, self);
+        let fonts_page = font_page::settings_fonts_page(&view, self);
+        let terminal_page = terminal::settings_terminal_page(&view, self);
+        let workspace_page = workspace::settings_workspace_page(&view, self);
+        let monitoring_page = monitoring::settings_monitoring_page(&view, self);
+        let language_page = language::settings_language_page(&view, self);
         let custom_theme_page = custom::settings_custom_page(&view, self, cx);
         shell::settings_page_shell(
             view.clone(),
@@ -31,7 +41,12 @@ impl AxShell {
             Settings::new("settings")
                 .sidebar_width(px(180.))
                 .sidebar_style(div().bg(cx.theme().background).style())
-                .page(general_page)
+                .page(appearance_page)
+                .page(fonts_page)
+                .page(terminal_page)
+                .page(workspace_page)
+                .page(monitoring_page)
+                .page(language_page)
                 .page(custom_theme_page)
                 .page(sync::settings_sync_page(&view, self))
                 .page(proxy::settings_proxy_page(&view, self))

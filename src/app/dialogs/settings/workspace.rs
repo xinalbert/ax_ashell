@@ -1,0 +1,56 @@
+use super::*;
+
+use gpui::IntoElement;
+use gpui_component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
+
+pub(super) fn settings_workspace_page(
+    view: &gpui::Entity<AxShell>,
+    shell: &AxShell,
+) -> SettingPage {
+    let lock_layout = shell.config.lock_layout();
+
+    SettingPage::new(t!("settings_workspace").to_string())
+        .icon(IconName::LayoutDashboard)
+        .group(
+            SettingGroup::new()
+                .title(t!("settings_workspace").to_string())
+                .item(
+                    SettingItem::new(
+                        t!("lock_layout").to_string(),
+                        SettingField::render({
+                            let view = view.clone();
+                            move |_, window, _cx| {
+                                Switch::new("lock-layout")
+                                    .small()
+                                    .checked(lock_layout)
+                                    .on_click(window.listener_for(&view, |this, checked, _, cx| {
+                                        this.config.set_lock_layout(*checked);
+                                        let _ = this.config.save();
+                                        cx.notify();
+                                    }))
+                                    .into_any_element()
+                            }
+                        }),
+                    )
+                    .description(t!("lock_layout_hint").to_string()),
+                )
+                .item(
+                    SettingItem::new(
+                        t!("reset_layout").to_string(),
+                        SettingField::render({
+                            let view = view.clone();
+                            move |_, window, _cx| {
+                                Button::new("reset-layout")
+                                    .small()
+                                    .label(t!("reset").to_string())
+                                    .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                        this.reset_layout(window, cx);
+                                    }))
+                                    .into_any_element()
+                            }
+                        }),
+                    )
+                    .description(t!("reset_layout_hint").to_string()),
+                ),
+        )
+}
