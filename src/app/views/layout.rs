@@ -415,6 +415,10 @@ impl Render for AxShell {
                         .left_0()
                         .right_0()
                         .bottom_0()
+                        .occlude()
+                        .on_any_mouse_down(|_, _, cx| {
+                            cx.stop_propagation();
+                        })
                         .bg(gpui::Hsla {
                             h: 0.0,
                             s: 0.0,
@@ -482,6 +486,23 @@ impl Render for AxShell {
                                                         )
                                                 )
                                         )
+                                        .when(!progress.failed, |this| {
+                                            this.child(
+                                                h_flex()
+                                                    .justify_end()
+                                                    .child(
+                                                        Button::new("ssh-connect-progress-cancel")
+                                                            .label(t!("cancel").to_string())
+                                                            .on_click(cx.listener(
+                                                                |this, _, _, cx| {
+                                                                    this.cancel_connection_progress(
+                                                                        cx,
+                                                                    )
+                                                                },
+                                                            )),
+                                                    ),
+                                            )
+                                        })
                                         .when(progress.failed, |this| {
                                             this.child(
                                                 h_flex()

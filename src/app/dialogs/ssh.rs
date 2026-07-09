@@ -27,7 +27,7 @@ impl AxShell {
             dialog
                 .title(t!("new_ssh_connection"))
                 .w(px(520.))
-                .overlay_closable(true)
+                .overlay_closable(false)
                 .on_close({
                     let view = view.clone();
                     move |_, _, cx| {

@@ -46,6 +46,7 @@ impl AxShell {
                 .title(t!("confirm_delete").to_string())
                 .w(px(500.))
                 .keyboard(false)
+                .overlay_closable(false)
                 .on_ok({
                     let view = view.clone();
                     let paths_to_delete: Vec<String> =

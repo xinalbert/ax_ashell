@@ -12,6 +12,7 @@ impl AxShell {
             dialog
                 .w(px(600.))
                 .close_button(false)
+                .overlay_closable(false)
                 .on_close({
                     let view = view.clone();
                     move |_, _, cx| {

@@ -17,6 +17,7 @@ impl AxShell {
             dialog
                 .title(t!("open_session").to_string())
                 .w(px(520.))
+                .overlay_closable(false)
                 .on_close({
                     let view = view.clone();
                     move |_, _, cx| {
