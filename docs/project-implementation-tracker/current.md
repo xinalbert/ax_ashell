@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：修复非 macOS CI 构建失败；三个失败平台均在 `src/app/lifecycle/startup.rs` 的窗口图标 `include_bytes!` 编译期资源读取处找不到 `terminal_icon_256.png`
-- 交付物：将非 macOS 窗口图标资源引用改为基于 Cargo 包根目录解析，避免源文件目录层级变化导致 CI 构建失败
+- 目标：修正终端选择在持续输出/刷新时跟随内容移动的问题，使其像中文 IME composition 一样记住当时 viewport 行列位置和文本快照，不随后续终端刷新重新映射
+- 交付物：终端 frozen selection 改为固定 viewport row/col；复制仍使用选择时缓存文本；补充单元测试锁定持续输出后选区位置不移动；同步环境与实施记录
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/lifecycle/startup.rs`，`assets/icons/terminal_icon_all_formats/terminal_icon_256.png`，`.github/workflows/ci.yml`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`
-- 不在本轮范围内：CI matrix 调整、release workflow 调整、图标资源重生成、Windows/Linux GUI 手工验收、依赖版本升级
+- 当前范围：`src/terminal.rs`，`src/terminal/element.rs`，`src/app/actions/terminal.rs`，`src/app/lifecycle/event_loop.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`
+- 不在本轮范围内：终端 emulator 底层 selection 算法重写、非终端 TextView 选择、复制格式富文本、GUI 自动化测试、前面未提交的弹窗/SSH/可复制文本改动
 
 ## 当前状态
 
@@ -22,35 +22,35 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 定位 CI 失败根因，确认三个平台是同一个编译期资源路径问题 | CI 日志与源码路径检查 | `include_bytes!` 相对 `startup.rs` 解析，原路径少退一级目录 |
-| P2 | completed | 将窗口图标资源路径改为包根目录路径 | `rustfmt --edition 2024 src/app/lifecycle/startup.rs`，`cargo check` | 使用 `env!("CARGO_MANIFEST_DIR")` 保持跨平台稳定 |
-| P3 | completed | 同步环境与实施跟踪记录，补充本机验证边界 | tracking docs validator，`git diff --check` | Linux target 本机检查停在 crates.io 下载中断，未进入项目编译 |
+| P1 | completed | 定位当前 frozen selection 跟随刷新移动的原因 | 源码检查 | 当前通过 bottom-index、history delta 和 live selection remap 让选区随内容上移 |
+| P2 | completed | 将 frozen selection 存储改为固定 viewport row/col | `cargo check` | 类似 IME composition 的 anchor row/col，不再根据 history/display offset 重映射 |
+| P3 | completed | 更新渲染和复制语义测试 | 定向单元测试 | 复制继续使用选择时缓存文本，渲染保持固定位置 |
+| P4 | completed | 格式化、编译、测试和 tracking 收口 | `rustfmt`，`cargo check`，`cargo test --quiet`，`git diff --check`，tracking docs validator | GUI 手工持续输出拖选仍需实机 |
 
 ## 已完成
 
-- 已确认 `windows-x86_64`、`linux-x86_64`、`linux-aarch64` 三个 CI 失败日志指向同一处：`include_bytes!("../../assets/icons/terminal_icon_all_formats/terminal_icon_256.png")`
-- 已确认该路径从 `src/app/lifecycle/startup.rs` 相对解析时实际指向 `src/assets/...`，而真实资源位于仓库根目录 `assets/`
-- 已将图标资源引用改为 `include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/icons/terminal_icon_all_formats/terminal_icon_256.png"))`
-- 已刷新环境记录和实施跟踪记录，并在项目地图中补充当前编译期图标资源入口
+- 已确认当前 `TerminalFrozenSelection` 保存 bottom index、history size 和 display offset，并通过 `remap_frozen_bottom_index_for_snapshot()` / `remap_frozen_selection()` 在输出刷新后移动 frozen cell 与选区
+- 已确认 IME composition 使用 `anchor_row` / `anchor_col` 直接按 viewport 坐标绘制，不跟随终端 history 刷新重映射
+- 已确认复制路径优先返回 `TerminalFrozenSelection.text`，可保留选择时文本快照
+- 已将 `FrozenRenderCell` 改为保存固定 `row` / `col`，并将 frozen highlights 改为 `(row, col)` key
+- 已移除 frozen selection 对 history delta、bottom-index 和 live selection 的位置重映射；有 frozen selection 时渲染层不再 fallback 到底层 live selection
+- 已取消 backend output 触发的 frozen selection 自动清理；用户输入、粘贴、点击等显式清理路径仍会清理 frozen selection
 
 ## 验证
 
-- 已完成：`rustfmt --edition 2024 src/app/lifecycle/startup.rs`
-- 已完成：`cargo check`
-- 已完成：`git diff --check`
-- 已完成：`test -f assets/icons/terminal_icon_all_formats/terminal_icon_256.png`
-- 已完成：tracking docs validator
-- 未完成：`cargo check --target x86_64-unknown-linux-gnu` 多次停在 crates.io 下载中断，未进入项目代码编译；Windows/Linux GitHub Actions matrix 需要推送后复跑确认
+- 已完成：源码检查；`rustfmt --edition 2024 src/terminal.rs src/terminal/element.rs src/app/actions/terminal.rs src/app/lifecycle/event_loop.rs` 通过；`cargo check` 通过；`cargo test --quiet frozen_ -- --nocapture` 通过，3 个相关测试全部通过；`cargo test --quiet` 通过，46 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过
+- 未完成：GUI 手工持续输出拖选验证
 
 ## 风险与阻塞
 
-- 风险一：本机普通 `cargo check` 在 macOS host 上不会编译 `#[cfg(not(target_os = "macos"))]` 分支；真正覆盖仍依赖 GitHub Actions 的 Windows/Linux 构建
-- 风险二：本机 Linux target 验证受 crates.io 下载中断阻塞，无法在本机完成非 macOS target 编译
+- 风险一：如果 alacritty 底层 live selection 在输出后自动变化，渲染层固定位置和底层 selection 可能短暂不一致；复制必须继续优先使用 frozen text 快照
+- 风险二：窗口 resize 后固定 viewport row/col 需要裁剪到当前 rows/cols，否则可能越界
+- 风险三：自动测试无法确认真实鼠标拖选体验，仍需 GUI 手工验证
 
 ## 下一步
 
-- 推送后复跑 CI，确认 `windows-x86_64`、`linux-x86_64`、`linux-aarch64` 不再卡在窗口图标 `include_bytes!` 路径
+- 在 GUI 中手工确认持续输出时选区视觉固定、复制内容仍为选择时文本
 
 ## 最后更新时间
 
-- 2026-07-09 21:30 +0800
+- 2026-07-09 23:14 +0800

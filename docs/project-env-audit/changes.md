@@ -1,3 +1,48 @@
+## 2026-07-09 刷新环境记录到非交互文本可选复制
+
+- 触发原因：用户希望程序中各处文字内容能复制，而不是完全不可选中
+- 执行内容：复查 `gpui_component` 的 `TextView::selectable(true)`、窗口级 `selected_text()` 机制，以及当前 `src/app/views/`、`src/app/dialogs/` 中非交互说明、日志和路径文本渲染入口；确认不宜把按钮/菜单/列表交互控件文字改成可选文本，但可优先覆盖连接日志、错误详情、传输详情、路径列表和说明文本
+- 影响文件：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：确认本轮不需要新增依赖、不需要联网；验证命令收敛为 `rustfmt`、`cargo check`、`cargo test --quiet`、`git diff --check` 与 tracking docs validator
+- 对 plan 的更新：允许继续实施“非交互文字块使用 selectable TextView；保留按钮/菜单/列表项交互语义”
+
+## 2026-07-09 刷新环境记录到 SSH 瞬时网络失败自动重试
+
+- 触发原因：用户截图显示首次 SSH 连接报 `No route to host (OS error 65)`，但手动 Retry 后可成功，要求判断是否存在问题
+- 执行内容：复查 `src/backend/ssh/connection.rs`、`src/config/store.rs` 和连接进度展示链路；确认错误属于 TCP 层网络不可达，不是 SSH 算法协商问题；现有 cached mode 失败后切 legacy 的提示对这类网络错误有误导性，且缺少短退避自动重试
+- 影响文件：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：确认本轮不需要新增依赖、不需要联网；验证命令收敛为 `rustfmt`、`cargo check`、定向单元测试、`git diff --check` 与 tracking docs validator
+- 对 plan 的更新：允许继续实施“TCP/代理连接短暂网络错误自动重试；网络错误不触发 SSH legacy fallback”
+
+## 2026-07-09 完成 SSH 瞬时网络失败自动重试环境验证
+
+- 触发原因：SSH TCP/代理连接短退避重试和网络错误 fallback 边界已实现，需要回写环境验证结果
+- 执行内容：在 `src/backend/ssh/connection.rs` 中增加 transport connect retry helper，对 `No route to host`、`Connection refused`、`Timed out` 等短暂网络错误做 0.5s / 1.5s 自动重试；网络错误不再触发 SSH mode fallback，SSH 协商错误仍保留 legacy fallback；补充错误分类单元测试
+- 影响文件：`src/backend/ssh/connection.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024 src/backend/ssh/connection.rs` 通过；`cargo check` 通过；`cargo test --quiet retry -- --nocapture` 通过；`cargo test --quiet retries -- --nocapture` 通过；`cargo test --quiet` 通过，45 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过
+- 对 plan 的更新：代码侧实现已完成；真实局域网瞬时恢复仍需用户侧或实机环境确认
+
+## 2026-07-09 刷新环境记录到弹窗遮罩与登录取消按钮
+
+- 触发原因：用户反馈弹窗出现后其他区域点击事件应被屏蔽，并希望登录弹窗提供取消按钮
+- 执行内容：复查 `src/app/dialogs/ssh.rs`、`src/app/dialogs/selector.rs`、`src/app/dialogs/transfers.rs`、`src/app/dialogs/delete_confirm.rs`、`src/app/views/layout.rs` 和 `gpui_component` Dialog overlay 行为；确认应用内 SSH 表单已有取消按钮，但背景点击会因 `overlay_closable(true)` 关闭弹窗；连接进度浮层只在失败后显示取消入口
+- 影响文件：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：确认本轮不需要新增依赖、不需要联网；验证命令收敛为 `rustfmt`、`cargo check`、`git diff --check` 与 tracking docs validator
+- 对 plan 的更新：允许继续实施“应用内 Dialog 背景点击只吞事件、不关闭；连接进度浮层始终显示取消按钮”
+
+## 2026-07-09 完成弹窗遮罩与登录取消按钮环境验证
+
+- 触发原因：弹窗遮罩和 SSH 登录连接取消入口已实现，需要回写环境验证结果
+- 执行内容：将应用内 Dialog 统一设置为 `overlay_closable(false)`；为连接进度浮层补充遮罩事件屏蔽和连接中可见取消按钮；执行本机格式化、编译检查、diff 空白检查和 tracking docs validator
+- 影响文件：`src/app/dialogs/ssh.rs`，`src/app/dialogs/selector.rs`，`src/app/dialogs/transfers.rs`，`src/app/dialogs/delete_confirm.rs`，`src/app/views/layout.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024 src/app/dialogs/ssh.rs src/app/dialogs/selector.rs src/app/dialogs/transfers.rs src/app/dialogs/delete_confirm.rs src/app/views/layout.rs` 通过；`cargo check` 通过；`git diff --check` 通过；tracking docs validator 通过；GUI 手工验证未执行
+- 对 plan 的更新：本轮代码侧实现已完成；后续需要在 GUI 中确认背景点击不关闭弹窗、不穿透点击，以及连接中取消按钮关闭对应连接进度
+
 ## 2026-07-09 刷新环境记录到非 macOS CI 资源路径修复
 
 - 触发原因：用户提供 `windows-x86_64`、`linux-x86_64`、`linux-aarch64` CI 失败日志，要求排查失败原因
@@ -920,3 +965,19 @@
 - 执行内容：为远端路径新增归一化和绝对化 helper；扩展终端 hover / click 目标为 URL 或路径，并对路径 token 裁掉尾部标点与 `:行号` / `:列号`；让 Command/Ctrl+单击路径时打开当前 group 的 SFTP 页面，按当前 shell 工作目录把相对路径解析成绝对路径，并在目录列表返回后自动定位到目标目录或文件；同时抑制显式点击跳转被“切到 SFTP 页自动同步 cwd”逻辑覆盖
 - 验证结果：`rustfmt --edition 2024 src/sftp/path.rs src/sftp.rs src/app.rs src/app/core/types.rs src/app/lifecycle/init.rs src/app/lifecycle/event_loop.rs src/app/workspace/workspace.rs src/app/actions/sftp.rs src/app/actions/terminal.rs src/app/actions/session.rs src/terminal/highlight.rs` 通过；`cargo check` 通过；`cargo test --quiet terminal::highlight -- --nocapture` 通过；`cargo test --quiet normalize_remote_path -- --nocapture` 通过；`cargo test --quiet resolve_remote_path -- --nocapture` 通过；`cargo test --quiet` 通过，40 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过
 - 风险/待办：GUI 手工验证和真实 SSH / SFTP 联机验证未执行；复杂 shell 转义、符号链接大小写差异和更激进的路径启发式仍留待后续迭代
+
+## 2026-07-09 完成非交互文本可选复制环境验证
+
+- 目的：在将主要非交互文本改为可拖选复制后，把编译、测试和文档校验结果回写到环境记忆
+- 改动范围：`src/app/views.rs`，`src/app/views/layout.rs`，`src/app/views/helpers.rs`，`src/app/views/monitoring.rs`，`src/app/views/terminal_panel.rs`，`src/app/views/sftp_panel.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`src/app/dialogs.rs`，`src/app/dialogs/selector.rs`，`src/app/dialogs/transfers.rs`，`src/app/dialogs/delete_confirm.rs`，`src/app/dialogs/settings/about.rs`，`src/app/dialogs/settings/sync.rs`，`src/app/dialogs/settings/proxy.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：新增可选文本 helper；将连接日志、错误详情、路径列表、文件列表、传输详情、监控指标和说明文字迁移到 `TextView::selectable(true)`；按钮、菜单、排序表头和输入框 label 保持控件语义不变
+- 验证结果：`rustfmt --edition 2024` 覆盖本轮修改 Rust 文件并通过；`cargo check` 通过；`cargo test --quiet` 通过，45 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过；仍保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 手工拖选复制验证未执行；第三方 setting 组件内部 description、按钮/菜单/表头等控件 label 未强行转为可选文本，以避免破坏点击和排序语义
+
+## 2026-07-09 完成终端选区固定 viewport 位置环境验证
+
+- 目的：在修正终端 frozen selection 随输出刷新移动的问题后，把编译、测试和剩余 GUI 验证边界回写到环境记忆
+- 改动范围：`src/terminal.rs`，`src/terminal/element.rs`，`src/app/actions/terminal.rs`，`src/app/lifecycle/event_loop.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：将 frozen selection 的 cell/highlight 坐标从 bottom-index/history delta 改为固定 viewport row/col；移除渲染层对 live selection 和 history 变化的重映射；保留选择时文本快照作为复制来源；取消 backend output 自动清理 frozen selection
+- 验证结果：`rustfmt --edition 2024 src/terminal.rs src/terminal/element.rs src/app/actions/terminal.rs src/app/lifecycle/event_loop.rs` 通过；`cargo check` 通过；`cargo test --quiet frozen_ -- --nocapture` 通过，3 个相关测试全部通过；`cargo test --quiet` 通过，46 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过；仍保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 手工持续输出拖选验证未执行；窗口 resize 后选区会按当前 rows/cols 裁剪，仍需实机确认视觉体验
