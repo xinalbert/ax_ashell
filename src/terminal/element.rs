@@ -13,7 +13,7 @@ use gpui_component::ActiveTheme as _;
 use crate::AxShell;
 use crate::terminal::custom_blocks::{is_custom_block_supported, paint_custom_block};
 use crate::terminal::{
-    RenderCell, RenderSnapshot, TerminalComposition, TerminalFrozenSelection, ViewportSelection,
+    RenderSnapshot, TerminalComposition, TerminalFrozenSelection, ViewportSelection,
 };
 
 #[derive(Clone, Copy)]
@@ -433,20 +433,21 @@ impl TerminalElement {
 
         let keyword_highlights = &self.snapshot.highlights;
         let search_highlights = self.search_highlights.as_ref();
-        let frozen_cells = frozen_cells_by_position(self.frozen_selection.as_ref(), &self.snapshot);
-        let frozen_highlights =
-            frozen_highlights_by_position(self.frozen_selection.as_ref(), &self.snapshot);
         let active_selection = if let Some(frozen) = self.frozen_selection.as_ref() {
             remap_frozen_selection(frozen, &self.snapshot)
         } else {
             self.snapshot.selection
         };
+        if let Some(selection) = active_selection {
+            rects.extend(selection_background_rects(
+                selection,
+                self.snapshot.rows,
+                self.snapshot.cols,
+                cx.theme().selection,
+            ));
+        }
 
         for render_cell in &self.snapshot.cells {
-            let render_cell = frozen_cells
-                .as_ref()
-                .and_then(|cells| cells.get(&(render_cell.row, render_cell.col)))
-                .unwrap_or(render_cell);
             let cell = &render_cell.cell;
             if cell.flags.intersects(
                 Flags::HIDDEN | Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
@@ -458,7 +459,7 @@ impl TerminalElement {
                 selection_contains(selection, render_cell.row, render_cell.col)
             });
             let bg = color_to_hsla(cell.bg, false, font_brightness, cx);
-            if selected || !is_default_bg(cell.bg) || cell.flags.contains(Flags::INVERSE) {
+            if !selected && (!is_default_bg(cell.bg) || cell.flags.contains(Flags::INVERSE)) {
                 rects.push(LayoutRect {
                     row: render_cell.row,
                     col: render_cell.col,
@@ -467,9 +468,7 @@ impl TerminalElement {
                     } else {
                         1
                     },
-                    color: if selected {
-                        cx.theme().selection
-                    } else if cell.flags.contains(Flags::INVERSE) {
+                    color: if cell.flags.contains(Flags::INVERSE) {
                         color_to_hsla(cell.fg, false, font_brightness, cx)
                     } else {
                         bg
@@ -491,14 +490,9 @@ impl TerminalElement {
                 .copied()
             {
                 style.color = adjust_terminal_foreground_brightness(hl_color, font_brightness);
-            } else if let Some(hl_color) = frozen_highlights
-                .as_ref()
-                .and_then(|map| map.get(&(render_cell.row, render_cell.col)).copied())
-                .or_else(|| {
-                    keyword_highlights
-                        .get(&(render_cell.row, render_cell.col))
-                        .copied()
-                })
+            } else if let Some(hl_color) = keyword_highlights
+                .get(&(render_cell.row, render_cell.col))
+                .copied()
             {
                 // Preserve original ANSI/truecolor emphasis from the terminal output.
                 if keyword_highlight_allowed(cell) {
@@ -1023,44 +1017,6 @@ fn merge_underlines(mut underlines: Vec<LayoutUnderline>) -> Vec<LayoutUnderline
     merged
 }
 
-fn frozen_cells_by_position(
-    frozen_selection: Option<&TerminalFrozenSelection>,
-    snapshot: &RenderSnapshot,
-) -> Option<std::collections::HashMap<(i32, i32), RenderCell>> {
-    let frozen_selection = frozen_selection?;
-    let mut cells = std::collections::HashMap::with_capacity(frozen_selection.cells.len());
-    for cell in &frozen_selection.cells {
-        if cell.row < 0 || cell.row >= snapshot.rows as i32 {
-            continue;
-        }
-        cells.insert(
-            (cell.row, cell.col),
-            RenderCell {
-                row: cell.row,
-                col: cell.col,
-                cell: cell.cell.clone(),
-            },
-        );
-    }
-    Some(cells)
-}
-
-fn frozen_highlights_by_position(
-    frozen_selection: Option<&TerminalFrozenSelection>,
-    snapshot: &RenderSnapshot,
-) -> Option<std::collections::HashMap<(i32, i32), Hsla>> {
-    let frozen_selection = frozen_selection?;
-    let mut highlights =
-        std::collections::HashMap::with_capacity(frozen_selection.highlights.len());
-    for ((row, col), color) in &frozen_selection.highlights {
-        if *row < 0 || *row >= snapshot.rows as i32 {
-            continue;
-        }
-        highlights.insert((*row, *col), *color);
-    }
-    Some(highlights)
-}
-
 fn remap_frozen_selection(
     frozen_selection: &TerminalFrozenSelection,
     snapshot: &RenderSnapshot,
@@ -1089,6 +1045,28 @@ fn remap_frozen_selection(
         },
         is_block: frozen_selection.selection.is_block,
     })
+}
+
+fn selection_background_rects(
+    selection: ViewportSelection,
+    rows: usize,
+    cols: usize,
+    color: Hsla,
+) -> Vec<LayoutRect> {
+    let mut rects = Vec::new();
+    for row in 0..rows {
+        for col in 0..cols {
+            if selection_contains(selection, row as i32, col as i32) {
+                rects.push(LayoutRect {
+                    row: row as i32,
+                    col: col as i32,
+                    cells: 1,
+                    color,
+                });
+            }
+        }
+    }
+    rects
 }
 
 fn composition_text_width(
@@ -1339,12 +1317,10 @@ fn named_color(named: NamedColor, _foreground: bool, cx: &App) -> Hsla {
 mod tests {
     use super::{
         byte_index_for_utf16_offset, composition_selected_byte_range, contrast_ratio,
-        frozen_cells_by_position, high_contrast_cursor_color, keyword_highlight_allowed,
-        remap_frozen_selection,
+        high_contrast_cursor_color, keyword_highlight_allowed, remap_frozen_selection,
+        selection_background_rects,
     };
-    use crate::terminal::{
-        FrozenRenderCell, RenderSnapshot, TerminalFrozenSelection, ViewportSelection,
-    };
+    use crate::terminal::{RenderSnapshot, TerminalFrozenSelection, ViewportSelection};
     use alacritty_terminal::{
         term::cell::{Cell, Flags},
         vte::ansi::{Color as AnsiColor, NamedColor},
@@ -1467,21 +1443,18 @@ mod tests {
     }
 
     #[test]
-    fn frozen_cells_stay_at_captured_viewport_rows() {
-        let mut frozen = frozen_selection(8, 8);
-        let mut cell = Cell::default();
-        cell.c = 'x';
-        frozen.cells.push(FrozenRenderCell {
-            row: 8,
-            col: 2,
-            cell,
-        });
+    fn frozen_selection_paints_background_without_live_cells() {
+        let frozen = frozen_selection(8, 8);
         let snapshot = snapshot(10, 7);
+        let selection = remap_frozen_selection(&frozen, &snapshot).unwrap();
+        let color = Hsla::from(rgb(0x336699));
+        let rects = selection_background_rects(selection, snapshot.rows, snapshot.cols, color);
+        let coords: Vec<_> = rects
+            .iter()
+            .map(|rect| (rect.row, rect.col, rect.cells))
+            .collect();
 
-        let cells = frozen_cells_by_position(Some(&frozen), &snapshot).unwrap();
-
-        assert!(cells.contains_key(&(8, 2)));
-        assert!(!cells.contains_key(&(6, 2)));
+        assert_eq!(coords, vec![(8, 0, 1), (8, 1, 1), (8, 2, 1), (8, 3, 1)]);
     }
 
     fn frozen_selection(start_row: usize, end_row: usize) -> TerminalFrozenSelection {
@@ -1494,8 +1467,6 @@ mod tests {
                 end_col: 3,
                 is_block: false,
             },
-            cells: Vec::new(),
-            highlights: HashMap::new(),
             text: "text".to_string(),
         }
     }

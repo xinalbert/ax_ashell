@@ -9,9 +9,7 @@ use gpui::{
 
 use crate::{
     AxShell, TerminalBacktabKey, TerminalTabKey,
-    terminal::{
-        BackendCommand, FrozenRenderCell, TerminalComposition, TerminalFrozenSelection, encode_key,
-    },
+    terminal::{BackendCommand, TerminalComposition, TerminalFrozenSelection, encode_key},
 };
 
 thread_local! {
@@ -746,47 +744,12 @@ impl AxShell {
             self.terminal_frozen_selection = None;
             return;
         };
-        let (start_row, end_row) = selection_row_range(selection);
-        let cells = snapshot
-            .cells
-            .iter()
-            .filter(|cell| {
-                let row = cell.row.max(0) as usize;
-                row >= start_row && row <= end_row
-            })
-            .map(|cell| FrozenRenderCell {
-                row: cell.row,
-                col: cell.col,
-                cell: cell.cell.clone(),
-            })
-            .collect();
-        let highlights = snapshot
-            .highlights
-            .iter()
-            .filter_map(|(&(row, col), &color)| {
-                let row_usize = row.max(0) as usize;
-                if row_usize < start_row || row_usize > end_row {
-                    return None;
-                }
-                Some(((row, col), color))
-            })
-            .collect();
-
         self.terminal_frozen_selection = Some(TerminalFrozenSelection {
             tab_id: active_id,
             selection,
-            cells,
-            highlights,
             text: tab.selection_text().unwrap_or_default(),
         });
     }
-}
-
-fn selection_row_range(selection: crate::terminal::ViewportSelection) -> (usize, usize) {
-    (
-        selection.start_row.min(selection.end_row),
-        selection.start_row.max(selection.end_row),
-    )
 }
 
 fn normalize_utf16_range(range: Option<Range<usize>>, text: &str) -> Option<Range<usize>> {

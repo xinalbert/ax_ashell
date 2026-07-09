@@ -198,18 +198,9 @@ pub struct TerminalComposition {
 }
 
 #[derive(Clone)]
-pub struct FrozenRenderCell {
-    pub row: i32,
-    pub col: i32,
-    pub cell: Cell,
-}
-
-#[derive(Clone)]
 pub struct TerminalFrozenSelection {
     pub tab_id: String,
     pub selection: ViewportSelection,
-    pub cells: Vec<FrozenRenderCell>,
-    pub highlights: std::collections::HashMap<(i32, i32), gpui::Hsla>,
     pub text: String,
 }
 
