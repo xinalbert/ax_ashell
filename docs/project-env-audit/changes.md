@@ -1,3 +1,12 @@
+## 2026-07-09 刷新环境记录到非 macOS CI 资源路径修复
+
+- 触发原因：用户提供 `windows-x86_64`、`linux-x86_64`、`linux-aarch64` CI 失败日志，要求排查失败原因
+- 执行内容：复查 `.github/workflows/ci.yml`、`Cargo.toml`、`src/app/lifecycle/startup.rs` 与图标资源目录；确认三个平台失败原因相同，均为 `include_bytes!` 编译期读取 `terminal_icon_256.png` 的相对路径少退一级目录；将资源引用改为基于 `CARGO_MANIFEST_DIR` 的包根目录路径
+- 影响文件：`src/app/lifecycle/startup.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024 src/app/lifecycle/startup.rs` 通过；`cargo check` 通过；`git diff --check` 通过；资源存在性检查通过；`cargo check --target x86_64-unknown-linux-gnu` 多次停在 crates.io 下载中断，未进入项目代码编译
+- 对 plan 的更新：本轮无需新增依赖或调整 CI；后续由 GitHub Actions matrix 重新验证 Windows/Linux release 构建
+
 ## 2026-07-06 初始化环境预检记录
 
 - 触发原因：用户要求先评估实现难度，再进入真实施工

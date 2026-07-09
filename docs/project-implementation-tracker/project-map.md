@@ -22,7 +22,7 @@
 | `src/app/theme.rs` | app 视觉系统、主题注册、custom theme 和字体加载 | 改内置主题资源、用户主题加载、custom theme 保存/应用、Maple Mono 内置字体加载或 ThemeRegistry 接线时 | 直接暴露为 `crate::app::theme`，资源 include 路径按当前文件使用 `../../assets/...` |
 | `src/app/core/` | app 常量和共享类型 | 改尺寸常量、快捷键 context、仓库 URL、版本展示、Pane/Tab/SFTP UI 类型或 workspace tab 描述时 | 通过 `#[path]` 继续暴露为 `crate::app::constants` 与内部 `types` |
 | `src/app/input/` | 原生菜单和快捷键录制/绑定 | 改 App menu、workspace keybindings、设置页按键录制、冲突检测或 keybinding 展示时 | 通过 `#[path]` 继续暴露为 `crate::app::app_menu` 与 `crate::app::keybinding_recorder` |
-| `src/app/lifecycle/` | 启动、窗口打开、日志/crash hook、`AxShell::new` 和事件泵 | 改启动顺序、日志目录、crash report、主窗口 options、runtime event pump、输入事件分发或初始化默认状态时 | 通过 `#[path]` 继续暴露为 `crate::app::startup`，内部 `init` / `event_loop` 仍挂到 `AxShell` impl |
+| `src/app/lifecycle/` | 启动、窗口打开、日志/crash hook、`AxShell::new` 和事件泵 | 改启动顺序、日志目录、crash report、主窗口 options、非 macOS 窗口图标、runtime event pump、输入事件分发或初始化默认状态时 | 通过 `#[path]` 继续暴露为 `crate::app::startup`，内部 `init` / `event_loop` 仍挂到 `AxShell` impl |
 | `src/app/syncing/` | app 层同步动作 | 改同步表单取值、WebDAV/S3 上传下载触发、sync status 或 SyncFinished 事件接线时 | 通过 `#[path]` 继续暴露为 `crate::app::config_sync` |
 | `src/app/terminal/` | app 层 terminal 周边功能 | 改终端搜索栏、搜索匹配跳转、搜索 highlight map 或搜索输入焦点时 | 通过 `#[path]` 继续暴露为 `crate::app::search`，不要和根级 `src/terminal/` 终端模型混淆 |
 | `src/app/workspace/` | app 工作区页面与 tab 生命周期 | 改 workspace page route、terminal/SFTP/settings tab 切换、SFTP 页面打开/关闭、连接进度重试或布局持久化时 | 通过 `#[path]` 继续挂为内部 `workspace` 模块；根目录无 `workspace.rs` 文件 |
@@ -40,6 +40,7 @@
 | `.github/workflows/` | CI / Release 构建和打包元数据 | 改二进制名、artifact 名、macOS bundle Info.plist 或发布路径时 | `release.yml` 手工组装 `.app`，需要与 Cargo 包名一致 |
 | `scripts/` | 本地开发/打包脚本与发布辅助脚本 | 改 macOS `.app` 名称、bundle id、图标文件名、签名逻辑、tag/version 映射或发布前 manifest 同步时 | `package-macos-app.sh` 会运行 `cargo build --release` 并组装 bundle；本轮将新增共享版本脚本 |
 | `assets/*.desktop` | Linux desktop entry | 改应用显示名、Exec、Icon、StartupWMClass 或 Debian metadata 时 | 当前 desktop 文件为 `assets/ax_shell.desktop` |
+| `assets/icons/terminal_icon_all_formats/` | 应用图标资源目录 | 改 `build.rs` Windows icon、macOS bundle icon、Linux desktop/deb icon、非 macOS runtime window icon 或 release 打包图标路径时 | 批量图标不逐项索引；`terminal_icon_256.png` 是 `startup.rs` 非 macOS runtime window icon 的编译期资源 |
 | `docs/` | README、用户/开发文档、环境审计和实施跟踪 | 改项目名称、配置目录、同步文件名、打包命令或验证边界时 | 本轮需同步 README、user-guide、development、env audit 与 project tracker |
 
 ## 关键文件
@@ -57,6 +58,7 @@
 | `src/app/actions/terminal.rs` | terminal 键盘、鼠标、滚动和 IME action | `on_terminal_key_down`，`terminal_grid_point_and_side`，`on_terminal_scroll`，IME helpers | 鼠标命中、选择、滚动行高、快捷键、粘贴或 IME 候选框位置与终端网格不一致时 |
 | `src/app/theme.rs` | 主题注册、当前主题应用和 custom theme 逻辑 | `load_embedded_themes`，`load_user_themes`，`apply_theme_preferences`，`save_custom_appearance` | app 视觉系统入口；通过 `crate::app::theme` 暴露 |
 | `src/app/lifecycle/startup.rs` | 启动辅助、日志初始化和窗口打开 | `init_logging`，`runtime_log_dir`，`crash_report_dir`，`open_main_window`，platform launch helpers | 原 `src/app/lifecycle/startup.rs` 迁入；通过 `crate::app::startup` 兼容导出 |
+| `assets/icons/terminal_icon_all_formats/terminal_icon_256.png` | 非 macOS runtime 窗口图标和 Linux/Debian 256px 图标资源 | PNG 资源文件 | 改 `include_bytes!`、Debian asset 或 Linux release icon 路径时确认存在性 |
 | `src/app/input/app_menu.rs` | GPUI 原生应用菜单注册 | `install`，`app_menus`，`Quit` | 原 `src/app/app_menu.rs` 迁入；通过 `crate::app::app_menu` 兼容导出 |
 | `src/app.rs` | 全局 UI 状态结构和 app 子模块出口 | `AxShell` fields，type re-exports | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel 或跨模块共享类型时 |
 | `src/app/lifecycle/init.rs` | `AxShell` 初始化和默认状态装配 | `AxShell::new` | 原 `src/app/lifecycle/init.rs` 迁入；新增输入框、默认配置读取、初始 theme/font/system 状态、订阅或 event pump 启动时 |
@@ -118,13 +120,13 @@
 
 ## 忽略与未索引
 
-- `assets/icons/`、`assets/fonts/`、`target/` 未索引：本轮不涉及批量图标/字体资源或构建产物
+- `assets/icons/` 批量图标、`assets/fonts/`、`target/` 未逐项索引：仅记录当前构建/打包会直接引用的关键图标入口，字体资源和构建产物不逐项展开
 
 ## 刷新规则
 
-- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics、workspace page / tab 模型、SFTP 按需页面/标签关闭/快捷键焦点、SFTP 列表排序/传输标签面板、SFTP 目录导航失败恢复、SSH 连接认证/legacy/远程系统探针/X11 relay、settings General/Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
+- 刷新触发：项目命名、Cargo 包/二进制名、配置目录、同步默认文件名、启动初始化、日志/crash hook、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、SAVED 侧栏入口、custom theme 持久化模型、theme file 注册策略、设置页字段分组、theme list 行为、terminal 亮度语义、终端字体 metrics、workspace page / tab 模型、SFTP 按需页面/标签关闭/快捷键焦点、SFTP 列表排序/传输标签面板、SFTP 目录导航失败恢复、SSH 连接认证/legacy/远程系统探针/X11 relay、settings General/Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
 - 最近依据：`Cargo.toml`，`src/app.rs`，`src/app/theme.rs`，`src/app/core/constants.rs`，`src/app/core/types.rs`，`src/app/input/app_menu.rs`，`src/app/input/keybinding_recorder.rs`，`src/app/lifecycle/startup.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/syncing/config_sync.rs`，`src/app/terminal/search.rs`，`src/app/workspace/workspace.rs`，`src/app/state.rs`，`src/app/actions.rs`，`src/config.rs`，`src/config/store.rs`，`src/session.rs`，`src/session/model.rs`，`src/session/config.rs`，`src/app/dialogs.rs`，`src/app/dialogs/settings.rs`，`src/app/dialogs/settings/general.rs`，`src/app/dialogs/settings/custom.rs`，`src/app/dialogs/settings/shell.rs`，`src/app/views.rs`，`src/app/views/tab_bar.rs`，`src/app/views/layout.rs`，`src/app/views/terminal_panel.rs`，`src/app/views/sftp_panel.rs`，`src/app/views/sftp_panel/sort.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`src/backend.rs`，`src/backend/auth.rs`，`src/backend/local.rs`，`src/backend/ssh.rs`，`src/backend/ssh/connection.rs`，`src/backend/ssh/legacy.rs`，`src/backend/ssh/system_probe.rs`，`src/backend/ssh/x11.rs`，`src/sftp.rs`，`src/terminal.rs`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-09 11:41 +0800
+- 2026-07-09 21:30 +0800

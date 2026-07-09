@@ -551,9 +551,10 @@ pub(crate) fn open_main_window(cx: &mut App) {
     }
 
     #[cfg(not(target_os = "macos"))]
-    if let Ok(img) = image::load_from_memory(include_bytes!(
-        "../../assets/icons/terminal_icon_all_formats/terminal_icon_256.png"
-    )) {
+    if let Ok(img) = image::load_from_memory(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/icons/terminal_icon_all_formats/terminal_icon_256.png"
+    ))) {
         window_options.icon = Some(std::sync::Arc::new(img.into_rgba8()));
     }
 
