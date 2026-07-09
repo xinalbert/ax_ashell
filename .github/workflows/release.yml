@@ -30,6 +30,10 @@ jobs:
             target: x86_64-unknown-linux-gnu
             name: linux-x86_64
             bin: ax_shell
+          - os: ubuntu-22.04-arm # native Linux ARM64
+            target: aarch64-unknown-linux-gnu
+            name: linux-aarch64
+            bin: ax_shell
           - os: macos-14 # Apple Silicon
             target: aarch64-apple-darwin
             name: macos-aarch64
@@ -148,31 +152,158 @@ jobs:
 
             # Package with ditto (Apple's tool) to preserve signature/metadata
             ditto -c -k --keepParent "$APP" "${STAGE}.zip"
-            echo "ASSET=${STAGE}.zip" >> "$GITHUB_ENV"
+            {
+              echo "ASSET_PATHS<<EOF"
+              echo "${STAGE}.zip"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
 
           elif [ "${{ runner.os }}" = "Windows" ]; then
             mkdir "$STAGE"
             cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$STAGE/"
             7z a "${STAGE}.zip" "$STAGE" >/dev/null
-            echo "ASSET=${STAGE}.zip" >> "$GITHUB_ENV"
+            {
+              echo "ASSET_PATHS<<EOF"
+              echo "${STAGE}.zip"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
 
           else
             # Linux
             mkdir "$STAGE"
             cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$STAGE/"
             tar -czf "${STAGE}.tar.gz" "$STAGE"
-            echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
+
+            case "${{ matrix.target }}" in
+              x86_64-unknown-linux-gnu)
+                DEB_ARCH="amd64"
+                ;;
+              aarch64-unknown-linux-gnu)
+                DEB_ARCH="arm64"
+                ;;
+              *)
+                echo "unsupported Debian architecture for target: ${{ matrix.target }}" >&2
+                exit 1
+                ;;
+            esac
+
+            DEB_ROOT="${STAGE}-deb"
+            mkdir -p \
+              "$DEB_ROOT/DEBIAN" \
+              "$DEB_ROOT/usr/bin" \
+              "$DEB_ROOT/usr/share/applications" \
+              "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps"
+            cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$DEB_ROOT/usr/bin/ax_shell"
+            chmod 755 "$DEB_ROOT/usr/bin/ax_shell"
+            cp "assets/ax_shell.desktop" "$DEB_ROOT/usr/share/applications/ax_shell.desktop"
+            cp "assets/icons/terminal_icon_all_formats/terminal_icon_256.png" \
+              "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps/ax_shell.png"
+            cat > "$DEB_ROOT/DEBIAN/control" <<EOF
+          Package: ax-shell
+          Version: ${RELEASE_CARGO_VERSION}
+          Architecture: ${DEB_ARCH}
+          Maintainer: AxShell contributors
+          Section: terminal
+          Priority: optional
+          Description: A GPUI Component based SSH and local terminal client
+          EOF
+            chmod 644 "$DEB_ROOT/DEBIAN/control"
+            dpkg-deb --build --root-owner-group "$DEB_ROOT" "${STAGE}.deb"
+
+            {
+              echo "ASSET_PATHS<<EOF"
+              echo "${STAGE}.tar.gz"
+              echo "${STAGE}.deb"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
           fi
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
+          path: ${{ env.ASSET_PATHS }}
+
+  macos-universal:
+    name: macos-universal
+    needs: build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHON_BIN=python3
+          if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+            PYTHON_BIN=python
+          fi
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            "$PYTHON_BIN" scripts/release_version.py env --tag "$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          else
+            "$PYTHON_BIN" scripts/release_version.py env --cargo-version-file Cargo.toml >> "$GITHUB_ENV"
+          fi
+
+      - name: Download macOS ARM64 artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: macos-aarch64
+          path: dist/macos-aarch64
+
+      - name: Download macOS x86_64 artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: macos-x86_64
+          path: dist/macos-x86_64
+
+      - name: Package macOS universal app
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_LABEL="${GITHUB_REF_NAME:-dev}"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            VERSION_LABEL="${RELEASE_TAG}"
+          fi
+
+          ARM_ZIP="$(find dist/macos-aarch64 -name '*.zip' -print -quit)"
+          X86_ZIP="$(find dist/macos-x86_64 -name '*.zip' -print -quit)"
+          if [ -z "$ARM_ZIP" ] || [ -z "$X86_ZIP" ]; then
+            echo "missing per-architecture macOS artifacts" >&2
+            exit 1
+          fi
+
+          mkdir -p expanded/arm64 expanded/x86_64
+          ditto -x -k "$ARM_ZIP" expanded/arm64
+          ditto -x -k "$X86_ZIP" expanded/x86_64
+
+          rm -rf AxShell.app
+          cp -R expanded/arm64/AxShell.app AxShell.app
+          UNIVERSAL_BIN="AxShell.app/Contents/MacOS/ax_shell"
+          lipo -create \
+            expanded/arm64/AxShell.app/Contents/MacOS/ax_shell \
+            expanded/x86_64/AxShell.app/Contents/MacOS/ax_shell \
+            -output "${UNIVERSAL_BIN}.universal"
+          mv "${UNIVERSAL_BIN}.universal" "$UNIVERSAL_BIN"
+          chmod 755 "$UNIVERSAL_BIN"
+          lipo -info "$UNIVERSAL_BIN"
+
+          codesign --force --deep --sign - AxShell.app
+          codesign --verify --verbose AxShell.app
+
+          ASSET="ax_shell-${VERSION_LABEL}-macos-universal.zip"
+          ditto -c -k --keepParent AxShell.app "$ASSET"
+          echo "ASSET=${ASSET}" >> "$GITHUB_ENV"
+
+      - name: Upload macOS universal workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-universal
           path: ${{ env.ASSET }}
 
   publish:
     name: Publish Release
-    needs: build
+    needs: [build, macos-universal]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:

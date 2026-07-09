@@ -43,7 +43,7 @@ See [Development and Packaging](docs/development.en.md) for the full run and pac
 ## Project Status
 
 - Runtime and packaging icons come from `assets/icons/terminal_icon_all_formats`
-- Pushing a `vYYYY.M.D` or `vYYYY.M.D-N` tag now drives release version sync, multi-platform builds, and GitHub Release assets from one version source
+- Pushing a `vYYYY.M.D` or `vYYYY.M.D-N` tag now drives release version sync and publishes Windows x86_64, Linux x86_64 / aarch64, and per-architecture plus universal macOS assets
 - Token-backed publishing paths such as Homebrew cask updates are currently disabled
 - The old `ax_ashell` config directory is copied into the new `AxShell` config directory on first use when needed; the old directory is not deleted
 

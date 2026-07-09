@@ -814,3 +814,19 @@
 - 执行内容：修改 release highlights 输出结构和关键词规则；执行 workflow YAML 解析、Bash 静态检查、`git diff --check`、本地样例生成和 tracking docs validator；确认本轮未修改 Rust 源码、依赖或构建矩阵
 - 验证结果：workflow YAML 解析通过；`Generate release highlights` Bash 静态检查通过；`git diff --check` 通过；本地样例生成确认 `Full changelog`、句尾 commit 链接、SFTP 独立分组和关键词误匹配修正生效；tracking docs validator 通过
 - 风险/待办：关键词分组仍是启发式规则；真实 GitHub Release 页面渲染仍需在下次 tag 发布后确认
+
+## 2026-07-09 刷新环境记录到发布产物覆盖范围扩展
+
+- 目的：在扩展 GitHub Actions 发布矩阵和产物类型前，确认本轮环境边界和验证方式
+- 改动范围：`.github/workflows/ci.yml`，`.github/workflows/release.yml`，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/research.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：复查 CI / Release workflow、Debian metadata、Linux desktop entry 和中英文文档；联网核对 GitHub-hosted runner 当前标签；确认本轮不新增 Rust 依赖、不调整应用源码、不使用多 agent
+- 验证结果：待执行 workflow YAML 解析、CI / Release Bash 片段静态检查和 tracking docs validator；Linux ARM64、Linux `.deb` 和 macOS universal 真实产物需 GitHub Actions 运行确认
+- 风险/待办：Windows ARM64 runner 仍为 public preview，本轮不纳入主发布矩阵；macOS universal 和 `.deb` 安装体验需发布后实测
+
+## 2026-07-09 完成发布产物覆盖范围扩展环境验证
+
+- 目的：在发布矩阵和产物类型扩展后，把实际静态验证结果和剩余线上验证边界回写到环境记忆
+- 改动范围：`.github/workflows/ci.yml`，`.github/workflows/release.yml`，`README.md`，`README.en.md`，`docs/development.md`，`docs/development.en.md`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：新增 Linux ARM64 CI/Release matrix；在 Release workflow 中为 Linux 输出 `.tar.gz` 和 `.deb`；新增 macOS universal job 组合双架构 `.app`；同步中英文发布文档；确认本轮未修改 Rust 源码、依赖或 lockfile
+- 验证结果：workflow YAML 解析通过；Release workflow 所有 `run` 脚本经本地占位替换后通过 `bash -n`；`git diff --check` 通过；tracking docs validator 通过
+- 风险/待办：Linux ARM64 runner、Linux `.deb` 构建安装和 macOS universal app 需要 GitHub Actions 实际发布后下载验证；Windows ARM64 仍因 runner preview 状态留作后续实验项

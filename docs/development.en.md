@@ -122,6 +122,19 @@ On tag builds the workflow resolves the tag through `scripts/release_version.py`
 
 Manual `workflow_dispatch` runs do not create a GitHub Release. They build from the current `Cargo.toml` version and upload workflow artifacts only.
 
+Current GitHub Releases publish:
+
+- `ax_shell-<version-label>-windows-x86_64.zip`
+- `ax_shell-<version-label>-linux-x86_64.tar.gz`
+- `ax_shell-<version-label>-linux-x86_64.deb`
+- `ax_shell-<version-label>-linux-aarch64.tar.gz`
+- `ax_shell-<version-label>-linux-aarch64.deb`
+- `ax_shell-<version-label>-macos-aarch64.zip`
+- `ax_shell-<version-label>-macos-x86_64.zip`
+- `ax_shell-<version-label>-macos-universal.zip`
+
+Linux ARM64 builds use GitHub Actions native ARM64 Ubuntu runners. Windows ARM64 runners are still treated as preview capacity, so Windows ARM64 is not part of the formal release matrix yet.
+
 ## Versioning and Assets
 
 - Published releases use the Git tag as the single version source

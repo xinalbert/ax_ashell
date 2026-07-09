@@ -43,7 +43,7 @@ cargo dev-reload
 ## 当前状态
 
 - 运行时与打包图标统一使用 `assets/icons/terminal_icon_all_formats`
-- 推送 `vYYYY.M.D` 或 `vYYYY.M.D-N` tag 时，GitHub Actions 会自动同步发布版本、构建多平台产物并发布 GitHub Release assets
+- 推送 `vYYYY.M.D` 或 `vYYYY.M.D-N` tag 时，GitHub Actions 会自动同步发布版本，并发布 Windows x86_64、Linux x86_64 / aarch64、macOS 双架构与 universal assets
 - Homebrew cask 等依赖外部密钥的发布流程暂未启用
 - 旧 `ax_ashell` 配置目录会在首次使用 `AxShell` 新配置目录时自动复制迁移，不会删除旧目录
 

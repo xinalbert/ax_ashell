@@ -39,3 +39,13 @@
 - 关键结论：`CFBundleShortVersionString` 应保持三段数字版本；`CFBundleVersion` 也必须保持纯数字、最多三段的 build version 形式，不适合直接写入四段日期 tag
 - 对实施计划的影响：共享版本脚本将 `CFBundleShortVersionString` 固定为 `YYYY.MM.DD`，将 `CFBundleVersion` 改为 `YYYYMMDD` 或 `YYYYMMDD.N`，避免 tag 后缀直接进入四段 plist 版本
 - 未解决问题：真实 GitHub Release 产物下载后的 Finder / 系统信息展示仍需通过一次实机安装确认
+
+## 2026-07-09 GitHub Actions 发布 runner 覆盖
+
+- 时间：2026-07-09 07:56 +0800
+- 检索问题：当前 GitHub-hosted runners 是否支持 Linux ARM64、macOS Intel / ARM64 和 Windows ARM64 标签
+- 检索原因：用户要求增加发布软件的不同系统版本，runner 标签可用性会随 GitHub Actions 平台变化，需要以官方文档为准
+- 来源列表：GitHub Docs `GitHub-hosted runners reference`
+- 关键结论：标准 runner 列表包含 `ubuntu-22.04-arm` / `ubuntu-24.04-arm` Linux ARM64 标签、`macos-15-intel` Intel macOS 标签、`macos-14` / `macos-15` ARM64 macOS 标签；Windows ARM64 以 `windows-11-arm` 等标签提供，但标注为 public preview
+- 对实施计划的影响：本轮纳入稳定收益更高的 Linux ARM64、Linux `.deb` 和 macOS universal 产物；Windows ARM64 不并入主发布矩阵，留作后续 experimental workflow 或手动验证
+- 未解决问题：Linux ARM64、`.deb` 安装体验和 macOS universal app 仍需 GitHub Actions 实际运行与下载验证
