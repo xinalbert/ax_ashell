@@ -981,3 +981,19 @@
 - 执行内容：将 frozen selection 的 cell/highlight 坐标从 bottom-index/history delta 改为固定 viewport row/col；移除渲染层对 live selection 和 history 变化的重映射；保留选择时文本快照作为复制来源；取消 backend output 自动清理 frozen selection
 - 验证结果：`rustfmt --edition 2024 src/terminal.rs src/terminal/element.rs src/app/actions/terminal.rs src/app/lifecycle/event_loop.rs` 通过；`cargo check` 通过；`cargo test --quiet frozen_ -- --nocapture` 通过，3 个相关测试全部通过；`cargo test --quiet` 通过，46 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过；仍保留既有 `block v0.1.6` future-incompat warning
 - 风险/待办：GUI 手工持续输出拖选验证未执行；窗口 resize 后选区会按当前 rows/cols 裁剪，仍需实机确认视觉体验
+
+## 2026-07-09 刷新环境记录到终端选区去除旧文字冻结
+
+- 目的：在修正 frozen selection 仍覆盖旧文字、选择高亮仍随刷新丢失的问题前，确认当前项目环境和验证边界
+- 改动范围：`src/terminal.rs`，`src/terminal/element.rs`，`src/app/actions/terminal.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：复查终端 frozen selection 数据结构、鼠标选择捕获逻辑和渲染层 `layout_grid()`；确认主技术栈与依赖版本未变，本轮不新增依赖、不联网、不使用多 agent；将验证命令收敛为 `rustfmt`、`cargo check`、定向单元测试、`cargo test`、`git diff --check` 与 tracking docs validator
+- 验证结果：已确认根因是渲染层仍用 frozen cell 覆盖 live cell，且 selection 背景依赖 live cell 遍历；修正后需重新执行本机验证
+- 风险/待办：GUI 手工持续输出拖选验证仍需实机执行；复制内容将继续来自选择时文本快照，终端画面文字不再冻结
+
+## 2026-07-09 完成终端选区去除旧文字冻结环境验证
+
+- 目的：在去除 frozen cell 覆盖并改为独立 selection 背景后，把实际编译测试结果和剩余 GUI 验证边界回写到环境记忆
+- 改动范围：`src/terminal.rs`，`src/terminal/element.rs`，`src/app/actions/terminal.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 执行内容：将 `TerminalFrozenSelection` 收窄为只保存 tab、viewport selection 和复制文本；选择捕获不再保存旧 terminal cell 或 highlight；渲染层移除 frozen cell/highlight 覆盖，改为按 captured selection 独立绘制背景矩形并继续绘制实时 terminal snapshot
+- 验证结果：`rustfmt --edition 2024 src/terminal.rs src/terminal/element.rs src/app/actions/terminal.rs` 通过；`cargo check` 通过；`cargo test --quiet frozen_ -- --nocapture` 通过，3 个相关测试全部通过；`cargo test --quiet` 通过，46 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过；仍保留既有 `block v0.1.6` future-incompat warning
+- 风险/待办：GUI 手工持续输出拖选验证仍需实机执行；复制内容仍是选择时文本快照，终端画面文字不再冻结
