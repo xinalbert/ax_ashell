@@ -30,7 +30,7 @@ impl AxShell {
                 cx.background_executor().timer(sleep_for).await;
                 if this
                     .update(cx, |this, cx| {
-                        let drain = this.drain_backend_events();
+                        let drain = this.drain_backend_events(cx);
                         let terminal_due = this.should_flush_terminal_refresh();
                         let system_sampled = this.sample_system_if_due();
                         this.sync_theme_if_due(cx);
@@ -169,7 +169,7 @@ impl AxShell {
         cx.notify();
     }
 
-    fn drain_backend_events(&mut self) -> DrainResult {
+    fn drain_backend_events(&mut self, cx: &mut Context<Self>) -> DrainResult {
         let mut result = DrainResult::default();
         let mut transfers_changed = false;
         while let Ok(event) = self.runtime_state.events_rx.try_recv() {
@@ -398,6 +398,14 @@ impl AxShell {
                     if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                         tab.title = title.clone();
                     }
+                }
+                BackendEvent::WorkingDirectoryChanged { tab_id, path }
+                | BackendEvent::WorkingDirectoryResolved { tab_id, path } => {
+                    result.ui_changed = true;
+                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                        tab.shell_working_dir = Some(path.clone());
+                    }
+                    self.sync_sftp_to_shell_working_dir_for_tab(&tab_id, &path, cx);
                 }
                 BackendEvent::SyncFinished(sync_result) => {
                     result.ui_changed = true;

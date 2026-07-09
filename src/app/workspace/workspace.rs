@@ -7,6 +7,7 @@ use crate::{
     AxShell,
     app::{ConnectionProgress, WorkspacePage, WorkspaceTabDescriptor},
     session::config::ConfigStore,
+    terminal::{BackendCommand, TabKind},
 };
 
 impl AxShell {
@@ -127,6 +128,9 @@ impl AxShell {
         }
 
         self.workspace_page = page;
+        if page == WorkspacePage::Sftp {
+            self.sync_active_sftp_to_shell_working_dir(cx);
+        }
         cx.notify();
     }
 
@@ -247,8 +251,77 @@ impl AxShell {
         }
         self.monitoring.remote_sample_in_flight = true;
         if let Ok(backend) = backend.lock() {
-            backend.send(crate::terminal::BackendCommand::SampleMetrics);
+            backend.send(BackendCommand::SampleMetrics);
         }
+    }
+
+    pub(crate) fn sync_active_sftp_to_shell_working_dir(&mut self, cx: &mut Context<Self>) {
+        if self.workspace_page != WorkspacePage::Sftp {
+            return;
+        }
+        let Some(active_group_id) = self.active_group.clone() else {
+            return;
+        };
+        let Some(tab_id) = self.group_primary_ssh_tab_id(&active_group_id) else {
+            return;
+        };
+        let Some(tab_index) = self.tabs.iter().position(|tab| tab.id == tab_id) else {
+            return;
+        };
+        let shell_working_dir = self.tabs[tab_index].shell_working_dir.clone();
+        if let Some(path) = shell_working_dir {
+            let already_current = self
+                .active_sftp()
+                .is_some_and(|sftp| sftp.current_path == path);
+            if !already_current {
+                self.navigate_sftp(path, cx);
+            }
+            return;
+        }
+
+        self.tabs[tab_index].send_backend(BackendCommand::QueryWorkingDirectory);
+    }
+
+    pub(crate) fn sync_sftp_to_shell_working_dir_for_tab(
+        &mut self,
+        tab_id: &str,
+        path: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.workspace_page != WorkspacePage::Sftp {
+            return;
+        }
+        let Some(active_group_id) = self.active_group.clone() else {
+            return;
+        };
+        if self.group_primary_ssh_tab_id(&active_group_id).as_deref() != Some(tab_id) {
+            return;
+        }
+        let already_current = self
+            .active_sftp()
+            .is_some_and(|sftp| sftp.current_path == path);
+        if !already_current {
+            self.navigate_sftp(path.to_string(), cx);
+        }
+    }
+
+    fn group_primary_ssh_tab_id(&self, group_id: &str) -> Option<String> {
+        let group = self.tab_groups.iter().find(|group| group.id == group_id)?;
+        if let Some(active_tab) = self.active_tab.as_ref()
+            && group.pane_root.contains(active_tab)
+            && self
+                .tabs
+                .iter()
+                .any(|tab| tab.id == *active_tab && tab.kind == TabKind::Ssh && tab.connected)
+        {
+            return Some(active_tab.clone());
+        }
+        group.pane_root.tab_ids().into_iter().find_map(|tab_id| {
+            self.tabs
+                .iter()
+                .find(|tab| tab.id == tab_id && tab.kind == TabKind::Ssh && tab.connected)
+                .map(|tab| tab.id.clone())
+        })
     }
 
     pub(crate) fn is_monitoring_visible(&self) -> bool {

@@ -2,57 +2,60 @@
 
 ## 当前目标
 
-- 目标：修正 SFTP 页面传输默认位置、传输信息呈现和文件列表点击习惯
-- 交付物：SFTP 下载默认落到右侧本地浏览器当前目录；上传默认发到左侧远端当前目录；上传/下载启动后不弹出传输历史窗口，只在页面底部 Active 传输列表单行显示；远端和本地列表改为单击选中、再次点击目录才打开
+- 目标：打开或切回 SFTP 页面时，远端路径默认定位到对应 SSH shell 当前工作目录
+- 交付物：捕获 VS Code / iTerm2 / OSC 7 工作目录 escape sequence；SSH 后端提供独立 `pwd -P` 查询兜底；SFTP 页面打开和切回时按已知 shell 工作目录导航
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/actions/sftp.rs`，`src/app/views/sftp_panel.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`
-- 不在本轮范围内：SFTP 后端协议重写、真实 SSH/SFTP 联机验证、传输队列持久化策略、全局传输弹窗功能删除
+- 当前范围：`src/terminal.rs`，`src/backend/ssh.rs`，`src/backend/local.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/workspace/workspace.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`
+- 不在本轮范围内：安装或修改远端 shell integration、重写 SFTP 协议层、真实 SSH/SFTP 联机验证、GUI 手工验收
 
 ## 当前状态
 
 - 阶段：已完成
 - 开工判定：允许开工
-- 是否需要联网：否
+- 是否需要联网：是，已完成
 - 多 agent：未使用
 
 ## 活动计划
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 环境预检和实施计划切换到 SFTP 交互修正 | tracking docs validator | 已确认本轮不依赖联网和新增依赖 |
-| P2 | completed | SFTP 上传/下载默认路径和传输提示行为修正 | `cargo check`，源码检查 | 上传仍可用 picker 选择源，下载不再要求选择目录 |
-| P3 | completed | 远端/本地列表单击选中、再次点击目录打开 | `cargo check`，源码检查 | 本地文件再次点击用系统默认应用打开 |
-| P4 | completed | 格式化、编译测试和文档收口 | `rustfmt`，`cargo check`，`cargo test`，tracking docs validator | GUI 手工验证仍需用户本机确认 |
+| P1 | completed | 环境预检和实施计划切换到 SFTP 工作目录定位任务 | tracking docs validator | 已确认不新增依赖 |
+| P2 | completed | 捕获终端 shell integration 工作目录并缓存到 SSH tab | `cargo check`，单元测试 | 支持 VS Code `OSC 633;P;Cwd=...`、iTerm2 `OSC 1337;CurrentDir=...` 和 OSC 7 |
+| P3 | completed | SSH 后端新增独立 `pwd -P` 查询兜底并把结果转成事件 | `cargo check` | 不向用户交互 shell 写入命令 |
+| P4 | completed | SFTP 页面打开或切回时按缓存/查询结果跳转远端目录 | `cargo check`，源码检查 | 查询失败保持现有 SFTP 路径 |
+| P5 | completed | 格式化、编译测试和文档收口 | `rustfmt`，`cargo check`，`cargo test`，tracking docs validator | GUI/真实 SSH 验证仍需实机确认 |
 
 ## 已完成
 
 - 已完成施工前环境预检，确认项目仍为 Rust / GPUI 桌面应用
-- 已定位 SFTP 行为入口：`src/app/actions/sftp.rs` 与 `src/app/views/sftp_panel.rs`
-- 已将远端下载默认目录改为右侧本地浏览器当前目录
-- 已将本地上传默认远端目录保持为左侧远端当前目录，并取消传输历史自动弹窗
-- 已将远端/本地列表改为单击选中、再次点击目录打开；本地文件再次点击用系统默认应用打开
-- 已将 SFTP 页面底部传输行压缩为单行显示
+- 已确认 VS Code 捕获 CWD 的主路径是 shell integration OSC 序列，不是终端主动注入可见命令
+- 已因用户要求查看 VS Code 捕获方法而检索官方 VS Code terminal shell integration 文档，并记录到 `docs/project-implementation-tracker/research.md`
+- 已在 `TerminalTab::feed()` 捕获 CWD 序列，并加入跨输出 chunk 的短缓冲
+- 已新增 `BackendCommand::QueryWorkingDirectory`、`WorkingDirectoryChanged` 和 `WorkingDirectoryResolved`
+- 已在 SSH 后端用独立 session exec `pwd -P` 查询兜底；本地后端对该命令 no-op
+- 已在打开 SFTP 页面、切回已有 SFTP tab、收到 CWD 事件时同步远端 SFTP 路径
 
 ## 验证
 
-- 已完成：`rustfmt --edition 2024 src/app/actions/sftp.rs src/app/views/sftp_panel.rs src/app/views/sftp_panel/transfer_panel.rs`
-- 已完成：`cargo check` 通过
-- 已完成：`cargo test` 通过，25 个测试全部通过
-- 已完成：tracking docs validator 通过
-- 未完成：GUI 手工验证、真实 SSH/SFTP 连接验证
+- 已完成：`rustfmt --edition 2024 src/terminal.rs src/backend/ssh.rs src/backend/local.rs src/app/workspace/workspace.rs src/app/lifecycle/event_loop.rs`
+- 已完成：`cargo check`
+- 已完成：`cargo test`，30 个测试全部通过
+- 已完成：tracking docs validator
+- 未完成：GUI 手工验证，真实 SSH/SFTP 连接验证
 
 ## 风险与阻塞
 
-- 风险一：GUI 单击/再次点击行为需要真实应用中确认手感；本轮以源码行为和编译测试验证为主
-- 风险二：全局 Transfers 弹窗仍保留菜单入口，本轮只取消 SFTP 启动传输后的自动弹窗
+- 风险一：精确跟随用户交互 shell 的 `cd` 依赖远端 shell integration 输出；若 shell 没有输出 VS Code / iTerm2 / OSC 7 CWD 序列，只能走兜底查询
+- 风险二：`pwd -P` 兜底通过独立 SSH exec session 执行，不污染用户终端，但不等价于用户当前交互 shell 已 `cd` 后的位置
+- 风险三：真实 GUI 与远端 shell integration 行为仍需在实际 SSH/SFTP 连接中确认
 
 ## 下一步
 
-- 在真实 SFTP 连接中确认双栏默认目录、Active 单行传输显示和二次点击打开目录的手感
+- 执行 `git diff --check`，修复发现的问题后提交本轮改动
 
 ## 最后更新时间
 
-- 2026-07-09 12:45 +0800
+- 2026-07-09 13:57 +0800

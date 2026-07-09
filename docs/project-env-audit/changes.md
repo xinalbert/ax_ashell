@@ -7,6 +7,15 @@
 - 验证结果：确认项目为 Rust 桌面应用；`rustc --version` 与 `cargo --version` 可执行；当前 CI 仅构建未跑测试
 - 对 plan 的更新：允许进入 `docs/project-implementation-tracker/` 规划阶段
 
+## 2026-07-09 刷新环境记录到 SFTP shell 工作目录同步任务
+
+- 触发原因：用户要求打开 SFTP 页面时默认查询用户 shell 所在位置，并补充要求参考 VS Code 的捕获方法
+- 执行内容：复查 `src/terminal.rs`、`src/backend/ssh.rs`、`src/backend/local.rs`、`src/app/lifecycle/event_loop.rs`、`src/app/workspace/workspace.rs`、`src/app/actions/pane.rs` 和项目 tracking 文档；将 current 记录从 SFTP 传输交互修正切换到 SFTP 打开时同步远端 shell CWD 的任务语境
+- 影响文件：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：确认主技术栈和依赖版本未变；本轮不新增 Rust 依赖；`cargo check` 已通过；`cargo test` 已通过，30 个测试全部通过；tracking docs validator 已通过
+- 对 plan 的更新：允许继续按“捕获 shell integration OSC CWD 序列 + 独立 SSH exec `pwd -P` 兜底”的实现边界收口
+
 ## 2026-07-08 刷新环境记录到 SFTP 独立页面任务
 
 - 触发原因：用户要求把 SFTP 改成独立页面，并补充编号标签页和快捷键对已打开 SFTP 的聚焦行为

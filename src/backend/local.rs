@@ -118,7 +118,7 @@ pub fn spawn_local_terminal(
                         });
                     }
                     BackendCommand::Close => break,
-                    BackendCommand::SampleMetrics => {}
+                    BackendCommand::SampleMetrics | BackendCommand::QueryWorkingDirectory => {}
                 },
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if let Ok(Some(status)) = child.try_wait() {

@@ -1,5 +1,15 @@
 # 外部检索记录
 
+## 2026-07-09 VS Code 终端工作目录捕获方法
+
+- 时间：2026-07-09 13:57 +0800
+- 检索问题：VS Code terminal shell integration 如何捕获 shell 当前工作目录
+- 检索原因：用户明确要求参考 VS Code 的捕获方法；该实现决策影响是否向交互 shell 注入可见命令
+- 来源列表：VS Code Docs `Terminal Shell Integration`
+- 关键结论：VS Code 依赖 shell integration 发出的 OSC 序列传递当前工作目录；本轮采用 `OSC 633;P;Cwd=...` 作为主兼容路径，同时兼容 iTerm2 风格 `OSC 1337;CurrentDir=...` 和通用 `OSC 7;file://...`
+- 对实施计划的影响：终端输出流中解析 CWD escape sequence 并缓存到 SSH tab；没有缓存时用独立 SSH exec session 执行 `pwd -P` 兜底，避免污染用户正在看的交互 shell
+- 未解决问题：远端 shell 若没有启用 shell integration，不会自动输出实时 `cd` 后的 CWD；兜底查询只能提供独立 session 的目录信息，需要真实 SSH/SFTP 场景手工确认体验
+
 ## 2026-07-06 russh 依赖版本
 
 - 时间：2026-07-07 07:57 +0800

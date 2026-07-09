@@ -161,6 +161,27 @@ async fn run_ssh(
                             }
                         });
                     }
+                    Some(BackendCommand::QueryWorkingDirectory) => {
+                        let handle_clone = handle.clone();
+                        let tab_id_clone = tab_id.clone();
+                        let events_clone = events.clone();
+                        tokio::spawn(async move {
+                            match query_remote_working_directory_with_handle(handle_clone).await {
+                                Ok(path) => {
+                                    let _ = events_clone.send(BackendEvent::WorkingDirectoryResolved {
+                                        tab_id: tab_id_clone,
+                                        path,
+                                    });
+                                }
+                                Err(err) => {
+                                    tracing::debug!(
+                                        "[ssh] working directory query failed for tab {}: {err:#}",
+                                        tab_id_clone
+                                    );
+                                }
+                            }
+                        });
+                    }
                     Some(BackendCommand::Close) | None => {
                         tracing::info!("[ssh] local client closed the session for tab {}", tab_id);
                         let _ = channel.eof().await;
@@ -216,6 +237,53 @@ async fn run_ssh(
         reason: exit_reason,
     });
     Ok(())
+}
+
+async fn query_remote_working_directory_with_handle(
+    handle: Arc<tokio::sync::Mutex<russh::client::Handle<ClientHandler>>>,
+) -> Result<String> {
+    let mut channel = handle
+        .lock()
+        .await
+        .channel_open_session()
+        .await
+        .context("open cwd query session")?;
+    channel
+        .exec(true, "pwd -P")
+        .await
+        .context("exec cwd query")?;
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut exit_status = None;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
+                ChannelMsg::ExtendedData { data, ext: _ } => stderr.extend_from_slice(&data),
+                ChannelMsg::ExitStatus { exit_status: code } => exit_status = Some(code),
+                ChannelMsg::Close => break,
+                _ => {}
+            }
+        }
+    })
+    .await
+    .context("cwd query timeout")?;
+
+    if exit_status.unwrap_or(0) != 0 {
+        let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+        anyhow::bail!(
+            "cwd query exited with {}: {}",
+            exit_status.unwrap_or(0),
+            stderr
+        );
+    }
+
+    let path = String::from_utf8_lossy(&stdout).trim().to_string();
+    if !path.starts_with('/') {
+        anyhow::bail!("cwd query returned non-absolute path: {path}");
+    }
+    Ok(path)
 }
 
 #[derive(Clone)]
