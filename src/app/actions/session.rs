@@ -103,7 +103,6 @@ impl AxShell {
                     sftp_page_open: false,
                 });
                 self.active_group = Some(group_id);
-                self.tabs_scroll_handle.scroll_to_item(self.tabs.len() - 1);
                 self.status = "local terminal opened".into();
                 self.set_workspace_page(WorkspacePage::Terminal, cx);
             }
@@ -632,7 +631,7 @@ impl AxShell {
             sftp_page_open: false,
         });
         self.active_group = Some(group_id.clone());
-        self.tabs_scroll_handle.scroll_to_item(self.tabs.len() - 1);
+        self.ensure_active_workspace_tab_visible();
         if let Some(session_id) = self.active_session_id() {
             if let Some(index) = self
                 .config
@@ -792,9 +791,6 @@ impl AxShell {
             self.pane_root = PaneLayout::Single(id.clone());
             self.focused_pane_path = vec![];
         }
-        if let Some(index) = self.tabs.iter().position(|t| t.id == id) {
-            self.tabs_scroll_handle.scroll_to_item(index);
-        }
         if self.tabs.iter().any(|t| t.id == id) {
             if let Some(session_id) = self.active_session_id() {
                 if let Some(index) = self
@@ -806,6 +802,7 @@ impl AxShell {
                     self.saved_scroll_handle.scroll_to_item(index);
                 }
             }
+            self.ensure_active_workspace_tab_visible();
         }
         self.focus_handle.focus(window, cx);
         self.sync_system_tab_to_active_group();
@@ -969,6 +966,7 @@ impl AxShell {
             self.workspace_page = WorkspacePage::Terminal;
         }
         self.sync_system_tab_to_active_group();
+        self.ensure_active_workspace_tab_visible();
     }
 
     pub(crate) fn focus_terminal(

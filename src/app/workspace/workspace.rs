@@ -11,6 +11,39 @@ use crate::{
     terminal::{BackendCommand, TabKind},
 };
 
+fn workspace_tab_selected_for(
+    entry: &WorkspaceTabDescriptor,
+    workspace_page: WorkspacePage,
+    active_group: Option<&str>,
+    settings_page_open: bool,
+) -> bool {
+    match entry.page {
+        WorkspacePage::Settings => settings_page_open && workspace_page == WorkspacePage::Settings,
+        page => workspace_page == page && entry.group_id.as_deref() == active_group,
+    }
+}
+
+fn active_workspace_tab_index_for(
+    tabs: &[WorkspaceTabDescriptor],
+    workspace_page: WorkspacePage,
+    active_group: Option<&str>,
+    settings_page_open: bool,
+) -> usize {
+    tabs.iter()
+        .position(|entry| {
+            workspace_tab_selected_for(entry, workspace_page, active_group, settings_page_open)
+        })
+        .or_else(|| {
+            active_group.and_then(|group_id| {
+                tabs.iter().position(|entry| {
+                    entry.page == WorkspacePage::Terminal
+                        && entry.group_id.as_deref() == Some(group_id)
+                })
+            })
+        })
+        .unwrap_or(0)
+}
+
 impl AxShell {
     pub(crate) fn workspace_tabs(&self) -> Vec<WorkspaceTabDescriptor> {
         let mut tabs = Vec::new();
@@ -43,29 +76,32 @@ impl AxShell {
     }
 
     pub(crate) fn workspace_tab_selected(&self, entry: &WorkspaceTabDescriptor) -> bool {
-        match entry.page {
-            WorkspacePage::Settings => {
-                self.settings_page_open && self.workspace_page == WorkspacePage::Settings
-            }
-            page => {
-                self.workspace_page == page
-                    && entry.group_id.as_deref() == self.active_group.as_deref()
-            }
-        }
+        workspace_tab_selected_for(
+            entry,
+            self.workspace_page,
+            self.active_group.as_deref(),
+            self.settings_page_open,
+        )
     }
 
     pub(crate) fn active_workspace_tab_index(&self, tabs: &[WorkspaceTabDescriptor]) -> usize {
-        tabs.iter()
-            .position(|entry| self.workspace_tab_selected(entry))
-            .or_else(|| {
-                self.active_group.as_ref().and_then(|group_id| {
-                    tabs.iter().position(|entry| {
-                        entry.page == WorkspacePage::Terminal
-                            && entry.group_id.as_deref() == Some(group_id.as_str())
-                    })
-                })
-            })
-            .unwrap_or(0)
+        active_workspace_tab_index_for(
+            tabs,
+            self.workspace_page,
+            self.active_group.as_deref(),
+            self.settings_page_open,
+        )
+    }
+
+    /// Scroll the tab bar just enough to reveal the active rendered workspace tab.
+    pub(crate) fn ensure_active_workspace_tab_visible(&self) {
+        let workspace_tabs = self.workspace_tabs();
+        if workspace_tabs.is_empty() {
+            return;
+        }
+
+        self.tabs_scroll_handle
+            .scroll_to_item(self.active_workspace_tab_index(&workspace_tabs));
     }
 
     pub(crate) fn active_group_sftp_page_open(&self) -> bool {
@@ -103,6 +139,7 @@ impl AxShell {
         };
 
         if self.workspace_page == page {
+            self.ensure_active_workspace_tab_visible();
             return;
         }
 
@@ -132,6 +169,7 @@ impl AxShell {
         if page == WorkspacePage::Sftp && self.active_sftp_should_sync_shell_dir_on_entry() {
             self.sync_active_sftp_to_shell_working_dir(cx);
         }
+        self.ensure_active_workspace_tab_visible();
         cx.notify();
     }
 
@@ -145,6 +183,7 @@ impl AxShell {
         if self.workspace_page == WorkspacePage::Settings {
             self.set_workspace_page(WorkspacePage::Terminal, cx);
         } else {
+            self.ensure_active_workspace_tab_visible();
             cx.notify();
         }
     }
@@ -657,5 +696,45 @@ impl AxShell {
                 size
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{WorkspacePage, WorkspaceTabDescriptor, active_workspace_tab_index_for};
+
+    fn workspace_tab(group_id: Option<&str>, page: WorkspacePage) -> WorkspaceTabDescriptor {
+        WorkspaceTabDescriptor {
+            group_id: group_id.map(str::to_string),
+            group_index: None,
+            page,
+        }
+    }
+
+    #[test]
+    fn active_workspace_tab_index_uses_rendered_tab_order() {
+        let tabs = vec![
+            workspace_tab(Some("group-a"), WorkspacePage::Terminal),
+            workspace_tab(Some("group-a"), WorkspacePage::Sftp),
+            workspace_tab(Some("group-b"), WorkspacePage::Terminal),
+            workspace_tab(None, WorkspacePage::Settings),
+        ];
+
+        assert_eq!(
+            active_workspace_tab_index_for(&tabs, WorkspacePage::Terminal, Some("group-a"), true,),
+            0
+        );
+        assert_eq!(
+            active_workspace_tab_index_for(&tabs, WorkspacePage::Sftp, Some("group-a"), true),
+            1
+        );
+        assert_eq!(
+            active_workspace_tab_index_for(&tabs, WorkspacePage::Terminal, Some("group-b"), true,),
+            2
+        );
+        assert_eq!(
+            active_workspace_tab_index_for(&tabs, WorkspacePage::Settings, None, true),
+            3
+        );
     }
 }
