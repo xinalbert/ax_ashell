@@ -21,6 +21,16 @@ use crate::session::config::{Session, SshConnectionMode};
 use crate::sftp::{PreviewData, RemoteEntry};
 use crate::system::SystemSnapshot;
 
+pub(crate) const BACKEND_EVENT_QUEUE_CAPACITY: usize = 256;
+pub(crate) type BackendEventSender = tokio::sync::mpsc::Sender<BackendEvent>;
+
+pub(crate) fn backend_event_channel() -> (
+    BackendEventSender,
+    tokio::sync::mpsc::Receiver<BackendEvent>,
+) {
+    tokio::sync::mpsc::channel(BACKEND_EVENT_QUEUE_CAPACITY)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabKind {
     Local,
@@ -58,6 +68,9 @@ pub enum BackendEvent {
         tab_id: String,
         path: String,
         entries: Vec<RemoteEntry>,
+        append: bool,
+        has_more: bool,
+        reached_limit: bool,
     },
     SftpPreview {
         tab_id: String,
@@ -174,7 +187,7 @@ pub struct TerminalTab {
     pub backend: std::sync::Arc<std::sync::Mutex<BackendTx>>,
     pub shell_working_dir: Option<String>,
     cwd_osc_buffer: Vec<u8>,
-    events: std::sync::mpsc::Sender<BackendEvent>,
+    events: BackendEventSender,
     pub scroll_pixel_y: f32,
     pub(crate) highlight_cache: std::cell::RefCell<
         Option<(
@@ -253,6 +266,9 @@ pub struct SftpUiState {
     pub current_path: String,
     pub status: String,
     pub entries: Vec<RemoteEntry>,
+    pub has_more_entries: bool,
+    pub loading_more_entries: bool,
+    pub reached_entries_limit: bool,
     pub selected_path: Option<String>,
     pub preview: Option<PreviewData>,
     pub selected_entries: std::collections::HashSet<String>,
@@ -264,7 +280,7 @@ impl TerminalTab {
         id: String,
         title: String,
         backend: BackendTx,
-        events: std::sync::mpsc::Sender<BackendEvent>,
+        events: BackendEventSender,
     ) -> Self {
         Self::new(
             id,
@@ -280,7 +296,7 @@ impl TerminalTab {
         id: String,
         session: &Session,
         backend: BackendTx,
-        events: std::sync::mpsc::Sender<BackendEvent>,
+        events: BackendEventSender,
     ) -> Self {
         let mut tab = Self::new(
             id,
@@ -304,7 +320,7 @@ impl TerminalTab {
         kind: TabKind,
         status: String,
         backend: BackendTx,
-        events: std::sync::mpsc::Sender<BackendEvent>,
+        events: BackendEventSender,
     ) -> Self {
         let shared_backend = std::sync::Arc::new(std::sync::Mutex::new(backend));
         let mut this = Self {
@@ -353,7 +369,9 @@ impl TerminalTab {
             return;
         }
         self.shell_working_dir = Some(path.clone());
-        let _ = self.events.send(BackendEvent::WorkingDirectoryChanged {
+        // This runs while draining backend events on the UI thread, so it
+        // must not wait for space in the same queue.
+        let _ = self.events.try_send(BackendEvent::WorkingDirectoryChanged {
             tab_id: self.id.clone(),
             path,
         });
@@ -748,7 +766,7 @@ fn hash_ansi_color<H: Hasher>(color: AnsiColor, state: &mut H) {
 struct TerminalListener {
     tab_id: String,
     backend: std::sync::Arc<std::sync::Mutex<BackendTx>>,
-    events: std::sync::mpsc::Sender<BackendEvent>,
+    events: BackendEventSender,
 }
 
 impl EventListener for TerminalListener {
@@ -771,7 +789,7 @@ impl EventListener for TerminalListener {
                 }
             }
             Event::Title(title) => {
-                let _ = self.events.send(BackendEvent::TerminalTitleChanged {
+                let _ = self.events.try_send(BackendEvent::TerminalTitleChanged {
                     tab_id: self.tab_id.clone(),
                     title,
                 });
@@ -786,7 +804,7 @@ fn new_term(
     rows: u16,
     backend: std::sync::Arc<std::sync::Mutex<BackendTx>>,
     tab_id: String,
-    events: std::sync::mpsc::Sender<BackendEvent>,
+    events: BackendEventSender,
 ) -> Term<TerminalListener> {
     Term::new(
         Config {
@@ -1283,8 +1301,9 @@ mod tests {
     use gpui::{Keystroke, Modifiers};
 
     use super::{
-        BackendCommand, BackendShutdown, BackendTx, TerminalPlatform, encode_key,
-        encode_key_for_platform, extract_shell_working_directory,
+        BACKEND_EVENT_QUEUE_CAPACITY, BackendCommand, BackendEvent, BackendShutdown, BackendTx,
+        TerminalPlatform, backend_event_channel, encode_key, encode_key_for_platform,
+        extract_shell_working_directory,
     };
 
     struct CountingShutdown(AtomicUsize);
@@ -1461,5 +1480,26 @@ mod tests {
 
         assert_eq!(shutdown.0.load(Ordering::SeqCst), 1);
         assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn backend_event_channel_has_a_fixed_capacity() {
+        let (events, _receiver) = backend_event_channel();
+
+        for _ in 0..BACKEND_EVENT_QUEUE_CAPACITY {
+            events
+                .try_send(BackendEvent::Connected {
+                    tab_id: "tab".to_string(),
+                })
+                .expect("queue has spare capacity");
+        }
+
+        assert!(
+            events
+                .try_send(BackendEvent::Connected {
+                    tab_id: "tab".to_string(),
+                })
+                .is_err()
+        );
     }
 }

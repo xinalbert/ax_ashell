@@ -270,7 +270,7 @@ impl AxShell {
         _subscriptions
             .push(cx.observe_window_activation(window, Self::on_window_activation_changed));
 
-        let (events_tx, events_rx) = std::sync::mpsc::channel();
+        let (events_tx, events_rx) = crate::terminal::backend_event_channel();
         let workspace_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
         let body_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
         let sftp_transfer_panels = cx.new(|_| crate::app::resizable::ResizableState::default());

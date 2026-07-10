@@ -69,6 +69,15 @@ impl AxShell {
             .map(|sftp| sftp.current_path.clone())
             .unwrap_or_else(|| "/".to_string());
         let remote_parent_path = Self::sftp_parent_path(&remote_current_path);
+        let remote_has_more_entries = active_sftp
+            .as_ref()
+            .is_some_and(|sftp| sftp.has_more_entries);
+        let remote_loading_more_entries = active_sftp
+            .as_ref()
+            .is_some_and(|sftp| sftp.loading_more_entries);
+        let remote_reached_entries_limit = active_sftp
+            .as_ref()
+            .is_some_and(|sftp| sftp.reached_entries_limit);
         let remote_all_selected = !remote_entries.is_empty()
             && remote_entries
                 .iter()
@@ -624,6 +633,40 @@ impl AxShell {
                         )
                     }),
             )
+            .when(remote_has_more_entries || remote_reached_entries_limit, |this| {
+                this.child(
+                    h_flex()
+                        .flex_none()
+                        .h(px(34.))
+                        .px_3()
+                        .items_center()
+                        .justify_center()
+                        .border_t_1()
+                        .border_color(cx.theme().border)
+                        .bg(cx.theme().tab_bar)
+                        .when(remote_has_more_entries, |this| {
+                            this.child(
+                                Button::new("sftp-load-more")
+                                    .small()
+                                    .label(t!("sftp_load_more").to_string())
+                                    .disabled(remote_loading_more_entries)
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.load_more_sftp_entries(cx);
+                                    })),
+                            )
+                        })
+                        .when(remote_reached_entries_limit, |this| {
+                            this.child(
+                                selectable_plain_text(
+                                    "sftp-directory-limit-reached",
+                                    t!("sftp_directory_limit_reached"),
+                                )
+                                .text_size(rems(0.833))
+                                .text_color(cx.theme().warning),
+                            )
+                        }),
+                )
+            })
             .child(
                 h_flex()
                     .flex_none()

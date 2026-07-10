@@ -11,7 +11,9 @@ use std::{
 use anyhow::{Context, Result};
 use portable_pty::{ChildKiller, CommandBuilder, PtySize, native_pty_system};
 
-use crate::terminal::{BackendCommand, BackendEvent, BackendShutdown, BackendTx};
+use crate::terminal::{
+    BackendCommand, BackendEvent, BackendEventSender, BackendShutdown, BackendTx,
+};
 
 const LOCAL_CHILD_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 
@@ -65,7 +67,7 @@ pub fn spawn_local_terminal(
     tab_id: String,
     cols: u16,
     rows: u16,
-    events: Sender<BackendEvent>,
+    events: BackendEventSender,
 ) -> Result<BackendTx> {
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -126,14 +128,14 @@ pub fn spawn_local_terminal(
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let _ = read_events.send(BackendEvent::Output {
+                    let _ = read_events.blocking_send(BackendEvent::Output {
                         tab_id: read_tab.clone(),
                         bytes: buf[..n].to_vec(),
                     });
                 }
                 Err(err) => {
                     if !reader_shutdown_requested.load(Ordering::SeqCst) {
-                        let _ = read_events.send(BackendEvent::Closed {
+                        let _ = read_events.blocking_send(BackendEvent::Closed {
                             tab_id: read_tab.clone(),
                             reason: format!("local read error: {err}"),
                         });
@@ -143,7 +145,7 @@ pub fn spawn_local_terminal(
             }
         }
         if !reader_shutdown_requested.load(Ordering::SeqCst) {
-            let _ = read_events.send(BackendEvent::Closed {
+            let _ = read_events.blocking_send(BackendEvent::Closed {
                 tab_id: read_tab,
                 reason: "local shell closed".into(),
             });
@@ -160,7 +162,7 @@ pub fn spawn_local_terminal(
                     BackendCommand::Input(bytes) => {
                         if let Err(err) = writer.write_all(&bytes) {
                             if !writer_shutdown_requested.load(Ordering::SeqCst) {
-                                let _ = write_events.send(BackendEvent::Closed {
+                                let _ = write_events.blocking_send(BackendEvent::Closed {
                                     tab_id: write_tab.clone(),
                                     reason: format!("local write error: {err}"),
                                 });
@@ -183,7 +185,7 @@ pub fn spawn_local_terminal(
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if let Ok(Some(status)) = child.try_wait() {
                         if !writer_shutdown_requested.load(Ordering::SeqCst) {
-                            let _ = write_events.send(BackendEvent::Closed {
+                            let _ = write_events.blocking_send(BackendEvent::Closed {
                                 tab_id: write_tab,
                                 reason: format!("local shell exited: {status}"),
                             });
@@ -197,7 +199,7 @@ pub fn spawn_local_terminal(
         let _ = child.kill();
     });
 
-    let _ = events.send(BackendEvent::Status {
+    let _ = events.try_send(BackendEvent::Status {
         tab_id,
         text: "local shell ready".into(),
     });

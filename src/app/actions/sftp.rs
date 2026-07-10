@@ -249,6 +249,9 @@ impl AxShell {
             && let Some(sftp) = group.sftp.as_mut()
         {
             sftp.status = rust_i18n::t!("sftp_connecting").to_string();
+            sftp.has_more_entries = false;
+            sftp.loading_more_entries = false;
+            sftp.reached_entries_limit = false;
         }
         Some(handle)
     }
@@ -563,6 +566,38 @@ impl AxShell {
             handle.list_dir(resolved.clone());
             if let Some(sftp) = self.active_sftp_mut() {
                 sftp.status = resolved;
+                sftp.has_more_entries = false;
+                sftp.loading_more_entries = false;
+                sftp.reached_entries_limit = false;
+            }
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn load_more_sftp_entries(&mut self, cx: &mut Context<Self>) {
+        let can_load_more = self
+            .active_sftp()
+            .is_some_and(|sftp| sftp.has_more_entries && !sftp.loading_more_entries);
+        if !can_load_more {
+            return;
+        }
+        let cursor_is_live = self
+            .active_group
+            .as_ref()
+            .and_then(|group_id| self.sftp_handles.get(group_id))
+            .is_some_and(|handle| !handle.commands_closed());
+        if let Some(handle) = self.ensure_active_sftp_handle() {
+            if !cursor_is_live {
+                // A reclaimed worker cannot resume its old server-side handle.
+                // It has already queued a fresh first page for the current path.
+                cx.notify();
+                return;
+            }
+            self.mark_active_sftp_activity();
+            if handle.load_more_entries()
+                && let Some(sftp) = self.active_sftp_mut()
+            {
+                sftp.loading_more_entries = true;
             }
             cx.notify();
         }

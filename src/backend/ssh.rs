@@ -18,7 +18,7 @@ use tokio::{
 
 use crate::{
     session::config::{ConfigStore, Session},
-    terminal::{BackendCommand, BackendEvent, BackendShutdown, BackendTx},
+    terminal::{BackendCommand, BackendEvent, BackendEventSender, BackendShutdown, BackendTx},
 };
 
 pub(crate) mod connection;
@@ -79,7 +79,7 @@ pub fn spawn_ssh_terminal(
     session: Session,
     cols: u16,
     rows: u16,
-    events: std::sync::mpsc::Sender<BackendEvent>,
+    events: BackendEventSender,
 ) -> BackendTx {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<BackendCommand>();
     let task_tab = tab_id.clone();
@@ -98,10 +98,12 @@ pub fn spawn_ssh_terminal(
         .await
         {
             if !task_shutdown_requested.load(Ordering::SeqCst) {
-                let _ = events.send(BackendEvent::Closed {
-                    tab_id: task_tab,
-                    reason: format!("{err:#}"),
-                });
+                let _ = events
+                    .send(BackendEvent::Closed {
+                        tab_id: task_tab,
+                        reason: format!("{err:#}"),
+                    })
+                    .await;
             }
         }
     });
@@ -122,18 +124,20 @@ async fn run_ssh(
     cols: u16,
     rows: u16,
     mut commands: mpsc::UnboundedReceiver<BackendCommand>,
-    events: std::sync::mpsc::Sender<BackendEvent>,
+    events: BackendEventSender,
     shutdown_requested: Arc<AtomicBool>,
 ) -> Result<()> {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
     let x11 = X11ForwardingState::from_config(&config);
-    let _ = events.send(BackendEvent::Status {
-        tab_id: tab_id.clone(),
-        text: format!(
-            "connecting {}@{}:{}...",
-            session.user, session.host, session.port
-        ),
-    });
+    let _ = events
+        .send(BackendEvent::Status {
+            tab_id: tab_id.clone(),
+            text: format!(
+                "connecting {}@{}:{}...",
+                session.user, session.host, session.port
+            ),
+        })
+        .await;
 
     let handle = Arc::new(tokio::sync::Mutex::new(
         connect_and_authenticate(&tab_id, &session, &events, x11.clone()).await?,
@@ -165,29 +169,37 @@ async fn run_ssh(
                 let _ = channel
                     .set_env(false, "DISPLAY", x11.remote_display.clone())
                     .await;
-                let _ = events.send(BackendEvent::Status {
-                    tab_id: tab_id.clone(),
-                    text: format!("X11 forwarding requested, DISPLAY={}", x11.remote_display),
-                });
+                let _ = events
+                    .send(BackendEvent::Status {
+                        tab_id: tab_id.clone(),
+                        text: format!("X11 forwarding requested, DISPLAY={}", x11.remote_display),
+                    })
+                    .await;
             }
             Err(err) => {
                 tracing::warn!("[ssh] X11 forwarding request failed: {err}");
-                let _ = events.send(BackendEvent::Status {
-                    tab_id: tab_id.clone(),
-                    text: format!("X11 forwarding unavailable: {err}"),
-                });
+                let _ = events
+                    .send(BackendEvent::Status {
+                        tab_id: tab_id.clone(),
+                        text: format!("X11 forwarding unavailable: {err}"),
+                    })
+                    .await;
             }
         }
     }
     channel.request_shell(true).await.context("request shell")?;
 
-    let _ = events.send(BackendEvent::Status {
-        tab_id: tab_id.clone(),
-        text: format!("connected {}@{}", session.user, session.host),
-    });
-    let _ = events.send(BackendEvent::Connected {
-        tab_id: tab_id.clone(),
-    });
+    let _ = events
+        .send(BackendEvent::Status {
+            tab_id: tab_id.clone(),
+            text: format!("connected {}@{}", session.user, session.host),
+        })
+        .await;
+    let _ = events
+        .send(BackendEvent::Connected {
+            tab_id: tab_id.clone(),
+        })
+        .await;
 
     let exit_reason;
     let mut is_graceful_close = false;
@@ -217,13 +229,13 @@ async fn run_ssh(
                                     let _ = events_clone.send(BackendEvent::RemoteSystem {
                                         tab_id: tab_id_clone,
                                         snapshot,
-                                    });
+                                    }).await;
                                 }
                                 Err(err) => {
                                     let _ = events_clone.send(BackendEvent::RemoteSystemUnavailable {
                                         tab_id: tab_id_clone,
                                         reason: format!("remote metrics unavailable: {err:#}"),
-                                    });
+                                    }).await;
                                 }
                             }
                         });
@@ -238,7 +250,7 @@ async fn run_ssh(
                                     let _ = events_clone.send(BackendEvent::WorkingDirectoryResolved {
                                         tab_id: tab_id_clone,
                                         path,
-                                    });
+                                    }).await;
                                 }
                                 Err(err) => {
                                     tracing::debug!(
@@ -264,7 +276,7 @@ async fn run_ssh(
                         let _ = events.send(BackendEvent::Output {
                             tab_id: tab_id.clone(),
                             bytes: data.to_vec(),
-                        });
+                        }).await;
                     }
                     Some(ChannelMsg::ExitStatus { exit_status: _ }) | Some(ChannelMsg::Eof) => {
                         is_graceful_close = true;
@@ -302,10 +314,12 @@ async fn run_ssh(
         .disconnect(Disconnect::ByApplication, "bye", "")
         .await;
     if !shutdown_requested.load(Ordering::SeqCst) {
-        let _ = events.send(BackendEvent::Closed {
-            tab_id,
-            reason: exit_reason,
-        });
+        let _ = events
+            .send(BackendEvent::Closed {
+                tab_id,
+                reason: exit_reason,
+            })
+            .await;
     }
     Ok(())
 }

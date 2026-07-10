@@ -109,7 +109,7 @@ impl AxShell {
                 Ok(etag) => SyncResult::Uploaded { etag },
                 Err(err) => SyncResult::Failed(format!("{err:#}")),
             };
-            let _ = events.send(BackendEvent::SyncFinished(result));
+            let _ = events.send(BackendEvent::SyncFinished(result)).await;
         });
     }
 
@@ -123,7 +123,7 @@ impl AxShell {
                 Ok((payload, etag)) => SyncResult::Downloaded { payload, etag },
                 Err(err) => SyncResult::Failed(format!("{err:#}")),
             };
-            let _ = events.send(BackendEvent::SyncFinished(result));
+            let _ = events.send(BackendEvent::SyncFinished(result)).await;
         });
     }
 }

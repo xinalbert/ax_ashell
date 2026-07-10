@@ -2,6 +2,7 @@ mod auth;
 mod path;
 
 use std::{
+    collections::VecDeque,
     fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -11,7 +12,10 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use flate2::read::GzDecoder;
 use russh::Disconnect;
-use russh_sftp::client::SftpSession;
+use russh_sftp::{
+    client::{RawSftpSession, SftpSession, error::Error as SftpClientError},
+    protocol::StatusCode,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -25,7 +29,7 @@ use rust_i18n::t;
 
 use crate::{
     session::config::Session,
-    terminal::{BackendEvent, TransferState},
+    terminal::{BackendEvent, BackendEventSender, TransferState},
 };
 
 use self::{
@@ -38,6 +42,12 @@ pub(crate) use self::path::{join_remote, parent_dir, resolve_remote_path};
 
 const SFTP_BROWSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const SFTP_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+const SFTP_BROWSE_ENTRY_LIMIT: usize = 2_000;
+const SFTP_BROWSE_NAME_BYTES_LIMIT: usize = 2 * 1024 * 1024;
+const SFTP_BROWSE_PAGE_ENTRY_LIMIT: usize = 250;
+const SFTP_PREVIEW_BYTE_LIMIT: usize = 128 * 1024;
+const SFTP_DIRECTORY_PREVIEW_ENTRY_LIMIT: usize = 200;
+const SFTP_DIRECTORY_PREVIEW_CONTENT_BYTE_LIMIT: usize = SFTP_PREVIEW_BYTE_LIMIT - 512;
 
 #[derive(Debug, Clone)]
 pub struct RemoteEntry {
@@ -46,6 +56,27 @@ pub struct RemoteEntry {
     pub is_dir: bool,
     pub size: u64,
     pub modified: u32,
+}
+
+struct DirectoryListing {
+    entries: Vec<RemoteEntry>,
+    truncated: bool,
+}
+
+struct DirectoryPage {
+    entries: Vec<RemoteEntry>,
+    has_more: bool,
+    reached_limit: bool,
+}
+
+struct BrowseCursor {
+    sftp: Option<RawSftpSession>,
+    directory_handle: Option<String>,
+    path: String,
+    pending_entries: VecDeque<RemoteEntry>,
+    retained_entries: usize,
+    retained_name_bytes: usize,
+    reached_limit: bool,
 }
 
 #[allow(dead_code)]
@@ -60,6 +91,9 @@ pub struct PreviewData {
 enum SftpCommand {
     ListDir {
         path: String,
+        pin: SftpWorkPin,
+    },
+    LoadMoreEntries {
         pin: SftpWorkPin,
     },
     RevealPath {
@@ -133,7 +167,7 @@ impl TransferStateFlag {
 
     pub async fn yield_if_paused(
         &self,
-        events: &std::sync::mpsc::Sender<BackendEvent>,
+        events: &BackendEventSender,
         tab_id: &str,
         id: &str,
         transferred: u64,
@@ -154,7 +188,8 @@ impl TransferStateFlag {
                         transferred,
                         total,
                         TransferState::Paused,
-                    );
+                    )
+                    .await;
                     was_paused = true;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -167,7 +202,8 @@ impl TransferStateFlag {
                         transferred,
                         total,
                         TransferState::Running,
-                    );
+                    )
+                    .await;
                 }
                 return Ok(());
             }
@@ -175,36 +211,36 @@ impl TransferStateFlag {
     }
 }
 
-fn send_sftp_status(
-    events: &std::sync::mpsc::Sender<BackendEvent>,
-    tab_id: &str,
-    text: impl Into<String>,
-) {
-    let _ = events.send(BackendEvent::SftpStatus {
-        tab_id: tab_id.to_string(),
-        text: text.into(),
-    });
+async fn send_sftp_status(events: &BackendEventSender, tab_id: &str, text: impl Into<String>) {
+    let _ = events
+        .send(BackendEvent::SftpStatus {
+            tab_id: tab_id.to_string(),
+            text: text.into(),
+        })
+        .await;
 }
 
-fn send_transfer_progress(
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+async fn send_transfer_progress(
+    events: &BackendEventSender,
     tab_id: &str,
     id: &str,
     transferred: u64,
     total: Option<u64>,
     state: TransferState,
 ) {
-    let _ = events.send(BackendEvent::TransferProgress {
-        tab_id: tab_id.to_string(),
-        id: id.to_string(),
-        transferred,
-        total,
-        state,
-    });
+    let _ = events
+        .send(BackendEvent::TransferProgress {
+            tab_id: tab_id.to_string(),
+            id: id.to_string(),
+            transferred,
+            total,
+            state,
+        })
+        .await;
 }
 
-fn send_transfer_error(
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+async fn send_transfer_error(
+    events: &BackendEventSender,
     tab_id: &str,
     id: &str,
     err_msg: String,
@@ -224,12 +260,13 @@ fn send_transfer_error(
         } else {
             failed_status
         },
-    );
-    send_transfer_progress(events, tab_id, id, 0, None, state);
+    )
+    .await;
+    send_transfer_progress(events, tab_id, id, 0, None, state).await;
 }
 
-fn fail_transfer_start(
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+async fn fail_transfer_start(
+    events: &BackendEventSender,
     tab_id: &str,
     id: &str,
     action: &str,
@@ -242,7 +279,8 @@ fn fail_transfer_start(
         id,
         err_msg.clone(),
         format!("{action} failed: {err_msg}"),
-    );
+    )
+    .await;
 }
 
 struct SftpWorkTracker {
@@ -310,6 +348,10 @@ impl SftpHandle {
 
     pub(crate) fn list_dir(&self, path: String) -> bool {
         self.send_work_command(|pin| SftpCommand::ListDir { path, pin })
+    }
+
+    pub(crate) fn load_more_entries(&self) -> bool {
+        self.send_work_command(|pin| SftpCommand::LoadMoreEntries { pin })
     }
 
     pub(crate) fn reveal_path(&self, path: String) -> bool {
@@ -396,7 +438,7 @@ pub fn spawn_sftp(
     runtime: &tokio::runtime::Handle,
     tab_id: String,
     session: Session,
-    events: std::sync::mpsc::Sender<BackendEvent>,
+    events: BackendEventSender,
 ) -> SftpHandle {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let cmd_tx_clone = cmd_tx.clone();
@@ -417,14 +459,18 @@ pub fn spawn_sftp(
         )
         .await
         {
-            let _ = events.send(BackendEvent::SftpStatus {
-                tab_id: tab_id.clone(),
-                text: format!("sftp error: {err:#}"),
-            });
-            let _ = events.send(BackendEvent::Closed {
-                tab_id,
-                reason: format!("sftp error: {err:#}"),
-            });
+            let _ = events
+                .send(BackendEvent::SftpStatus {
+                    tab_id: tab_id.clone(),
+                    text: format!("sftp error: {err:#}"),
+                })
+                .await;
+            let _ = events
+                .send(BackendEvent::Closed {
+                    tab_id,
+                    reason: format!("sftp error: {err:#}"),
+                })
+                .await;
         }
     });
     SftpHandle {
@@ -443,22 +489,26 @@ async fn run_sftp(
     session: Session,
     mut commands: UnboundedReceiver<SftpCommand>,
     commands_tx: UnboundedSender<SftpCommand>,
-    events: std::sync::mpsc::Sender<BackendEvent>,
+    events: BackendEventSender,
     work_tracker: Arc<SftpWorkTracker>,
     initial_pin: SftpWorkPin,
 ) -> Result<()> {
-    let _ = events.send(BackendEvent::SftpStatus {
-        tab_id: tab_id.clone(),
-        text: t!("sftp_connecting").to_string(),
-    });
+    let _ = events
+        .send(BackendEvent::SftpStatus {
+            tab_id: tab_id.clone(),
+            text: t!("sftp_connecting").to_string(),
+        })
+        .await;
 
     let session_id = session.id.clone();
     let (handle, connected_mode) = connect_and_authenticate(&session).await?;
-    let _ = events.send(BackendEvent::SshConnectionModeResolved {
-        tab_id: tab_id.clone(),
-        session_id,
-        mode: connected_mode,
-    });
+    let _ = events
+        .send(BackendEvent::SshConnectionModeResolved {
+            tab_id: tab_id.clone(),
+            session_id,
+            mode: connected_mode,
+        })
+        .await;
     let sftp = open_sftp_session(&handle).await?;
 
     let home = sftp
@@ -466,12 +516,16 @@ async fn run_sftp(
         .await
         .unwrap_or_else(|_| "/".to_string());
 
-    let _ = events.send(BackendEvent::SftpHome {
-        tab_id: tab_id.clone(),
-        home: home.clone(),
-    });
+    let _ = events
+        .send(BackendEvent::SftpHome {
+            tab_id: tab_id.clone(),
+            home: home.clone(),
+        })
+        .await;
 
-    emit_entries_with_timeout(&events, &tab_id, &sftp, &home).await?;
+    let mut browse_cursor = None;
+    open_and_emit_browser_page(&events, &tab_id, &handle, &home, &mut browse_cursor).await?;
+    let mut browse_path = home.clone();
     drop(initial_pin);
 
     let mut active_transfers: std::collections::HashMap<String, TransferStateFlag> =
@@ -492,11 +546,13 @@ async fn run_sftp(
         };
         let Some(command) = command else {
             cancel_sftp_child_tasks(&mut active_transfers, &mut child_tasks).await;
+            close_browse_cursor(&mut browse_cursor).await;
             break;
         };
         match command {
             SftpCommand::Close => {
                 cancel_sftp_child_tasks(&mut active_transfers, &mut child_tasks).await;
+                close_browse_cursor(&mut browse_cursor).await;
                 break;
             }
             SftpCommand::PauseTransfer(id) => {
@@ -526,13 +582,49 @@ async fn run_sftp(
                     path
                 };
 
-                if let Err(err) =
-                    emit_entries_from_fresh_session(&events, &tab_id, &handle, &actual_path).await
+                match open_and_emit_browser_page(
+                    &events,
+                    &tab_id,
+                    &handle,
+                    &actual_path,
+                    &mut browse_cursor,
+                )
+                .await
                 {
-                    let _ = events.send(BackendEvent::SftpStatus {
-                        tab_id: tab_id.clone(),
-                        text: format!("list failed: {err:#}"),
-                    });
+                    Ok(()) => browse_path = actual_path,
+                    Err(err) => {
+                        let _ = events
+                            .send(BackendEvent::SftpStatus {
+                                tab_id: tab_id.clone(),
+                                text: format!("list failed: {err:#}"),
+                            })
+                            .await;
+                    }
+                }
+            }
+            SftpCommand::LoadMoreEntries { pin: _pin } => {
+                if let Err(err) =
+                    emit_next_browser_page(&events, &tab_id, &mut browse_cursor, true).await
+                {
+                    close_browse_cursor(&mut browse_cursor).await;
+                    let _ = emit_browser_page(
+                        &events,
+                        &tab_id,
+                        &browse_path,
+                        DirectoryPage {
+                            entries: Vec::new(),
+                            has_more: false,
+                            reached_limit: false,
+                        },
+                        true,
+                    )
+                    .await;
+                    let _ = events
+                        .send(BackendEvent::SftpStatus {
+                            tab_id: tab_id.clone(),
+                            text: format!("list failed: {err:#}"),
+                        })
+                        .await;
                 }
             }
             SftpCommand::RevealPath { path, pin: _pin } => {
@@ -546,38 +638,56 @@ async fn run_sftp(
 
                 match reveal_path_target(&handle, &actual_path).await {
                     Ok(directory) => {
-                        if let Err(err) =
-                            emit_entries_from_fresh_session(&events, &tab_id, &handle, &directory)
-                                .await
+                        match open_and_emit_browser_page(
+                            &events,
+                            &tab_id,
+                            &handle,
+                            &directory,
+                            &mut browse_cursor,
+                        )
+                        .await
                         {
-                            let _ = events.send(BackendEvent::SftpStatus {
-                                tab_id: tab_id.clone(),
-                                text: format!("list failed: {err:#}"),
-                            });
+                            Ok(()) => browse_path = directory,
+                            Err(err) => {
+                                let _ = events
+                                    .send(BackendEvent::SftpStatus {
+                                        tab_id: tab_id.clone(),
+                                        text: format!("list failed: {err:#}"),
+                                    })
+                                    .await;
+                            }
                         }
                     }
                     Err(err) => {
-                        let _ = events.send(BackendEvent::SftpStatus {
-                            tab_id: tab_id.clone(),
-                            text: format!("list failed: {err:#}"),
-                        });
+                        let _ = events
+                            .send(BackendEvent::SftpStatus {
+                                tab_id: tab_id.clone(),
+                                text: format!("list failed: {err:#}"),
+                            })
+                            .await;
                     }
                 }
             }
-            SftpCommand::Preview { path, pin: _pin } => match preview_impl(&sftp, &path).await {
-                Ok(preview) => {
-                    let _ = events.send(BackendEvent::SftpPreview {
-                        tab_id: tab_id.clone(),
-                        preview,
-                    });
+            SftpCommand::Preview { path, pin: _pin } => {
+                match preview_impl(&sftp, &handle, &path).await {
+                    Ok(preview) => {
+                        let _ = events
+                            .send(BackendEvent::SftpPreview {
+                                tab_id: tab_id.clone(),
+                                preview,
+                            })
+                            .await;
+                    }
+                    Err(err) => {
+                        let _ = events
+                            .send(BackendEvent::SftpStatus {
+                                tab_id: tab_id.clone(),
+                                text: t!("preview_failed", err = format!("{err:#}")).into(),
+                            })
+                            .await;
+                    }
                 }
-                Err(err) => {
-                    let _ = events.send(BackendEvent::SftpStatus {
-                        tab_id: tab_id.clone(),
-                        text: t!("preview_failed", err = format!("{err:#}")).into(),
-                    });
-                }
-            },
+            }
             SftpCommand::Download {
                 remote,
                 local_dir,
@@ -595,10 +705,12 @@ async fn run_sftp(
                     kind: crate::terminal::TransferType::Download,
                     total_bytes: None,
                 };
-                let _ = events.send(BackendEvent::TransferStarted {
-                    tab_id: tab_id.clone(),
-                    info,
-                });
+                let _ = events
+                    .send(BackendEvent::TransferStarted {
+                        tab_id: tab_id.clone(),
+                        info,
+                    })
+                    .await;
 
                 let handle_clone = handle.clone();
                 let events_clone = events.clone();
@@ -610,7 +722,8 @@ async fn run_sftp(
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
                         Err(err) => {
-                            fail_transfer_start(&events_clone, &tab_id_clone, &id, "download", err);
+                            fail_transfer_start(&events_clone, &tab_id_clone, &id, "download", err)
+                                .await;
                             let _ = commands_tx_clone.send(SftpCommand::TransferFinished(id));
                             return;
                         }
@@ -620,7 +733,8 @@ async fn run_sftp(
                         &events_clone,
                         &tab_id_clone,
                         t!("downloading_file", base = base_name(&remote)).to_string(),
-                    );
+                    )
+                    .await;
 
                     match download_path_impl(
                         &handle_clone,
@@ -635,7 +749,7 @@ async fn run_sftp(
                     .await
                     {
                         Ok(summary) => {
-                            send_sftp_status(&events_clone, &tab_id_clone, summary);
+                            send_sftp_status(&events_clone, &tab_id_clone, summary).await;
                         }
                         Err(err) => {
                             let err_msg = format!("{err:#}");
@@ -645,7 +759,8 @@ async fn run_sftp(
                                 &id,
                                 err_msg.clone(),
                                 t!("download_failed", err = err_msg).to_string(),
-                            );
+                            )
+                            .await;
                         }
                     }
                     let _ = commands_tx_clone.send(SftpCommand::TransferFinished(id));
@@ -694,10 +809,12 @@ async fn run_sftp(
                     kind: crate::terminal::TransferType::Upload,
                     total_bytes: None,
                 };
-                let _ = events.send(BackendEvent::TransferStarted {
-                    tab_id: tab_id.clone(),
-                    info,
-                });
+                let _ = events
+                    .send(BackendEvent::TransferStarted {
+                        tab_id: tab_id.clone(),
+                        info,
+                    })
+                    .await;
 
                 let handle_clone = handle.clone();
                 let events_clone = events.clone();
@@ -710,13 +827,15 @@ async fn run_sftp(
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
                         Err(err) => {
-                            fail_transfer_start(&events_clone, &tab_id_clone, &id, "upload", err);
+                            fail_transfer_start(&events_clone, &tab_id_clone, &id, "upload", err)
+                                .await;
                             let _ = commands_tx_clone.send(SftpCommand::TransferFinished(id));
                             return;
                         }
                     };
 
-                    send_sftp_status(&events_clone, &tab_id_clone, t!("uploading").to_string());
+                    send_sftp_status(&events_clone, &tab_id_clone, t!("uploading").to_string())
+                        .await;
 
                     match upload_paths_impl(
                         &sftp_session,
@@ -730,7 +849,7 @@ async fn run_sftp(
                     .await
                     {
                         Ok(summary) => {
-                            send_sftp_status(&events_clone, &tab_id_clone, summary);
+                            send_sftp_status(&events_clone, &tab_id_clone, summary).await;
                             queue_list_dir(&commands_tx_clone, &work_tracker_clone, remote_dir);
                         }
                         Err(err) => {
@@ -741,7 +860,8 @@ async fn run_sftp(
                                 &id,
                                 err_msg.clone(),
                                 t!("upload_failed", err = err_msg).to_string(),
-                            );
+                            )
+                            .await;
                         }
                     }
                     let _ = commands_tx_clone.send(SftpCommand::TransferFinished(id));
@@ -767,18 +887,22 @@ async fn run_sftp(
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
                         Err(err) => {
-                            let _ = events_clone.send(BackendEvent::SftpStatus {
-                                tab_id: tab_id_clone.clone(),
-                                text: format!("Edit download failed: {err:#}"),
-                            });
+                            let _ = events_clone
+                                .send(BackendEvent::SftpStatus {
+                                    tab_id: tab_id_clone.clone(),
+                                    text: format!("Edit download failed: {err:#}"),
+                                })
+                                .await;
                             return;
                         }
                     };
 
-                    let _ = events_clone.send(BackendEvent::SftpStatus {
-                        tab_id: tab_id_clone.clone(),
-                        text: t!("downloading_file", base = base).to_string(),
-                    });
+                    let _ = events_clone
+                        .send(BackendEvent::SftpStatus {
+                            tab_id: tab_id_clone.clone(),
+                            text: t!("downloading_file", base = base).to_string(),
+                        })
+                        .await;
 
                     if let Err(err) = download_file_impl(
                         &sftp_session,
@@ -791,18 +915,22 @@ async fn run_sftp(
                     )
                     .await
                     {
-                        let _ = events_clone.send(BackendEvent::SftpStatus {
-                            tab_id: tab_id_clone.clone(),
-                            text: format!("Edit download failed: {err:#}"),
-                        });
+                        let _ = events_clone
+                            .send(BackendEvent::SftpStatus {
+                                tab_id: tab_id_clone.clone(),
+                                text: format!("Edit download failed: {err:#}"),
+                            })
+                            .await;
                         return;
                     }
 
                     if let Err(err) = open::that(&local_path) {
-                        let _ = events_clone.send(BackendEvent::SftpStatus {
-                            tab_id: tab_id_clone.clone(),
-                            text: format!("Failed to open editor: {err:#}"),
-                        });
+                        let _ = events_clone
+                            .send(BackendEvent::SftpStatus {
+                                tab_id: tab_id_clone.clone(),
+                                text: format!("Failed to open editor: {err:#}"),
+                            })
+                            .await;
                         return;
                     }
 
@@ -819,10 +947,12 @@ async fn run_sftp(
                     ) {
                         Ok(w) => w,
                         Err(err) => {
-                            let _ = events_clone.send(BackendEvent::SftpStatus {
-                                tab_id: tab_id_clone.clone(),
-                                text: format!("Failed to watch local edit file: {err:#}"),
-                            });
+                            let _ = events_clone
+                                .send(BackendEvent::SftpStatus {
+                                    tab_id: tab_id_clone.clone(),
+                                    text: format!("Failed to watch local edit file: {err:#}"),
+                                })
+                                .await;
                             return;
                         }
                     };
@@ -830,10 +960,12 @@ async fn run_sftp(
                     if let Err(err) =
                         watcher.watch(&local_path, notify::RecursiveMode::NonRecursive)
                     {
-                        let _ = events_clone.send(BackendEvent::SftpStatus {
-                            tab_id: tab_id_clone.clone(),
-                            text: format!("Failed to watch local edit file: {err:#}"),
-                        });
+                        let _ = events_clone
+                            .send(BackendEvent::SftpStatus {
+                                tab_id: tab_id_clone.clone(),
+                                text: format!("Failed to watch local edit file: {err:#}"),
+                            })
+                            .await;
                         return;
                     }
 
@@ -870,10 +1002,12 @@ async fn run_sftp(
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
                         Err(err) => {
-                            let _ = events_clone.send(BackendEvent::SftpStatus {
-                                tab_id: tab_id_clone.clone(),
-                                text: format!("Auto-upload failed: {err:#}"),
-                            });
+                            let _ = events_clone
+                                .send(BackendEvent::SftpStatus {
+                                    tab_id: tab_id_clone.clone(),
+                                    text: format!("Auto-upload failed: {err:#}"),
+                                })
+                                .await;
                             return;
                         }
                     };
@@ -894,20 +1028,27 @@ async fn run_sftp(
                     {
                         Ok(_) => {
                             let now = chrono::Local::now().format("%H:%M:%S");
-                            let _ = events_clone.send(BackendEvent::SftpStatus {
-                                tab_id: tab_id_clone.clone(),
-                                text: format!(
-                                    "{} ({})",
-                                    t!("auto_saved_and_uploaded", base = base_name(&remote_path)),
-                                    now
-                                ),
-                            });
+                            let _ = events_clone
+                                .send(BackendEvent::SftpStatus {
+                                    tab_id: tab_id_clone.clone(),
+                                    text: format!(
+                                        "{} ({})",
+                                        t!(
+                                            "auto_saved_and_uploaded",
+                                            base = base_name(&remote_path)
+                                        ),
+                                        now
+                                    ),
+                                })
+                                .await;
                         }
                         Err(err) => {
-                            let _ = events_clone.send(BackendEvent::SftpStatus {
-                                tab_id: tab_id_clone.clone(),
-                                text: format!("Auto-upload failed: {err:#}"),
-                            });
+                            let _ = events_clone
+                                .send(BackendEvent::SftpStatus {
+                                    tab_id: tab_id_clone.clone(),
+                                    text: format!("Auto-upload failed: {err:#}"),
+                                })
+                                .await;
                         }
                     }
                 });
@@ -925,11 +1066,13 @@ async fn run_sftp(
 
                 match sftp.create_dir(&actual_path).await {
                     Ok(_) => {
-                        let _ = events.send(BackendEvent::SftpStatus {
-                            tab_id: tab_id.clone(),
-                            text: t!("create_folder_success", name = base_name(&actual_path))
-                                .to_string(),
-                        });
+                        let _ = events
+                            .send(BackendEvent::SftpStatus {
+                                tab_id: tab_id.clone(),
+                                text: t!("create_folder_success", name = base_name(&actual_path))
+                                    .to_string(),
+                            })
+                            .await;
 
                         // Re-fetch the parent directory to show the newly created folder
                         if let Some(parent) = parent_dir(&actual_path) {
@@ -939,19 +1082,24 @@ async fn run_sftp(
                         }
                     }
                     Err(err) => {
-                        let _ = events.send(BackendEvent::SftpStatus {
-                            tab_id: tab_id.clone(),
-                            text: t!("create_folder_failed", err = format!("{err:#}")).to_string(),
-                        });
+                        let _ = events
+                            .send(BackendEvent::SftpStatus {
+                                tab_id: tab_id.clone(),
+                                text: t!("create_folder_failed", err = format!("{err:#}"))
+                                    .to_string(),
+                            })
+                            .await;
                     }
                 }
             }
             SftpCommand::DeletePaths { paths, pin: _pin } => {
                 tracing::info!("[sftp] batch deleting {} paths", paths.len());
-                let _ = events.send(BackendEvent::SftpStatus {
-                    tab_id: tab_id.clone(),
-                    text: t!("deleting_paths", count = paths.len()).to_string(),
-                });
+                let _ = events
+                    .send(BackendEvent::SftpStatus {
+                        tab_id: tab_id.clone(),
+                        text: t!("deleting_paths", count = paths.len()).to_string(),
+                    })
+                    .await;
 
                 let mut errors = Vec::new();
                 for path in paths.clone() {
@@ -969,15 +1117,19 @@ async fn run_sftp(
                 }
 
                 if errors.is_empty() {
-                    let _ = events.send(BackendEvent::SftpStatus {
-                        tab_id: tab_id.clone(),
-                        text: t!("delete_success", count = paths.len()).to_string(),
-                    });
+                    let _ = events
+                        .send(BackendEvent::SftpStatus {
+                            tab_id: tab_id.clone(),
+                            text: t!("delete_success", count = paths.len()).to_string(),
+                        })
+                        .await;
                 } else {
-                    let _ = events.send(BackendEvent::SftpStatus {
-                        tab_id: tab_id.clone(),
-                        text: t!("delete_failed", err = errors.join(", ")).to_string(),
-                    });
+                    let _ = events
+                        .send(BackendEvent::SftpStatus {
+                            tab_id: tab_id.clone(),
+                            text: t!("delete_failed", err = errors.join(", ")).to_string(),
+                        })
+                        .await;
                 }
 
                 if let Some(first) = paths.first() {
@@ -1031,7 +1183,11 @@ mod lifecycle_tests {
 
     use tokio::task::JoinSet;
 
-    use super::{SftpWorkTracker, TransferStateFlag, cancel_sftp_child_tasks};
+    use super::{
+        DirectoryListing, RemoteEntry, SFTP_BROWSE_ENTRY_LIMIT, SFTP_BROWSE_NAME_BYTES_LIMIT,
+        SFTP_PREVIEW_BYTE_LIMIT, SftpWorkTracker, TransferStateFlag, browser_entry_fits_budget,
+        browser_page_state, cancel_sftp_child_tasks, directory_preview_body,
+    };
 
     #[tokio::test]
     async fn closing_worker_cancels_transfers_and_aborts_child_tasks() {
@@ -1064,6 +1220,93 @@ mod lifecycle_tests {
         drop(second);
         assert_eq!(tracker.active_pins(), 0);
     }
+
+    #[test]
+    fn browser_listing_stops_at_the_entry_limit() {
+        assert!(browser_entry_fits_budget(
+            SFTP_BROWSE_ENTRY_LIMIT - 1,
+            0,
+            "/remote",
+            "entry",
+            SFTP_BROWSE_ENTRY_LIMIT,
+            SFTP_BROWSE_NAME_BYTES_LIMIT,
+        ));
+        assert!(!browser_entry_fits_budget(
+            SFTP_BROWSE_ENTRY_LIMIT,
+            0,
+            "/remote",
+            "entry",
+            SFTP_BROWSE_ENTRY_LIMIT,
+            SFTP_BROWSE_NAME_BYTES_LIMIT,
+        ));
+    }
+
+    #[test]
+    fn browser_listing_stops_at_the_name_byte_limit() {
+        let path = "/";
+        let name = "entry";
+        let exact_bytes = SFTP_BROWSE_NAME_BYTES_LIMIT - path.len() - name.len() - 1;
+
+        assert!(browser_entry_fits_budget(
+            0,
+            exact_bytes,
+            path,
+            name,
+            SFTP_BROWSE_ENTRY_LIMIT,
+            SFTP_BROWSE_NAME_BYTES_LIMIT,
+        ));
+        assert!(!browser_entry_fits_budget(
+            0,
+            exact_bytes + 1,
+            path,
+            name,
+            SFTP_BROWSE_ENTRY_LIMIT,
+            SFTP_BROWSE_NAME_BYTES_LIMIT,
+        ));
+    }
+
+    #[test]
+    fn browser_page_state_preserves_pending_entries_after_the_cursor_closes() {
+        assert_eq!(browser_page_state(3, false, true), (true, true));
+        assert_eq!(browser_page_state(0, false, true), (false, true));
+        assert_eq!(browser_page_state(0, true, false), (true, false));
+        assert_eq!(browser_page_state(0, false, false), (false, false));
+    }
+
+    #[test]
+    fn directory_preview_has_a_fixed_byte_budget_and_marks_truncation() {
+        let listing = DirectoryListing {
+            entries: vec![RemoteEntry {
+                name: "x".repeat(SFTP_PREVIEW_BYTE_LIMIT),
+                full_path: "/remote/x".to_string(),
+                is_dir: false,
+                size: 0,
+                modified: 0,
+            }],
+            truncated: true,
+        };
+
+        let body = directory_preview_body("/remote", listing);
+
+        assert!(body.len() <= SFTP_PREVIEW_BYTE_LIMIT);
+        assert!(body.starts_with("Directory: /remote"));
+    }
+
+    #[test]
+    fn directory_preview_truncates_a_long_utf8_path_without_exceeding_the_limit() {
+        let path = "路径".repeat(SFTP_PREVIEW_BYTE_LIMIT);
+        let body = directory_preview_body(
+            &path,
+            DirectoryListing {
+                entries: Vec::new(),
+                truncated: false,
+            },
+        );
+
+        assert!(body.len() <= SFTP_PREVIEW_BYTE_LIMIT);
+        assert!(body.starts_with("Directory: "));
+        assert!(body.contains("..."));
+    }
 }
 
 async fn open_sftp_session(
@@ -1080,6 +1323,23 @@ async fn open_sftp_session(
     SftpSession::new(channel.into_stream())
         .await
         .context("sftp handshake")
+}
+
+async fn open_browse_sftp_session(
+    handle: &russh::client::Handle<SftpClientHandler>,
+) -> Result<RawSftpSession> {
+    let channel = handle
+        .channel_open_session()
+        .await
+        .context("open browse sftp channel")?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .context("request browse sftp subsystem")?;
+    let session = RawSftpSession::new(channel.into_stream());
+    session.set_timeout(SFTP_BROWSE_TIMEOUT.as_secs());
+    session.init().await.context("browse sftp handshake")?;
+    Ok(session)
 }
 
 async fn open_transfer_sftp_session(
@@ -1133,53 +1393,97 @@ fn recursive_delete<'a>(
     })
 }
 
-async fn emit_entries(
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+async fn emit_browser_page(
+    events: &BackendEventSender,
     tab_id: &str,
-    sftp: &SftpSession,
     path: &str,
+    page: DirectoryPage,
+    append: bool,
 ) -> Result<()> {
-    let entries = list_dir_impl(sftp, path).await?;
-    let _ = events.send(BackendEvent::SftpEntries {
-        tab_id: tab_id.to_string(),
-        path: path.to_string(),
-        entries,
-    });
-    let _ = events.send(BackendEvent::SftpStatus {
-        tab_id: tab_id.to_string(),
-        text: path.to_string(),
-    });
+    let _ = events
+        .send(BackendEvent::SftpEntries {
+            tab_id: tab_id.to_string(),
+            path: path.to_string(),
+            entries: page.entries,
+            append,
+            has_more: page.has_more,
+            reached_limit: page.reached_limit,
+        })
+        .await;
+    let status = if page.reached_limit {
+        t!(
+            "sftp_directory_truncated",
+            entries = SFTP_BROWSE_ENTRY_LIMIT,
+            bytes = format_bytes(SFTP_BROWSE_NAME_BYTES_LIMIT as u64)
+        )
+        .to_string()
+    } else {
+        path.to_string()
+    };
+    let _ = events
+        .send(BackendEvent::SftpStatus {
+            tab_id: tab_id.to_string(),
+            text: status,
+        })
+        .await;
     Ok(())
 }
 
-async fn emit_entries_with_timeout(
-    events: &std::sync::mpsc::Sender<BackendEvent>,
-    tab_id: &str,
-    sftp: &SftpSession,
-    path: &str,
-) -> Result<()> {
-    tokio::time::timeout(
-        SFTP_BROWSE_TIMEOUT,
-        emit_entries(events, tab_id, sftp, path),
-    )
-    .await
-    .map_err(|_| {
-        anyhow!(
-            "list directory timed out after {}s: {path}",
-            SFTP_BROWSE_TIMEOUT.as_secs()
-        )
-    })?
-}
-
-async fn emit_entries_from_fresh_session(
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+async fn open_and_emit_browser_page(
+    events: &BackendEventSender,
     tab_id: &str,
     handle: &russh::client::Handle<SftpClientHandler>,
     path: &str,
+    cursor: &mut Option<BrowseCursor>,
 ) -> Result<()> {
+    close_browse_cursor(cursor).await;
+    let new_cursor = tokio::time::timeout(SFTP_BROWSE_TIMEOUT, open_browse_cursor(handle, path))
+        .await
+        .map_err(|_| {
+            anyhow!(
+                "list directory timed out after {}s: {path}",
+                SFTP_BROWSE_TIMEOUT.as_secs()
+            )
+        })??;
+    *cursor = Some(new_cursor);
+
+    if let Err(err) = emit_next_browser_page(events, tab_id, cursor, false).await {
+        close_browse_cursor(cursor).await;
+        return Err(err);
+    }
+    Ok(())
+}
+
+async fn emit_next_browser_page(
+    events: &BackendEventSender,
+    tab_id: &str,
+    cursor: &mut Option<BrowseCursor>,
+    append: bool,
+) -> Result<()> {
+    let Some(cursor) = cursor.as_mut() else {
+        return Err(anyhow!("directory cursor is closed"));
+    };
+    let path = cursor.path.clone();
+    let page = tokio::time::timeout(SFTP_BROWSE_TIMEOUT, read_next_browser_page(cursor))
+        .await
+        .map_err(|_| {
+            anyhow!(
+                "list directory timed out after {}s: {path}",
+                SFTP_BROWSE_TIMEOUT.as_secs()
+            )
+        })??;
+    emit_browser_page(events, tab_id, &path, page, append).await
+}
+
+async fn read_browser_listing_with_timeout(
+    handle: &russh::client::Handle<SftpClientHandler>,
+    path: &str,
+    entry_limit: usize,
+    name_bytes_limit: usize,
+) -> Result<DirectoryListing> {
     tokio::time::timeout(SFTP_BROWSE_TIMEOUT, async {
-        let sftp = open_sftp_session(handle).await?;
-        emit_entries(events, tab_id, &sftp, path).await
+        let sftp = open_browse_sftp_session(handle).await?;
+        list_dir_for_browser(&sftp, path, entry_limit, name_bytes_limit).await
     })
     .await
     .map_err(|_| {
@@ -1188,6 +1492,124 @@ async fn emit_entries_from_fresh_session(
             SFTP_BROWSE_TIMEOUT.as_secs()
         )
     })?
+}
+
+async fn open_browse_cursor(
+    handle: &russh::client::Handle<SftpClientHandler>,
+    path: &str,
+) -> Result<BrowseCursor> {
+    let sftp = open_browse_sftp_session(handle).await?;
+    let directory_handle = sftp
+        .opendir(path)
+        .await
+        .with_context(|| format!("opendir {path}"))?;
+    Ok(BrowseCursor {
+        sftp: Some(sftp),
+        directory_handle: Some(directory_handle.handle),
+        path: path.to_string(),
+        pending_entries: VecDeque::new(),
+        retained_entries: 0,
+        retained_name_bytes: 0,
+        reached_limit: false,
+    })
+}
+
+async fn read_next_browser_page(cursor: &mut BrowseCursor) -> Result<DirectoryPage> {
+    let mut entries = Vec::with_capacity(SFTP_BROWSE_PAGE_ENTRY_LIMIT);
+
+    while entries.len() < SFTP_BROWSE_PAGE_ENTRY_LIMIT {
+        while entries.len() < SFTP_BROWSE_PAGE_ENTRY_LIMIT {
+            let Some(entry) = cursor.pending_entries.pop_front() else {
+                break;
+            };
+            entries.push(entry);
+        }
+        if entries.len() == SFTP_BROWSE_PAGE_ENTRY_LIMIT
+            || cursor.reached_limit
+            || cursor.directory_handle.is_none()
+        {
+            break;
+        }
+
+        let Some(sftp) = cursor.sftp.as_ref() else {
+            break;
+        };
+        let Some(directory_handle) = cursor.directory_handle.clone() else {
+            break;
+        };
+        let batch = match sftp.readdir(directory_handle).await {
+            Ok(batch) => batch,
+            Err(SftpClientError::Status(status)) if status.status_code == StatusCode::Eof => {
+                close_open_browse_cursor(cursor).await;
+                break;
+            }
+            Err(err) => return Err(err).with_context(|| format!("readdir {} failed", cursor.path)),
+        };
+
+        for entry in batch.files {
+            if entry.filename == "." || entry.filename == ".." {
+                continue;
+            }
+            if !browser_entry_fits_budget(
+                cursor.retained_entries,
+                cursor.retained_name_bytes,
+                &cursor.path,
+                &entry.filename,
+                SFTP_BROWSE_ENTRY_LIMIT,
+                SFTP_BROWSE_NAME_BYTES_LIMIT,
+            ) {
+                cursor.reached_limit = true;
+                close_open_browse_cursor(cursor).await;
+                break;
+            }
+
+            cursor.retained_entries += 1;
+            cursor.retained_name_bytes += cursor.path.len() + entry.filename.len() + 1;
+            let permissions = entry.attrs.permissions.unwrap_or(0);
+            cursor.pending_entries.push_back(RemoteEntry {
+                full_path: join_remote(&cursor.path, &entry.filename),
+                is_dir: (permissions & 0o170_000) == 0o040_000,
+                size: entry.attrs.size.unwrap_or(0),
+                modified: entry.attrs.mtime.unwrap_or(0),
+                name: entry.filename,
+            });
+        }
+    }
+
+    let (has_more, reached_limit) = browser_page_state(
+        cursor.pending_entries.len(),
+        cursor.directory_handle.is_some(),
+        cursor.reached_limit,
+    );
+    Ok(DirectoryPage {
+        entries,
+        has_more,
+        reached_limit,
+    })
+}
+
+fn browser_page_state(
+    pending_entries: usize,
+    directory_open: bool,
+    reached_limit: bool,
+) -> (bool, bool) {
+    (pending_entries > 0 || directory_open, reached_limit)
+}
+
+async fn close_browse_cursor(cursor: &mut Option<BrowseCursor>) {
+    if let Some(mut cursor) = cursor.take() {
+        close_open_browse_cursor(&mut cursor).await;
+    }
+}
+
+async fn close_open_browse_cursor(cursor: &mut BrowseCursor) {
+    if let Some(sftp) = cursor.sftp.as_ref() {
+        if let Some(directory_handle) = cursor.directory_handle.take() {
+            let _ = tokio::time::timeout(SFTP_SHUTDOWN_TIMEOUT, sftp.close(directory_handle)).await;
+        }
+        let _ = sftp.close_session();
+    }
+    cursor.sftp = None;
 }
 
 async fn reveal_path_target(
@@ -1262,7 +1684,92 @@ async fn list_dir_impl(sftp: &SftpSession, path: &str) -> Result<Vec<RemoteEntry
     Ok(entries)
 }
 
-async fn preview_impl(sftp: &SftpSession, path: &str) -> Result<PreviewData> {
+async fn list_dir_for_browser(
+    sftp: &RawSftpSession,
+    path: &str,
+    entry_limit: usize,
+    name_bytes_limit: usize,
+) -> Result<DirectoryListing> {
+    let handle = sftp
+        .opendir(path)
+        .await
+        .with_context(|| format!("opendir {path}"))?;
+    let mut entries = Vec::new();
+    let mut name_bytes = 0usize;
+    let mut truncated = false;
+
+    loop {
+        let batch = match sftp.readdir(handle.handle.clone()).await {
+            Ok(batch) => batch,
+            Err(SftpClientError::Status(status)) if status.status_code == StatusCode::Eof => {
+                break;
+            }
+            Err(err) => {
+                let _ = sftp.close(handle.handle.clone()).await;
+                let _ = sftp.close_session();
+                return Err(err).with_context(|| format!("readdir {path} failed"));
+            }
+        };
+
+        for entry in batch.files {
+            if entry.filename == "." || entry.filename == ".." {
+                continue;
+            }
+            if !browser_entry_fits_budget(
+                entries.len(),
+                name_bytes,
+                path,
+                &entry.filename,
+                entry_limit,
+                name_bytes_limit,
+            ) {
+                truncated = true;
+                break;
+            }
+
+            name_bytes += path.len() + entry.filename.len() + 1;
+            let permissions = entry.attrs.permissions.unwrap_or(0);
+            entries.push(RemoteEntry {
+                full_path: join_remote(path, &entry.filename),
+                is_dir: (permissions & 0o170_000) == 0o040_000,
+                size: entry.attrs.size.unwrap_or(0),
+                modified: entry.attrs.mtime.unwrap_or(0),
+                name: entry.filename,
+            });
+        }
+        if truncated {
+            break;
+        }
+    }
+
+    let _ = sftp.close(handle.handle).await;
+    let _ = sftp.close_session();
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    Ok(DirectoryListing { entries, truncated })
+}
+
+fn browser_entry_fits_budget(
+    entry_count: usize,
+    name_bytes: usize,
+    path: &str,
+    name: &str,
+    entry_limit: usize,
+    name_bytes_limit: usize,
+) -> bool {
+    entry_count < entry_limit
+        && name_bytes.saturating_add(path.len() + name.len() + 1) <= name_bytes_limit
+}
+
+async fn preview_impl(
+    sftp: &SftpSession,
+    handle: &russh::client::Handle<SftpClientHandler>,
+    path: &str,
+) -> Result<PreviewData> {
     let metadata = sftp
         .metadata(path)
         .await
@@ -1273,16 +1780,18 @@ async fn preview_impl(sftp: &SftpSession, path: &str) -> Result<PreviewData> {
         .unwrap_or(false);
 
     if is_dir {
-        let entries = list_dir_impl(sftp, path).await?;
-        let mut lines = vec![format!("Directory: {path}"), String::new()];
-        for entry in entries.into_iter().take(200) {
-            let kind = if entry.is_dir { "dir " } else { "file" };
-            lines.push(format!("{kind}  {}", entry.name));
-        }
+        let listing = read_browser_listing_with_timeout(
+            handle,
+            path,
+            SFTP_DIRECTORY_PREVIEW_ENTRY_LIMIT,
+            SFTP_DIRECTORY_PREVIEW_CONTENT_BYTE_LIMIT,
+        )
+        .await?;
+        let body = directory_preview_body(path, listing);
         return Ok(PreviewData {
             path: path.to_string(),
             title: base_name(path),
-            body: lines.join("\n"),
+            body,
             is_binary: false,
         });
     }
@@ -1291,7 +1800,7 @@ async fn preview_impl(sftp: &SftpSession, path: &str) -> Result<PreviewData> {
         .open(path)
         .await
         .with_context(|| format!("open remote {path}"))?;
-    let mut buffer = vec![0u8; 128 * 1024];
+    let mut buffer = vec![0u8; SFTP_PREVIEW_BYTE_LIMIT];
     let read = remote_file
         .read(&mut buffer)
         .await
@@ -1321,13 +1830,66 @@ async fn preview_impl(sftp: &SftpSession, path: &str) -> Result<PreviewData> {
     })
 }
 
+fn directory_preview_body(path: &str, listing: DirectoryListing) -> String {
+    let mut body = String::with_capacity(SFTP_DIRECTORY_PREVIEW_CONTENT_BYTE_LIMIT);
+    let mut content_truncated = append_preview_text(
+        &mut body,
+        "Directory: ",
+        SFTP_DIRECTORY_PREVIEW_CONTENT_BYTE_LIMIT,
+    );
+    content_truncated |=
+        append_preview_text(&mut body, path, SFTP_DIRECTORY_PREVIEW_CONTENT_BYTE_LIMIT);
+    content_truncated |=
+        append_preview_text(&mut body, "\n\n", SFTP_DIRECTORY_PREVIEW_CONTENT_BYTE_LIMIT);
+
+    for entry in listing.entries {
+        let kind = if entry.is_dir { "dir " } else { "file" };
+        let line_len = kind.len() + 2 + entry.name.len() + 1;
+        if body.len().saturating_add(line_len) > SFTP_DIRECTORY_PREVIEW_CONTENT_BYTE_LIMIT {
+            content_truncated = true;
+            break;
+        }
+        body.push_str(kind);
+        body.push_str("  ");
+        body.push_str(&entry.name);
+        body.push('\n');
+    }
+
+    if listing.truncated || content_truncated {
+        let notice = t!("sftp_directory_preview_truncated").to_string();
+        append_preview_text(&mut body, "\n", SFTP_PREVIEW_BYTE_LIMIT);
+        append_preview_text(&mut body, &notice, SFTP_PREVIEW_BYTE_LIMIT);
+    }
+    body
+}
+
+fn append_preview_text(body: &mut String, text: &str, byte_limit: usize) -> bool {
+    let remaining = byte_limit.saturating_sub(body.len());
+    if text.len() <= remaining {
+        body.push_str(text);
+        return false;
+    }
+
+    let suffix = if remaining >= 3 { "..." } else { "" };
+    let prefix_len = remaining.saturating_sub(suffix.len());
+    let prefix_end = text
+        .char_indices()
+        .map(|(index, character)| index + character.len_utf8())
+        .take_while(|end| *end <= prefix_len)
+        .last()
+        .unwrap_or(0);
+    body.push_str(&text[..prefix_end]);
+    body.push_str(suffix);
+    true
+}
+
 async fn download_path_impl(
     handle: &russh::client::Handle<SftpClientHandler>,
     sftp: &SftpSession,
     remote: &str,
     local_dir: &Path,
     flag: TransferStateFlag,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: &BackendEventSender,
     tab_id: &str,
     id: &str,
 ) -> Result<String> {
@@ -1381,7 +1943,7 @@ async fn download_dir_recursive(
     remote_dir: &str,
     local_dir: &Path,
     flag: &TransferStateFlag,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: &BackendEventSender,
     tab_id: &str,
     id: &str,
 ) -> Result<()> {
@@ -1425,7 +1987,7 @@ async fn download_remote_directory_archive(
     remote_dir: &str,
     local_archive: &Path,
     flag: &TransferStateFlag,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: &BackendEventSender,
     tab_id: &str,
     id: &str,
 ) -> Result<PathBuf> {
@@ -1486,7 +2048,7 @@ async fn download_file_impl(
     remote: &str,
     local: &Path,
     flag: &TransferStateFlag,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: &BackendEventSender,
     tab_id: &str,
     id: &str,
 ) -> Result<()> {
@@ -1525,7 +2087,8 @@ async fn download_file_impl(
             transferred,
             total,
             TransferState::Running,
-        );
+        )
+        .await;
     }
     local_file.flush().await.context("flush local file")?;
 
@@ -1536,7 +2099,8 @@ async fn download_file_impl(
         transferred,
         total,
         TransferState::Completed,
-    );
+    )
+    .await;
 
     Ok(())
 }
@@ -1546,7 +2110,7 @@ async fn upload_paths_impl(
     locals: &[String],
     remote_dir: &str,
     flag: TransferStateFlag,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: &BackendEventSender,
     tab_id: &str,
     id: &str,
 ) -> Result<String> {
@@ -1663,7 +2227,8 @@ async fn upload_paths_impl(
         total_bytes,
         Some(total_bytes),
         TransferState::Completed,
-    );
+    )
+    .await;
 
     let summary = if file_count == 1 && folder_count == 0 {
         t!("uploaded_file").to_string()
@@ -1689,7 +2254,7 @@ async fn upload_file_impl(
     local_file: &Path,
     remote_path: &str,
     flag: &TransferStateFlag,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: &BackendEventSender,
     tab_id: &str,
     id: &str,
     transferred: Arc<AtomicU64>,
@@ -1717,7 +2282,7 @@ async fn upload_file_impl(
             .with_context(|| format!("write remote {remote_path}"))?;
 
         let new_cur = transferred.fetch_add(read as u64, Ordering::Relaxed) + read as u64;
-        send_transfer_progress(events, tab_id, id, new_cur, total, TransferState::Running);
+        send_transfer_progress(events, tab_id, id, new_cur, total, TransferState::Running).await;
     }
     remote.flush().await.context("flush remote file")?;
     Ok(())

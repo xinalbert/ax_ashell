@@ -3,7 +3,11 @@ use std::time::Duration;
 use gpui::{Context, Window, px};
 use gpui_component::input::{InputEvent, InputState};
 
-use crate::{AxShell, app::state::lifecycle::WindowLifecycleState, terminal::BackendEvent};
+use crate::{
+    AxShell,
+    app::state::lifecycle::WindowLifecycleState,
+    terminal::{BACKEND_EVENT_QUEUE_CAPACITY, BackendEvent},
+};
 
 const ACTIVE_PUMP_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_PUMP_INTERVAL: Duration = Duration::from_millis(33);
@@ -228,7 +232,12 @@ impl AxShell {
     fn drain_backend_events(&mut self, cx: &mut Context<Self>) -> DrainResult {
         let mut result = DrainResult::default();
         let mut transfers_changed = false;
-        while let Ok(event) = self.runtime_state.events_rx.try_recv() {
+        // Leave time for rendering and input even while a producer keeps the
+        // bounded queue full.
+        for _ in 0..BACKEND_EVENT_QUEUE_CAPACITY {
+            let Ok(event) = self.runtime_state.events_rx.try_recv() else {
+                break;
+            };
             match event {
                 BackendEvent::Output { tab_id, bytes } => {
                     if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
@@ -297,6 +306,9 @@ impl AxShell {
                     tab_id,
                     path,
                     entries,
+                    append,
+                    has_more,
+                    reached_limit,
                 } => {
                     result.ui_changed = true;
                     self.mark_sftp_activity_for_group(&tab_id);
@@ -304,7 +316,16 @@ impl AxShell {
                         && let Some(sftp) = group.sftp.as_mut()
                     {
                         sftp.current_path = path;
-                        sftp.entries = entries;
+                        if append {
+                            sftp.entries.extend(entries);
+                        } else {
+                            sftp.entries = entries;
+                            sftp.selected_path = None;
+                            sftp.selected_entries.clear();
+                        }
+                        sftp.has_more_entries = has_more;
+                        sftp.loading_more_entries = false;
+                        sftp.reached_entries_limit = reached_limit;
                         if let Some(target_path) = self.pending_sftp_selection_path.clone() {
                             let matched = sftp
                                 .entries

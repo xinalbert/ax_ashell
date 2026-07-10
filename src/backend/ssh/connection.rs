@@ -9,7 +9,7 @@ use crate::{
     session::config::{
         AuthMethod, ProxyStream, Session, SshConnectionMode, ordered_ssh_connection_modes,
     },
-    terminal::BackendEvent,
+    terminal::{BackendEvent, BackendEventSender},
 };
 
 use super::{ClientHandler, X11ForwardingState, legacy};
@@ -17,7 +17,7 @@ use super::{ClientHandler, X11ForwardingState, legacy};
 pub(super) async fn connect_and_authenticate(
     tab_id: &str,
     session: &Session,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: &BackendEventSender,
     x11: Option<Arc<X11ForwardingState>>,
 ) -> Result<russh::client::Handle<ClientHandler>> {
     let addr = format!("{}:{}", session.host, session.port);
@@ -38,10 +38,12 @@ pub(super) async fn connect_and_authenticate(
         } else {
             format!("opening tcp connection to {addr}")
         };
-    let _ = events.send(BackendEvent::Status {
-        tab_id: tab_id.to_string(),
-        text: status_text,
-    });
+    let _ = events
+        .send(BackendEvent::Status {
+            tab_id: tab_id.to_string(),
+            text: status_text,
+        })
+        .await;
 
     let (mut handle, connected_mode) =
         connect_with_mode_priority(tab_id, session, &addr, events, x11.clone()).await?;
@@ -55,13 +57,15 @@ pub(super) async fn connect_and_authenticate(
                 session.user,
                 addr
             );
-            let _ = events.send(BackendEvent::Status {
-                tab_id: tab_id.to_string(),
-                text: format!(
-                    "connected to {addr}, sending password authentication for {}",
-                    session.user
-                ),
-            });
+            let _ = events
+                .send(BackendEvent::Status {
+                    tab_id: tab_id.to_string(),
+                    text: format!(
+                        "connected to {addr}, sending password authentication for {}",
+                        session.user
+                    ),
+                })
+                .await;
             handle
                 .authenticate_password(&session.user, &session.password)
                 .await
@@ -76,16 +80,18 @@ pub(super) async fn connect_and_authenticate(
                 addr,
                 source
             );
-            let _ = events.send(BackendEvent::Status {
-                tab_id: tab_id.to_string(),
-                text: format!("connected to {addr}, loading private key from {source}"),
-            });
+            let _ = events
+                .send(BackendEvent::Status {
+                    tab_id: tab_id.to_string(),
+                    text: format!("connected to {addr}, loading private key from {source}"),
+                })
+                .await;
             let keypair = load_session_private_key(session)?;
             let algorithm = format!("{:?}", keypair.algorithm());
             let _ = events.send(BackendEvent::Status {
                 tab_id: tab_id.to_string(),
                 text: format!("private key loaded from {source}, algorithm {algorithm}, sending public key authentication for {}", session.user),
-            });
+            }).await;
             let keys = private_keys_with_algs(keypair).context("invalid private key")?;
             let mut success = false;
             for key in keys {
@@ -147,18 +153,22 @@ pub(super) async fn connect_and_authenticate(
         addr
     );
 
-    let _ = events.send(BackendEvent::Status {
-        tab_id: tab_id.to_string(),
-        text: format!(
-            "authentication accepted, opening shell for {}@{}",
-            session.user, session.host
-        ),
-    });
-    let _ = events.send(BackendEvent::SshConnectionModeResolved {
-        tab_id: tab_id.to_string(),
-        session_id: session.id.clone(),
-        mode: connected_mode,
-    });
+    let _ = events
+        .send(BackendEvent::Status {
+            tab_id: tab_id.to_string(),
+            text: format!(
+                "authentication accepted, opening shell for {}@{}",
+                session.user, session.host
+            ),
+        })
+        .await;
+    let _ = events
+        .send(BackendEvent::SshConnectionModeResolved {
+            tab_id: tab_id.to_string(),
+            session_id: session.id.clone(),
+            mode: connected_mode,
+        })
+        .await;
 
     Ok(handle)
 }
@@ -167,7 +177,7 @@ async fn connect_with_mode_priority(
     tab_id: &str,
     session: &Session,
     addr: &str,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: &BackendEventSender,
     x11: Option<Arc<X11ForwardingState>>,
 ) -> Result<(russh::client::Handle<ClientHandler>, SshConnectionMode)> {
     let modes = ordered_ssh_connection_modes(session.last_successful_ssh_mode);
@@ -175,10 +185,12 @@ async fn connect_with_mode_priority(
 
     for (index, mode) in modes.iter().copied().enumerate() {
         if index > 0 {
-            let _ = events.send(BackendEvent::Status {
-                tab_id: tab_id.to_string(),
-                text: format!("retrying SSH connection in {} mode", mode.label()),
-            });
+            let _ = events
+                .send(BackendEvent::Status {
+                    tab_id: tab_id.to_string(),
+                    text: format!("retrying SSH connection in {} mode", mode.label()),
+                })
+                .await;
         }
 
         match connect_with_mode(tab_id, session, addr, mode, events, x11.clone()).await {
@@ -188,15 +200,21 @@ async fn connect_with_mode_priority(
                         "[ssh] connected to {} using legacy SSH compatibility mode",
                         addr
                     );
-                    let _ = events.send(BackendEvent::Status {
-                        tab_id: tab_id.to_string(),
-                        text: format!("connected to {addr} using legacy SSH compatibility mode"),
-                    });
+                    let _ = events
+                        .send(BackendEvent::Status {
+                            tab_id: tab_id.to_string(),
+                            text: format!(
+                                "connected to {addr} using legacy SSH compatibility mode"
+                            ),
+                        })
+                        .await;
                 } else if session.last_successful_ssh_mode == Some(SshConnectionMode::Legacy) {
-                    let _ = events.send(BackendEvent::Status {
-                        tab_id: tab_id.to_string(),
-                        text: format!("connected to {addr} using default SSH mode"),
-                    });
+                    let _ = events
+                        .send(BackendEvent::Status {
+                            tab_id: tab_id.to_string(),
+                            text: format!("connected to {addr} using default SSH mode"),
+                        })
+                        .await;
                 }
                 return Ok((handle, mode));
             }
@@ -224,10 +242,12 @@ async fn connect_with_mode_priority(
                 let reason = legacy::negotiation_error_short_reason(&err)
                     .map(|reason| format!("SSH negotiation failed ({reason})"))
                     .unwrap_or_else(|| "SSH connection failed with cached mode".to_string());
-                let _ = events.send(BackendEvent::Status {
-                    tab_id: tab_id.to_string(),
-                    text: format!("{} {reason}, retrying {} mode", mode.label(), next.label()),
-                });
+                let _ = events
+                    .send(BackendEvent::Status {
+                        tab_id: tab_id.to_string(),
+                        text: format!("{} {reason}, retrying {} mode", mode.label(), next.label()),
+                    })
+                    .await;
             }
         }
     }
@@ -242,7 +262,7 @@ async fn connect_with_mode(
     session: &Session,
     addr: &str,
     mode: SshConnectionMode,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: &BackendEventSender,
     x11: Option<Arc<X11ForwardingState>>,
 ) -> Result<russh::client::Handle<ClientHandler>> {
     let stream =
@@ -261,7 +281,7 @@ pub(crate) async fn connect_transport_with_retries(
     session: &Session,
     addr: &str,
     mode: SshConnectionMode,
-    events: Option<&std::sync::mpsc::Sender<BackendEvent>>,
+    events: Option<&BackendEventSender>,
 ) -> Result<Box<dyn ProxyStream>> {
     let config = crate::session::config::ConfigStore::load()
         .unwrap_or_else(|_| crate::session::config::ConfigStore::in_memory());
@@ -293,13 +313,15 @@ pub(crate) async fn connect_transport_with_retries(
                     delay
                 );
                 if let (Some(tab_id), Some(events)) = (tab_id, events) {
-                    let _ = events.send(BackendEvent::Status {
-                        tab_id: tab_id.to_string(),
-                        text: format!(
-                            "tcp connection to {addr} failed ({err}); retrying in {:.1}s",
-                            delay.as_secs_f32()
-                        ),
-                    });
+                    let _ = events
+                        .send(BackendEvent::Status {
+                            tab_id: tab_id.to_string(),
+                            text: format!(
+                                "tcp connection to {addr} failed ({err}); retrying in {:.1}s",
+                                delay.as_secs_f32()
+                            ),
+                        })
+                        .await;
                 }
                 sleep(delay).await;
             }
