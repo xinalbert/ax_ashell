@@ -170,4 +170,5 @@ Crash reports include the panic location, version, thread, runtime log directory
 
 ## Related Docs
 
-- [User Guide](user-guide.en.md)
+- [Documentation Index](README.md)
+- [User Guide](user-guide.md)

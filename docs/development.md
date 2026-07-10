@@ -170,4 +170,5 @@ Linux ARM64 使用 GitHub Actions 的 native ARM64 Ubuntu runner 构建。Window
 
 ## 相关文档
 
-- [使用指南](user-guide.md)
+- [文档导航](README.zh.md)
+- [使用指南](user-guide.zh.md)

@@ -1,52 +1,53 @@
-[English](README.en.md)
+[简体中文](README.zh.md)
 
 # AxShell
 
-![Preview](preview.png)
+![AxShell workspace preview](preview.png)
 
-AxShell 是一个基于 Rust、GPUI 和 `alacritty_terminal` 的桌面终端工作区，提供本地 Shell、SSH 远程会话和内置 SFTP 文件管理。
+AxShell is a Rust and GPUI desktop terminal workspace for local shells, SSH sessions, SFTP file management, and repeatable remote operations.
 
-Forked from <https://github.com/rust-kotlin/ashell.git>
+Forked from <https://github.com/rust-kotlin/ashell.git>. The current project is maintained at <https://github.com/xinalbert/ax_shell>.
 
-仓库地址：<https://github.com/xinalbert/ax_shell>
+## Highlights
 
-## 主要功能
+- Local terminals and saved SSH sessions with password or private-key authentication
+- Multi-tab and multi-pane workspaces with configurable keybindings and search
+- Built-in SFTP browsing, transfer control, remote editing, and large-directory pagination
+- Themes, fonts, tab color behavior, monitoring, and workspace preferences
+- Encrypted session sync over WebDAV or S3-compatible storage
+- Global and per-session proxy support plus SSH X11 forwarding
 
-- 本地终端标签页与 SSH 会话管理，支持密码和私钥认证
-- 内置 SFTP 面板，支持浏览、上传、下载、删除、断点控制和远程文件编辑
-- 多标签、多 Pane 工作区，支持快速搜索、拆分、聚焦和关闭面板
-- 设置页内置主题、字体、快捷键、监控面板和标题栏样式配置
-- 通过 WebDAV 或 S3 做会话配置同步，上传内容端到端加密
-- 全局代理和 SSH X11 转发设置，适合远程运维和图形程序转发场景
+## Quick Start
 
-## 快速开始
-
-直接运行桌面应用：
+AxShell requires Rust `1.88.0` or newer.
 
 ```bash
 cargo run --release
 ```
 
-开发期自动重编译并重启：
+For restart-based development reload:
 
 ```bash
 cargo dev-reload
 ```
 
-更完整的运行、开发和打包说明见 [开发与打包](docs/development.md)。
+## Documentation
 
-## 文档
+- [Documentation index](docs/README.md)
+- [Getting started](docs/getting-started.md)
+- [Feature guides](docs/README.md#feature-guides)
+- [Development and packaging](docs/development.en.md)
 
-- [使用指南](docs/user-guide.md)：界面结构、SSH / SFTP、同步、代理和 X11 的具体用法
-- [开发与打包](docs/development.md)：开发命令、`cargo dev-reload`、macOS `.app` 和 Debian `.deb` 打包
+## Project Notes
 
-## 当前状态
+- Release tags use `vYYYY.M.D` and `vYYYY.M.D-N`.
+- Release automation builds Windows x86_64, Linux x86_64/aarch64, and macOS architecture-specific and universal packages.
+- Existing `ax_ashell` configuration is copied into the current `ax_shell` configuration directory when migration is needed; the old directory is left untouched.
 
-- 运行时与打包图标统一使用 `assets/icons/terminal_icon_all_formats`
-- 推送 `vYYYY.M.D` 或 `vYYYY.M.D-N` tag 时，GitHub Actions 会自动同步发布版本，并发布 Windows x86_64、Linux x86_64 / aarch64、macOS 双架构与 universal assets
-- Homebrew cask 等依赖外部密钥的发布流程暂未启用
-- 旧 `ax_ashell` 配置目录会在首次使用 `AxShell` 新配置目录时自动复制迁移，不会删除旧目录
+## Contributing And Support
 
-## 许可证
+Use [GitHub Issues](https://github.com/xinalbert/ax_shell/issues) for bugs and feature requests. See [Development and Packaging](docs/development.en.md) before preparing code or release changes.
 
-本项目采用 [GPL-3.0-or-later](LICENSE)。
+## License
+
+Licensed under [GPL-3.0-or-later](LICENSE).
