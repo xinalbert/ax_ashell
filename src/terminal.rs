@@ -801,8 +801,36 @@ pub fn encode_key(
     app_cursor_mode: bool,
     option_as_meta: bool,
 ) -> Option<Vec<u8>> {
-    zed_like_to_esc_str(keystroke, app_cursor_mode, option_as_meta)
+    encode_key_for_platform(
+        keystroke,
+        app_cursor_mode,
+        option_as_meta,
+        terminal_platform(),
+    )
+}
+
+fn encode_key_for_platform(
+    keystroke: &Keystroke,
+    app_cursor_mode: bool,
+    option_as_meta: bool,
+    platform: TerminalPlatform,
+) -> Option<Vec<u8>> {
+    zed_like_to_esc_str(keystroke, app_cursor_mode, option_as_meta, platform)
         .map(|text| text.into_owned().into_bytes())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TerminalPlatform {
+    Mac,
+    Other,
+}
+
+fn terminal_platform() -> TerminalPlatform {
+    if cfg!(target_os = "macos") {
+        TerminalPlatform::Mac
+    } else {
+        TerminalPlatform::Other
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -841,9 +869,14 @@ fn zed_like_to_esc_str(
     keystroke: &Keystroke,
     app_cursor_mode: bool,
     option_as_meta: bool,
+    platform: TerminalPlatform,
 ) -> Option<std::borrow::Cow<'static, str>> {
     let modifiers = TerminalModifiers::new(keystroke);
     let key = keystroke.key.to_ascii_lowercase();
+
+    if let Some(esc) = platform_text_navigation_escape(key.as_str(), keystroke, platform) {
+        return Some(esc.into());
+    }
 
     let manual_esc_str = match (key.as_str(), &modifiers) {
         ("tab", TerminalModifiers::None) => Some("\x09"),
@@ -952,6 +985,45 @@ fn zed_like_to_esc_str(
 
     if keystroke.key.len() == 1 {
         return Some(keystroke.key.clone().into());
+    }
+
+    None
+}
+
+fn platform_text_navigation_escape(
+    key: &str,
+    keystroke: &Keystroke,
+    platform: TerminalPlatform,
+) -> Option<&'static str> {
+    if platform != TerminalPlatform::Mac {
+        return None;
+    }
+
+    let modifiers = &keystroke.modifiers;
+    if modifiers.platform
+        && !modifiers.alt
+        && !modifiers.control
+        && !modifiers.shift
+        && !modifiers.function
+    {
+        return match key {
+            "left" => Some("\x01"),
+            "right" => Some("\x05"),
+            _ => None,
+        };
+    }
+
+    if modifiers.alt
+        && !modifiers.platform
+        && !modifiers.control
+        && !modifiers.shift
+        && !modifiers.function
+    {
+        return match key {
+            "left" => Some("\x1bb"),
+            "right" => Some("\x1bf"),
+            _ => None,
+        };
     }
 
     None
@@ -1163,7 +1235,103 @@ pub struct Transfer {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_shell_working_directory;
+    use gpui::{Keystroke, Modifiers};
+
+    use super::{
+        TerminalPlatform, encode_key, encode_key_for_platform, extract_shell_working_directory,
+    };
+
+    fn key(key: &str, modifiers: Modifiers) -> Keystroke {
+        Keystroke {
+            modifiers,
+            key: key.to_string(),
+            key_char: None,
+        }
+    }
+
+    #[test]
+    fn encodes_ctrl_arrow_as_xterm_modified_cursor() {
+        assert_eq!(
+            encode_key(&key("left", Modifiers::control()), false, false).as_deref(),
+            Some(b"\x1b[1;5D".as_slice())
+        );
+        assert_eq!(
+            encode_key(&key("right", Modifiers::control()), false, false).as_deref(),
+            Some(b"\x1b[1;5C".as_slice())
+        );
+    }
+
+    #[test]
+    fn encodes_macos_command_arrow_as_readline_line_navigation() {
+        assert_eq!(
+            encode_key_for_platform(
+                &key("left", Modifiers::command()),
+                false,
+                false,
+                TerminalPlatform::Mac,
+            )
+            .as_deref(),
+            Some(b"\x01".as_slice())
+        );
+        assert_eq!(
+            encode_key_for_platform(
+                &key("right", Modifiers::command()),
+                false,
+                false,
+                TerminalPlatform::Mac,
+            )
+            .as_deref(),
+            Some(b"\x05".as_slice())
+        );
+    }
+
+    #[test]
+    fn encodes_macos_option_arrow_as_readline_word_navigation() {
+        assert_eq!(
+            encode_key_for_platform(
+                &key("left", Modifiers::alt()),
+                false,
+                false,
+                TerminalPlatform::Mac,
+            )
+            .as_deref(),
+            Some(b"\x1bb".as_slice())
+        );
+        assert_eq!(
+            encode_key_for_platform(
+                &key("right", Modifiers::alt()),
+                false,
+                false,
+                TerminalPlatform::Mac,
+            )
+            .as_deref(),
+            Some(b"\x1bf".as_slice())
+        );
+    }
+
+    #[test]
+    fn keeps_non_macos_alt_arrow_as_xterm_modified_cursor() {
+        assert_eq!(
+            encode_key_for_platform(
+                &key("left", Modifiers::alt()),
+                false,
+                false,
+                TerminalPlatform::Other,
+            )
+            .as_deref(),
+            Some(b"\x1b[1;3D".as_slice())
+        );
+        assert_eq!(
+            encode_key_for_platform(
+                &key("right", Modifiers::alt()),
+                false,
+                false,
+                TerminalPlatform::Other,
+            )
+            .as_deref(),
+            Some(b"\x1b[1;3C".as_slice())
+        );
+    }
 
     #[test]
     fn captures_vscode_cwd_with_bel() {
