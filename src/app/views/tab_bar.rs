@@ -71,9 +71,13 @@ impl AxShell {
                                                             cx.stop_propagation();
                                                         },
                                                     )
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        this.close_settings_page(cx);
-                                                    })),
+                                                    .on_click(cx.listener(
+                                                        |this, _, window, cx| {
+                                                            this.request_close_settings_page(
+                                                                window, cx,
+                                                            );
+                                                        },
+                                                    )),
                                             )
                                     }
                                     page => {

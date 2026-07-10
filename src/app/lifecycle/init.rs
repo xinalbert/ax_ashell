@@ -469,6 +469,7 @@ impl AxShell {
             expanded_saved_groups: HashSet::new(),
             workspace_page: crate::app::WorkspacePage::Terminal,
             settings_page_open: false,
+            settings_close_remember_choice: false,
             keybind_error: None,
             keybinds_suspended: false,
             monitoring: MonitoringState {

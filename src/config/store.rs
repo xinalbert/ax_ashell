@@ -726,6 +726,14 @@ impl ConfigStore {
         self.cache.sftp_transfer_close_behavior = normalize_sftp_transfer_close_behavior(value);
     }
 
+    pub fn settings_close_shortcut_confirms(&self) -> bool {
+        self.cache.settings_close_shortcut_confirms
+    }
+
+    pub fn set_settings_close_shortcut_confirms(&mut self, value: bool) {
+        self.cache.settings_close_shortcut_confirms = value;
+    }
+
     pub fn deep_sleep_after_minutes(&self) -> u32 {
         self.cache.deep_sleep_after_minutes
     }
@@ -886,6 +894,29 @@ mod sftp_transfer_close_tests {
             normalize_sftp_transfer_close_behavior("unexpected"),
             default_sftp_transfer_close_behavior()
         );
+    }
+}
+
+#[cfg(test)]
+mod settings_close_confirmation_tests {
+    use super::{ConfigFile, ConfigStore};
+
+    #[test]
+    fn missing_settings_close_shortcut_action_defaults_to_close() {
+        let config: ConfigFile = serde_json::from_str("{}").expect("config should deserialize");
+
+        assert!(config.settings_close_shortcut_confirms);
+    }
+
+    #[test]
+    fn settings_close_shortcut_action_can_keep_open_or_close() {
+        let mut config = ConfigStore::in_memory();
+
+        assert!(config.settings_close_shortcut_confirms());
+        config.set_settings_close_shortcut_confirms(false);
+        assert!(!config.settings_close_shortcut_confirms());
+        config.set_settings_close_shortcut_confirms(true);
+        assert!(config.settings_close_shortcut_confirms());
     }
 }
 

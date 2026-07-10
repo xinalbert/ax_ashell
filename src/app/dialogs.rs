@@ -24,6 +24,7 @@ use crate::{AxShell, monitoring::format_bytes, session::AuthMethod};
 mod delete_confirm;
 mod selector;
 mod settings;
+mod settings_close_confirm;
 mod sftp_close_confirm;
 mod ssh;
 mod transfers;
@@ -33,6 +34,7 @@ pub(crate) enum DialogKind {
     SessionSelector,
     Transfers,
     NewSsh,
+    SettingsCloseConfirm,
     SftpCloseConfirm,
 }
 

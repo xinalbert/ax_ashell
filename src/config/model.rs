@@ -149,6 +149,8 @@ pub(super) struct ConfigFile {
     pub(super) show_hidden_files: bool,
     #[serde(default = "default_sftp_transfer_close_behavior")]
     pub(super) sftp_transfer_close_behavior: String,
+    #[serde(default = "default_settings_close_shortcut_confirms")]
+    pub(super) settings_close_shortcut_confirms: bool,
     #[serde(default = "default_deep_sleep_after_minutes")]
     pub(super) deep_sleep_after_minutes: u32,
     #[serde(default)]
@@ -304,6 +306,10 @@ pub(super) fn default_sftp_transfer_close_behavior() -> String {
     "ask".to_string()
 }
 
+pub(super) fn default_settings_close_shortcut_confirms() -> bool {
+    true
+}
+
 pub(super) fn default_deep_sleep_after_minutes() -> u32 {
     5
 }
@@ -370,6 +376,7 @@ impl Default for ConfigFile {
             transfers: Vec::new(),
             show_hidden_files: false,
             sftp_transfer_close_behavior: default_sftp_transfer_close_behavior(),
+            settings_close_shortcut_confirms: default_settings_close_shortcut_confirms(),
             deep_sleep_after_minutes: default_deep_sleep_after_minutes(),
             lock_layout: false,
             color_inactive_tabs: false,

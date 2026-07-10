@@ -202,6 +202,58 @@ impl AxShell {
         self.set_workspace_page(WorkspacePage::Settings, cx);
     }
 
+    pub(crate) fn request_close_settings_page(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.settings_page_open {
+            return;
+        }
+
+        self.show_settings_close_confirm_dialog(window, cx);
+    }
+
+    pub(crate) fn confirm_settings_close_with_shortcut(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.active_dialog != Some(crate::app::DialogKind::SettingsCloseConfirm) {
+            return false;
+        }
+
+        let close_settings = self.config.settings_close_shortcut_confirms();
+        self.apply_settings_close_choice(close_settings, false, window, cx);
+        true
+    }
+
+    pub(crate) fn apply_settings_close_choice(
+        &mut self,
+        close_settings: bool,
+        remember: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if remember {
+            self.config
+                .set_settings_close_shortcut_confirms(close_settings);
+            if let Err(err) = self.config.save() {
+                tracing::warn!("failed to save Settings shortcut preference: {err:#}");
+            }
+        }
+
+        self.active_dialog = None;
+        self.settings_close_remember_choice = false;
+        window.close_dialog(cx);
+
+        if close_settings {
+            self.close_settings_page(cx);
+        } else {
+            cx.notify();
+        }
+    }
+
     pub(crate) fn close_settings_page(&mut self, cx: &mut Context<Self>) {
         self.settings_page_open = false;
         if self.workspace_page == WorkspacePage::Settings {

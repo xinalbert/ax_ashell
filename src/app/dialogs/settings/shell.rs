@@ -14,6 +14,19 @@ pub(super) fn settings_page_shell(
             let view = view.clone();
             move |ev: &gpui::KeyDownEvent, window, cx| {
                 view.update(cx, |this, cx| {
+                    if this.recording_action.is_none()
+                        && crate::app::keybinding_recorder::event_matches_action(
+                            &this.config,
+                            "OpenSettings",
+                            ev,
+                        )
+                    {
+                        this.request_close_settings_page(window, cx);
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        return;
+                    }
+
                     if window.focused(cx) != Some(this.focus_handle.clone()) {
                         if this.recording_action.is_some() {
                             this.recording_action = None;

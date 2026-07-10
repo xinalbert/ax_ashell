@@ -155,6 +155,7 @@ pub(crate) struct AxShell {
     pub(crate) expanded_saved_groups: HashSet<String>,
     pub(crate) workspace_page: WorkspacePage,
     pub(crate) settings_page_open: bool,
+    pub(crate) settings_close_remember_choice: bool,
     /// Error message when a recorded keybinding conflicts with another
     pub(crate) keybind_error: Option<(String, String)>, // (action_id, error_message)
     /// Whether workspace keybindings are currently suspended (during settings)
