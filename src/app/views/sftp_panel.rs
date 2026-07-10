@@ -925,7 +925,27 @@ impl AxShell {
                                                     list_window.listener_for(&view, {
                                                         let entry = entry.clone();
                                                         move |this, _, _, cx| {
+                                                            this.dismiss_sftp_context_menu(cx);
                                                             this.select_local_file_entry(entry.clone(), cx);
+                                                        }
+                                                    }),
+                                                )
+                                                .on_mouse_down(
+                                                    MouseButton::Right,
+                                                    list_window.listener_for(&view, {
+                                                        let entry = entry.clone();
+                                                        let local_path = entry.full_path.clone();
+                                                        move |this, event: &MouseDownEvent, _, cx| {
+                                                            this.mark_local_file_entry_selected(
+                                                                &entry.full_path,
+                                                                cx,
+                                                            );
+                                                            this.open_local_sftp_context_menu(
+                                                                local_path.clone(),
+                                                                entry.is_dir,
+                                                                event.position,
+                                                                cx,
+                                                            );
                                                         }
                                                     }),
                                                 )
@@ -937,6 +957,10 @@ impl AxShell {
                                                         .justify_center()
                                                         .on_mouse_down(
                                                             MouseButton::Left,
+                                                            |_, _, cx| cx.stop_propagation(),
+                                                        )
+                                                        .on_mouse_down(
+                                                            MouseButton::Right,
                                                             |_, _, cx| cx.stop_propagation(),
                                                         )
                                                         .child(

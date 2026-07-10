@@ -297,8 +297,13 @@ pub(crate) struct ConnectionProgress {
 }
 
 #[derive(Clone)]
+pub(crate) enum SftpContextMenuTarget {
+    Remote { path: String, is_dir: bool },
+    Local { path: String, is_dir: bool },
+}
+
+#[derive(Clone)]
 pub(crate) struct SftpContextMenuState {
-    pub(crate) remote_path: String,
-    pub(crate) is_dir: bool,
+    pub(crate) target: SftpContextMenuTarget,
     pub(crate) position: Point<Pixels>,
 }

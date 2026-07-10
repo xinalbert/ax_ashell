@@ -5,11 +5,11 @@ use std::{
 };
 
 use directories::BaseDirs;
-use gpui::{Context, PathPromptOptions, Pixels, Point, Window};
+use gpui::{Context, Focusable as _, PathPromptOptions, Pixels, Point, Window};
 
 use crate::{
     AxShell, SftpContextMenuState,
-    app::{LocalFileEntry, WorkspacePage},
+    app::{LocalFileEntry, SftpContextMenuTarget, WorkspacePage},
     sftp::{RemoteEntry, SftpHandle},
     terminal,
 };
@@ -169,6 +169,15 @@ impl AxShell {
             .and_then(|g| g.sftp.as_mut())
     }
 
+    pub(crate) fn active_sftp_should_sync_shell_dir_on_entry(&self) -> bool {
+        self.active_sftp().is_some_and(|sftp| {
+            sftp.current_path == "/"
+                && sftp.entries.is_empty()
+                && sftp.selected_path.is_none()
+                && sftp.selected_entries.is_empty()
+        })
+    }
+
     fn session_for_sftp_group(&self, group_id: &str) -> Option<crate::session::config::Session> {
         let group = self
             .tab_groups
@@ -209,6 +218,14 @@ impl AxShell {
         self.sftp_handles.remove(group_id);
 
         let session = self.session_for_sftp_group(group_id)?;
+        let restore_path = self
+            .tab_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .and_then(|group| group.sftp.as_ref())
+            .filter(|sftp| !sftp.current_path.is_empty())
+            .filter(|sftp| sftp.current_path != "/" || sftp.home_dir != "/")
+            .map(|sftp| sftp.current_path.clone());
         let handle = crate::sftp::spawn_sftp(
             self.runtime_state.runtime.handle(),
             group_id.to_string(),
@@ -218,6 +235,11 @@ impl AxShell {
         self.sftp_handles
             .insert(group_id.to_string(), handle.clone());
         self.mark_sftp_activity_for_group(group_id);
+        if let Some(path) = restore_path
+            && !path.is_empty()
+        {
+            handle.list_dir(path);
+        }
         if let Some(group) = self
             .tab_groups
             .iter_mut()
@@ -309,6 +331,142 @@ impl AxShell {
             }
         }
         closed_any
+    }
+
+    fn transfer_belongs_to_sftp_tab(
+        transfer: &crate::terminal::Transfer,
+        tab: crate::app::SftpTransferTab,
+    ) -> bool {
+        match tab {
+            crate::app::SftpTransferTab::Active => matches!(
+                transfer.state,
+                crate::terminal::TransferState::Running | crate::terminal::TransferState::Paused
+            ),
+            crate::app::SftpTransferTab::Failed => matches!(
+                transfer.state,
+                crate::terminal::TransferState::Failed(_)
+                    | crate::terminal::TransferState::Interrupted(_)
+                    | crate::terminal::TransferState::Zombie(_)
+            ),
+            crate::app::SftpTransferTab::Completed => {
+                matches!(transfer.state, crate::terminal::TransferState::Completed)
+            }
+        }
+    }
+
+    fn remove_local_download_output_for_transfer(
+        transfer: &crate::terminal::Transfer,
+    ) -> Option<Result<(), String>> {
+        if !matches!(transfer.info.kind, crate::terminal::TransferType::Download) {
+            return None;
+        }
+        if transfer.info.target.trim().is_empty() || transfer.info.name.trim().is_empty() {
+            return None;
+        }
+
+        let path = Path::new(&transfer.info.target).join(&transfer.info.name);
+        if !path.exists() {
+            return None;
+        }
+
+        let result = if path.is_dir() {
+            fs::remove_dir_all(&path)
+        } else {
+            fs::remove_file(&path)
+        };
+        Some(result.map_err(|err| format!("remove {} failed: {err}", path.display())))
+    }
+
+    pub(crate) fn pause_sftp_transfers_in_tab(
+        &mut self,
+        tab: crate::app::SftpTransferTab,
+        cx: &mut Context<Self>,
+    ) {
+        let targets = self
+            .transfers
+            .iter()
+            .filter(|transfer| Self::transfer_belongs_to_sftp_tab(transfer, tab))
+            .filter(|transfer| matches!(transfer.state, crate::terminal::TransferState::Running))
+            .map(|transfer| (transfer.tab_id.clone(), transfer.info.id.clone()))
+            .collect::<Vec<_>>();
+
+        for (group_id, transfer_id) in targets {
+            if let Some(handle) = self.ensure_sftp_handle_for_group(&group_id) {
+                self.mark_sftp_activity_for_group(&group_id);
+                handle.pause_transfer(transfer_id);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn resume_sftp_transfers_in_tab(
+        &mut self,
+        tab: crate::app::SftpTransferTab,
+        cx: &mut Context<Self>,
+    ) {
+        let targets = self
+            .transfers
+            .iter()
+            .filter(|transfer| Self::transfer_belongs_to_sftp_tab(transfer, tab))
+            .filter(|transfer| matches!(transfer.state, crate::terminal::TransferState::Paused))
+            .map(|transfer| (transfer.tab_id.clone(), transfer.info.id.clone()))
+            .collect::<Vec<_>>();
+
+        for (group_id, transfer_id) in targets {
+            if let Some(handle) = self.ensure_sftp_handle_for_group(&group_id) {
+                self.mark_sftp_activity_for_group(&group_id);
+                handle.resume_transfer(transfer_id);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_remove_sftp_transfers_in_tab(
+        &mut self,
+        tab: crate::app::SftpTransferTab,
+        delete_local_downloads: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let transfers = self
+            .transfers
+            .iter()
+            .filter(|transfer| Self::transfer_belongs_to_sftp_tab(transfer, tab))
+            .cloned()
+            .collect::<Vec<_>>();
+        if transfers.is_empty() {
+            return;
+        }
+
+        let mut cleanup_errors = Vec::new();
+        for transfer in &transfers {
+            if matches!(
+                transfer.state,
+                crate::terminal::TransferState::Running | crate::terminal::TransferState::Paused
+            ) && let Some(handle) = self.ensure_sftp_handle_for_group(&transfer.tab_id)
+            {
+                self.mark_sftp_activity_for_group(&transfer.tab_id);
+                handle.cancel_transfer(transfer.info.id.clone());
+            }
+            if delete_local_downloads
+                && let Some(Err(err)) = Self::remove_local_download_output_for_transfer(transfer)
+            {
+                cleanup_errors.push(err);
+            }
+        }
+
+        let ids = transfers
+            .iter()
+            .map(|transfer| transfer.info.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        self.transfers
+            .retain(|transfer| !ids.contains(transfer.info.id.as_str()));
+        self.config.set_transfers(self.transfers.clone());
+        if cleanup_errors.is_empty() {
+            self.status = rust_i18n::t!("removed_transfers", count = ids.len()).into();
+        } else {
+            self.status = cleanup_errors.join("; ").into();
+        }
+        cx.notify();
     }
 
     pub(crate) fn active_shell_working_dir(&self) -> Option<String> {
@@ -541,6 +699,61 @@ impl AxShell {
         cx.notify();
     }
 
+    pub(crate) fn mark_local_file_entry_selected(&mut self, path: &str, cx: &mut Context<Self>) {
+        self.local_file_browser.selected_path = Some(path.to_string());
+        cx.notify();
+    }
+
+    fn open_local_file_browser_entry(
+        &mut self,
+        path: String,
+        is_dir: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if is_dir {
+            self.navigate_local_file_browser(path, cx);
+            return;
+        }
+
+        match open::that(&path) {
+            Ok(()) => {
+                self.local_file_browser.status = path;
+            }
+            Err(err) => {
+                self.local_file_browser.status = format!("open failed: {err:#}");
+            }
+        }
+        cx.notify();
+    }
+
+    fn upload_local_paths_to_sftp(&mut self, paths: Vec<String>, cx: &mut Context<Self>) -> bool {
+        if paths.is_empty() {
+            return false;
+        }
+        let Some(remote_dir) = self.active_sftp().map(|sftp| sftp.current_path.clone()) else {
+            return false;
+        };
+        let Some(handle) = self.ensure_active_sftp_handle() else {
+            return false;
+        };
+        self.mark_active_sftp_activity();
+        let selected_count = paths.len();
+        tracing::info!(
+            "[sftp] initiating upload of {} local browser entries to '{}'",
+            selected_count,
+            remote_dir
+        );
+        let _ = handle.commands.send(crate::sftp::SftpCommand::UploadPaths {
+            locals: paths,
+            remote_dir: remote_dir.clone(),
+        });
+        self.sftp_transfer_tab = crate::app::SftpTransferTab::Active;
+        self.local_file_browser.status =
+            format!("uploading {selected_count} item(s) to {remote_dir}");
+        cx.notify();
+        true
+    }
+
     pub(crate) fn upload_selected_local_entries_to_sftp(&mut self, cx: &mut Context<Self>) {
         let selected: Vec<String> = self
             .local_file_browser
@@ -548,31 +761,10 @@ impl AxShell {
             .iter()
             .cloned()
             .collect();
-        if selected.is_empty() {
-            return;
+        if self.upload_local_paths_to_sftp(selected, cx) {
+            self.local_file_browser.selected_entries.clear();
+            cx.notify();
         }
-        let Some(remote_dir) = self.active_sftp().map(|sftp| sftp.current_path.clone()) else {
-            return;
-        };
-        let Some(handle) = self.ensure_active_sftp_handle() else {
-            return;
-        };
-        self.mark_active_sftp_activity();
-        let selected_count = selected.len();
-        tracing::info!(
-            "[sftp] initiating upload of {} local browser entries to '{}'",
-            selected_count,
-            remote_dir
-        );
-        let _ = handle.commands.send(crate::sftp::SftpCommand::UploadPaths {
-            locals: selected,
-            remote_dir: remote_dir.clone(),
-        });
-        self.sftp_transfer_tab = crate::app::SftpTransferTab::Active;
-        self.local_file_browser.selected_entries.clear();
-        self.local_file_browser.status =
-            format!("uploading {selected_count} item(s) to {remote_dir}");
-        cx.notify();
     }
 
     pub(crate) fn open_sftp_context_menu(
@@ -583,8 +775,27 @@ impl AxShell {
         cx: &mut Context<Self>,
     ) {
         self.sftp_context_menu = Some(SftpContextMenuState {
-            remote_path,
-            is_dir,
+            target: SftpContextMenuTarget::Remote {
+                path: remote_path,
+                is_dir,
+            },
+            position,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn open_local_sftp_context_menu(
+        &mut self,
+        local_path: String,
+        is_dir: bool,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.sftp_context_menu = Some(SftpContextMenuState {
+            target: SftpContextMenuTarget::Local {
+                path: local_path,
+                is_dir,
+            },
             position,
         });
         cx.notify();
@@ -604,7 +815,9 @@ impl AxShell {
         let Some(menu) = self.sftp_context_menu.take() else {
             return;
         };
-        self.download_sftp_entry(menu.remote_path, window, cx);
+        if let SftpContextMenuTarget::Remote { path, .. } = menu.target {
+            self.download_sftp_entry(path, window, cx);
+        }
         cx.notify();
     }
 
@@ -612,10 +825,115 @@ impl AxShell {
         let Some(menu) = self.sftp_context_menu.take() else {
             return;
         };
-        if let Some(handle) = self.ensure_active_sftp_handle() {
+        if let SftpContextMenuTarget::Remote { path, .. } = menu.target
+            && let Some(handle) = self.ensure_active_sftp_handle()
+        {
             self.mark_active_sftp_activity();
-            tracing::info!("[sftp] triggering edit for file: '{}'", menu.remote_path);
-            handle.edit_file(menu.remote_path);
+            tracing::info!("[sftp] triggering edit for file: '{}'", path);
+            handle.edit_file(path);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_context_open(&mut self, cx: &mut Context<Self>) {
+        let Some(menu) = self.sftp_context_menu.take() else {
+            return;
+        };
+        match menu.target {
+            SftpContextMenuTarget::Remote { path, is_dir } => {
+                if is_dir {
+                    self.navigate_sftp(path, cx);
+                }
+            }
+            SftpContextMenuTarget::Local { path, is_dir } => {
+                self.open_local_file_browser_entry(path, is_dir, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_context_refresh(&mut self, cx: &mut Context<Self>) {
+        let Some(menu) = self.sftp_context_menu.take() else {
+            return;
+        };
+        match menu.target {
+            SftpContextMenuTarget::Remote { .. } => self.refresh_sftp(cx),
+            SftpContextMenuTarget::Local { .. } => self.refresh_local_file_browser(cx),
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_context_new_folder(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(menu) = self.sftp_context_menu.take() else {
+            return;
+        };
+        if matches!(menu.target, SftpContextMenuTarget::Remote { .. }) {
+            self.sftp_creating_folder = true;
+            self.sftp_new_folder_input.update(cx, |input, cx| {
+                input.set_value("", window, cx);
+                input.focus_handle(cx).focus(window, cx);
+            });
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_context_upload_file(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(menu) = self.sftp_context_menu.take() else {
+            return;
+        };
+        if matches!(menu.target, SftpContextMenuTarget::Remote { .. }) {
+            self.upload_sftp_files(window, cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_context_upload_folder(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(menu) = self.sftp_context_menu.take() else {
+            return;
+        };
+        if matches!(menu.target, SftpContextMenuTarget::Remote { .. }) {
+            self.upload_sftp_folder(window, cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_context_delete(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(menu) = self.sftp_context_menu.take() else {
+            return;
+        };
+        if let SftpContextMenuTarget::Remote { path, .. } = menu.target {
+            if let Some(sftp) = self.active_sftp_mut() {
+                sftp.selected_path = Some(path.clone());
+                sftp.selected_entries.clear();
+                sftp.selected_entries.insert(path);
+            }
+            self.show_delete_confirm_dialog(window, cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_local_context_upload(&mut self, cx: &mut Context<Self>) {
+        let Some(menu) = self.sftp_context_menu.take() else {
+            return;
+        };
+        if let SftpContextMenuTarget::Local { path, .. } = menu.target {
+            self.upload_local_paths_to_sftp(vec![path], cx);
         }
         cx.notify();
     }

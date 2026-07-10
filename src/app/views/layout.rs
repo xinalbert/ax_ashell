@@ -44,6 +44,7 @@ impl Render for AxShell {
             && self.config.monitoring_position() == "Bottom";
         let show_platform_menu_bar = cfg!(any(target_os = "windows", target_os = "linux"))
             && self.active_title_bar_style == crate::session::config::TitleBarStyle::Native;
+        let sftp_context_remote_ready = self.active_sftp().is_some();
 
         let body_panel = v_flex()
             .size_full()
@@ -185,7 +186,9 @@ impl Render for AxShell {
             .font_family(self.appearance.ui_font_family.clone())
             .on_action(cx.listener(|this, _: &crate::OpenSettings, _, cx| this.open_settings_page(cx)))
             .on_action(cx.listener(|this, _: &crate::OpenSession, window, cx| this.show_selector_dialog(window, cx)))
-            .on_action(cx.listener(|this, _: &crate::OpenTransfers, window, cx| this.show_transfers_dialog(window, cx)))
+            .on_action(cx.listener(|this, _: &crate::OpenTransfers, window, cx| {
+                this.open_sftp_transfers_page(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &crate::NewSsh, window, cx| this.show_ssh_dialog(window, cx)))
             .on_action(cx.listener(|this, _: &crate::OpenSearch, window, cx| this.toggle_search(window, cx)))
             .on_action(cx.listener(|this, _: &crate::PrevTab, window, cx| {
@@ -327,10 +330,136 @@ impl Render for AxShell {
             .children(Root::render_dialog_layer(window, cx))
             .children(Root::render_sheet_layer(window, cx))
             .when_some(self.sftp_context_menu.clone(), |this, menu| {
-                let label = if menu.is_dir {
-                    t!("download_folder").to_string()
-                } else {
-                    t!("download").to_string()
+                let menu_body = match menu.target.clone() {
+                    SftpContextMenuTarget::Remote { path, is_dir } => {
+                        let download_label = if is_dir {
+                            t!("download_folder").to_string()
+                        } else {
+                            t!("download").to_string()
+                        };
+                        v_flex()
+                            .w_full()
+                            .when(is_dir, |this| {
+                                this.child(
+                                    Button::new("sftp-context-open")
+                                        .ghost()
+                                        .w_full()
+                                        .justify_start()
+                                        .label(t!("open_folder"))
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.trigger_sftp_context_open(cx);
+                                        })),
+                                )
+                            })
+                            .child(
+                                Button::new("sftp-context-download")
+                                    .ghost()
+                                    .w_full()
+                                    .justify_start()
+                                    .label(download_label)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.trigger_sftp_context_download(window, cx);
+                                    })),
+                            )
+                            .when(!is_dir && is_editable_text_file(&path), |this| {
+                                this.child(
+                                    Button::new("sftp-context-edit")
+                                        .ghost()
+                                        .w_full()
+                                        .justify_start()
+                                        .label(t!("edit_file"))
+                                        .tooltip(t!("edit_file_tooltip").to_string())
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.trigger_sftp_context_edit(cx);
+                                        })),
+                                )
+                            })
+                            .child(
+                                Button::new("sftp-context-refresh")
+                                    .ghost()
+                                    .w_full()
+                                    .justify_start()
+                                    .label(t!("refresh"))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.trigger_sftp_context_refresh(cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("sftp-context-new-folder")
+                                    .ghost()
+                                    .w_full()
+                                    .justify_start()
+                                    .label(t!("new_folder"))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.trigger_sftp_context_new_folder(window, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("sftp-context-upload-file")
+                                    .ghost()
+                                    .w_full()
+                                    .justify_start()
+                                    .label(t!("upload_file"))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.trigger_sftp_context_upload_file(window, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("sftp-context-upload-folder")
+                                    .ghost()
+                                    .w_full()
+                                    .justify_start()
+                                    .label(t!("upload_folder"))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.trigger_sftp_context_upload_folder(window, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("sftp-context-delete")
+                                    .ghost()
+                                    .w_full()
+                                    .justify_start()
+                                    .label(t!("delete"))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.trigger_sftp_context_delete(window, cx);
+                                    })),
+                            )
+                            .into_any_element()
+                    }
+                    SftpContextMenuTarget::Local { is_dir, .. } => v_flex()
+                        .w_full()
+                        .child(
+                            Button::new("sftp-context-local-open")
+                                .ghost()
+                                .w_full()
+                                .justify_start()
+                                .label(if is_dir { t!("open_folder") } else { t!("open_file") })
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.trigger_sftp_context_open(cx);
+                                })),
+                        )
+                        .child(
+                            Button::new("sftp-context-local-upload")
+                                .ghost()
+                                .w_full()
+                                .justify_start()
+                                .label(t!("upload"))
+                                .disabled(!sftp_context_remote_ready)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.trigger_local_context_upload(cx);
+                                })),
+                        )
+                        .child(
+                            Button::new("sftp-context-local-refresh")
+                                .ghost()
+                                .w_full()
+                                .justify_start()
+                                .label(t!("refresh"))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.trigger_sftp_context_refresh(cx);
+                                })),
+                        )
+                        .into_any_element(),
                 };
                 this.child(
                     div()
@@ -356,7 +485,7 @@ impl Render for AxShell {
                                 .absolute()
                                 .left(menu.position.x)
                                 .top(menu.position.y)
-                                .w(px(172.))
+                                .w(px(190.))
                                 .p_1()
                                 .rounded_md()
                                 .border_1()
@@ -371,39 +500,7 @@ impl Render for AxShell {
                                     window.prevent_default();
                                     cx.stop_propagation();
                                 })
-                                .child(
-                                    v_flex()
-                                        .w_full()
-                                        .child(
-                                            Button::new("sftp-context-download")
-                                                .ghost()
-                                                .w_full()
-                                                .justify_start()
-                                                .label(label)
-                                                .on_click(cx.listener(|this, _, window, cx| {
-                                                    this.trigger_sftp_context_download(window, cx);
-                                                })),
-                                        )
-                                        .when(
-                                            !menu.is_dir
-                                                && is_editable_text_file(&menu.remote_path),
-                                            |this| {
-                                                this.child(
-                                                    Button::new("sftp-context-edit")
-                                                        .ghost()
-                                                        .w_full()
-                                                        .justify_start()
-                                                        .label(t!("edit_file"))
-                                                        .tooltip(
-                                                            t!("edit_file_tooltip").to_string(),
-                                                        )
-                                                        .on_click(cx.listener(|this, _, _, cx| {
-                                                            this.trigger_sftp_context_edit(cx);
-                                                        })),
-                                                )
-                                            },
-                                        ),
-                                ),
+                                .child(menu_body),
                         ),
                 )
             })

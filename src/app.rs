@@ -46,9 +46,9 @@ use state::{
 
 pub(crate) use types::{
     ConnectionProgress, DialogKind, HoverTargetKind, HoveredUrl, LocalFileBrowserState,
-    LocalFileEntry, PaneLayout, SelectorEntry, SftpContextMenuState, SftpSortColumn,
-    SftpTransferTab, SortDirection, TabGroup, TerminalFontMetrics, TerminalScrollbarHandle,
-    WorkspacePage, WorkspaceTabDescriptor,
+    LocalFileEntry, PaneLayout, SelectorEntry, SftpContextMenuState, SftpContextMenuTarget,
+    SftpSortColumn, SftpTransferTab, SortDirection, TabGroup, TerminalFontMetrics,
+    TerminalScrollbarHandle, WorkspacePage, WorkspaceTabDescriptor,
 };
 
 pub(crate) struct AxShell {

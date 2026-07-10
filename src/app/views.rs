@@ -25,7 +25,10 @@ use crate::{
     AxShell, PaneLayout,
     app::actions::sftp::is_editable_text_file,
     app::constants::{COLLAPSED_SIDEBAR_WIDTH, SIDEBAR_WIDTH, TERMINAL_KEY_CONTEXT},
-    app::{LocalFileEntry, SftpSortColumn, SftpTransferTab, SortDirection, WorkspacePage},
+    app::{
+        LocalFileEntry, SftpContextMenuTarget, SftpSortColumn, SftpTransferTab, SortDirection,
+        WorkspacePage,
+    },
     sftp::format_mtime,
     system::format_bytes,
     terminal::{self, TabKind, TerminalTab},

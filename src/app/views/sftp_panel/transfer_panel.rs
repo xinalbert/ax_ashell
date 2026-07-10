@@ -24,6 +24,15 @@ impl AxShell {
             .filter(|transfer| transfer_belongs_to_tab(transfer, selected_tab))
             .cloned()
             .collect::<Vec<_>>();
+        let visible_count = transfers.len();
+        let visible_running_count = transfers
+            .iter()
+            .filter(|transfer| matches!(transfer.state, crate::terminal::TransferState::Running))
+            .count();
+        let visible_paused_count = transfers
+            .iter()
+            .filter(|transfer| matches!(transfer.state, crate::terminal::TransferState::Paused))
+            .count();
         let rows = transfers
             .into_iter()
             .map(|transfer| self.render_sftp_transfer_row(transfer, cx))
@@ -67,7 +76,63 @@ impl AxShell {
                         selected_tab,
                         cx,
                     ))
-                    .child(div().flex_1()),
+                    .child(div().flex_1())
+                    .when(selected_tab == SftpTransferTab::Active, |this| {
+                        this.child(
+                            Button::new("sftp-transfer-resume-all")
+                                .ghost()
+                                .small()
+                                .icon(IconName::Play)
+                                .label(t!("resume_all").to_string())
+                                .disabled(visible_paused_count == 0)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.resume_sftp_transfers_in_tab(selected_tab, cx);
+                                })),
+                        )
+                        .child(
+                            Button::new("sftp-transfer-pause-all")
+                                .ghost()
+                                .small()
+                                .icon(IconName::Pause)
+                                .label(t!("pause_all").to_string())
+                                .disabled(visible_running_count == 0)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.pause_sftp_transfers_in_tab(selected_tab, cx);
+                                })),
+                        )
+                        .child(
+                            Button::new("sftp-transfer-cancel-remove-all")
+                                .ghost()
+                                .small()
+                                .icon(IconName::Close)
+                                .label(t!("cancel_remove_all").to_string())
+                                .disabled(visible_count == 0)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.cancel_remove_sftp_transfers_in_tab(
+                                        selected_tab,
+                                        true,
+                                        cx,
+                                    );
+                                })),
+                        )
+                    })
+                    .when(selected_tab != SftpTransferTab::Active, |this| {
+                        this.child(
+                            Button::new("sftp-transfer-remove-visible")
+                                .ghost()
+                                .small()
+                                .icon(IconName::Close)
+                                .label(t!("remove_all").to_string())
+                                .disabled(visible_count == 0)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.cancel_remove_sftp_transfers_in_tab(
+                                        selected_tab,
+                                        false,
+                                        cx,
+                                    );
+                                })),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -144,6 +209,8 @@ impl AxShell {
             crate::terminal::TransferState::Running => {
                 let pause_id = transfer.info.id.clone();
                 let cancel_id = transfer.info.id.clone();
+                let pause_group_id = transfer.tab_id.clone();
+                let cancel_group_id = transfer.tab_id.clone();
                 actions = actions
                     .child(
                         Button::new(ElementId::Name(format!("sftp-pause-{pause_id}").into()))
@@ -151,8 +218,10 @@ impl AxShell {
                             .small()
                             .icon(IconName::Pause)
                             .on_click(cx.listener(move |this, _, _, _| {
-                                if let Some(handle) = this.ensure_active_sftp_handle() {
-                                    this.mark_active_sftp_activity();
+                                if let Some(handle) =
+                                    this.ensure_sftp_handle_for_group(&pause_group_id)
+                                {
+                                    this.mark_sftp_activity_for_group(&pause_group_id);
                                     handle.pause_transfer(pause_id.clone());
                                 }
                             })),
@@ -163,8 +232,10 @@ impl AxShell {
                             .small()
                             .icon(IconName::Close)
                             .on_click(cx.listener(move |this, _, _, _| {
-                                if let Some(handle) = this.ensure_active_sftp_handle() {
-                                    this.mark_active_sftp_activity();
+                                if let Some(handle) =
+                                    this.ensure_sftp_handle_for_group(&cancel_group_id)
+                                {
+                                    this.mark_sftp_activity_for_group(&cancel_group_id);
                                     handle.cancel_transfer(cancel_id.clone());
                                 }
                             })),
@@ -173,6 +244,8 @@ impl AxShell {
             crate::terminal::TransferState::Paused => {
                 let resume_id = transfer.info.id.clone();
                 let cancel_id = transfer.info.id.clone();
+                let resume_group_id = transfer.tab_id.clone();
+                let cancel_group_id = transfer.tab_id.clone();
                 actions = actions
                     .child(
                         Button::new(ElementId::Name(format!("sftp-resume-{resume_id}").into()))
@@ -180,8 +253,10 @@ impl AxShell {
                             .small()
                             .icon(IconName::Play)
                             .on_click(cx.listener(move |this, _, _, _| {
-                                if let Some(handle) = this.ensure_active_sftp_handle() {
-                                    this.mark_active_sftp_activity();
+                                if let Some(handle) =
+                                    this.ensure_sftp_handle_for_group(&resume_group_id)
+                                {
+                                    this.mark_sftp_activity_for_group(&resume_group_id);
                                     handle.resume_transfer(resume_id.clone());
                                 }
                             })),
@@ -192,8 +267,10 @@ impl AxShell {
                             .small()
                             .icon(IconName::Close)
                             .on_click(cx.listener(move |this, _, _, _| {
-                                if let Some(handle) = this.ensure_active_sftp_handle() {
-                                    this.mark_active_sftp_activity();
+                                if let Some(handle) =
+                                    this.ensure_sftp_handle_for_group(&cancel_group_id)
+                                {
+                                    this.mark_sftp_activity_for_group(&cancel_group_id);
                                     handle.cancel_transfer(cancel_id.clone());
                                 }
                             })),

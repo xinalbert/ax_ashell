@@ -128,7 +128,7 @@ impl AxShell {
         }
 
         self.workspace_page = page;
-        if page == WorkspacePage::Sftp {
+        if page == WorkspacePage::Sftp && self.active_sftp_should_sync_shell_dir_on_entry() {
             self.sync_active_sftp_to_shell_working_dir(cx);
         }
         cx.notify();
@@ -201,6 +201,31 @@ impl AxShell {
             && group.sftp.is_some()
         {
             group.sftp_page_open = true;
+            self.ensure_sftp_handle_for_group(&active_group_id);
+            self.mark_sftp_activity_for_group(&active_group_id);
+            self.set_workspace_page(WorkspacePage::Sftp, cx);
+            self.focus_handle.focus(window, cx);
+        } else {
+            self.status = t!("open_ssh_tab_sftp").into();
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn open_sftp_transfers_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(active_group_id) = self.active_group.clone() else {
+            self.status = t!("open_ssh_tab_sftp").into();
+            cx.notify();
+            return;
+        };
+
+        if let Some(group) = self
+            .tab_groups
+            .iter_mut()
+            .find(|group| group.id == active_group_id)
+            && group.sftp.is_some()
+        {
+            group.sftp_page_open = true;
+            self.sftp_transfer_tab = crate::app::SftpTransferTab::Active;
             self.ensure_sftp_handle_for_group(&active_group_id);
             self.mark_sftp_activity_for_group(&active_group_id);
             self.set_workspace_page(WorkspacePage::Sftp, cx);
