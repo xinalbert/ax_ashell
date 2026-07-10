@@ -1270,3 +1270,53 @@
 - 计划状态变更：无
 - 验证结果：`rustfmt --edition 2024 src/app/actions/session.rs`、`cargo check`、`cargo test --quiet`（70 项）、`git diff --check` 和 tracking docs validator 均通过；保留既有 `block v0.1.6` future-incompat warning。
 - 对 plan 的更新：环境与依赖策略不变；GUI 仍需验证关闭连接中、hover、IME 预编辑或选择中的 tab。
+
+## 2026-07-10 初始化 backend event queue 有界化环境预检
+
+- 时间：2026-07-10 15:43 +0800
+- 触发原因：审查发现 terminal backend、SFTP 和 listener 共用的 UI 事件队列无上限，可能在高输出或 UI 滞后时造成内存无限积压。
+- 执行内容：复查 `Cargo.toml`、CI、runtime、event pump、`src/terminal.rs`、local/SSH backend 和 SFTP worker；初步判断标准库 `sync_channel` 可提供固定上限与背压，无需新增依赖或联网。
+- 影响文件：`src/terminal.rs`，`src/app/lifecycle/init.rs`，`src/app/state/runtime.rs`，`src/backend/local.rs`，`src/backend/ssh.rs`，`src/backend/ssh/connection.rs`，`src/sftp.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：本机 `rustc 1.96.1`、`cargo 1.96.1` 可用；默认验证命令为 `rustfmt`、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking docs validator；GUI 高输出验证待实现后执行。
+- 对 plan 的更新：允许实施“固定 256 条 backend event queue；后台生产者在满队列时背压；UI thread 的 CWD/title metadata 用 `try_send` 避免自阻塞”。
+
+## 2026-07-10 完成 backend event queue 有界化环境验证
+
+- 时间：2026-07-10 16:04 +0800
+- 触发原因：backend 到 UI 的事件队列有界化实现完成，需要记录实际运行时方案、自动化验证和人工验证边界。
+- 执行内容：以现有 Tokio `mpsc::channel(256)` 替代无界标准库 channel；本地 PTY 线程使用 `blocking_send`，SSH、SFTP 和配置同步异步任务使用 `send().await`，UI 内 title/CWD metadata 使用 `try_send`；限制每轮 event pump drain 为 256 条，并将 SFTP 目录读取超时与事件投递等待分离。
+- 影响文件：`src/terminal.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/state/runtime.rs`，`src/app/syncing/config_sync.rs`，`src/backend/local.rs`，`src/backend/ssh.rs`，`src/backend/ssh/connection.rs`，`src/sftp.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024`、`cargo check`、`cargo test --quiet`（71 项）、`git diff --check` 和 tracking docs validator 通过；保留既有 `block v0.1.6` future-incompat warning。
+- 对 plan 的更新：队列上限为事件数而非字节数，单个大型目录列表或预览仍需单独控制；GUI 侧待验证本地/SSH 高输出、关闭响应和 SFTP 传输进度。
+
+## 2026-07-10 初始化 SFTP 目录浏览内存上限环境预检
+
+- 时间：2026-07-10 16:23 +0800
+- 触发原因：有界 backend event queue 后，超大目录仍可在单个 `SftpEntries` 事件和 UI 克隆/排序中形成内存峰值。
+- 执行内容：复查 `src/sftp.rs`、event loop、SFTP view 与锁定的 `russh-sftp 2.3.0`；确认高层 `read_dir()` 先累积至 EOF，必须使用公开 `RawSftpSession::opendir/readdir/close` 在项目侧跨批次截断。
+- 影响文件：`src/sftp.rs`，`src/terminal.rs`，`src/app/lifecycle/event_loop.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`
+- 计划状态变更：无
+- 验证结果：本机 Rust 工具链和锁定依赖源码可用；无需联网、无需新增依赖、未使用多 agent；实现与回归测试待执行。
+- 对 plan 的更新：允许实施“raw SFTP 分批浏览，最多保留 2,000 条或 2 MiB 名称/路径数据，关闭目录句柄并显示截断状态”。
+
+## 2026-07-10 完成 SFTP 目录浏览内存上限环境验证
+
+- 时间：2026-07-10 16:51 +0800
+- 触发原因：超大目录和目录预览的受限读取已实现，需要记录 timeout 语义、自动化验证和 GUI 验证边界。
+- 执行内容：普通浏览、初始目录和 reveal path 均改为 raw SFTP 按 `READDIR` 批次采集，达到 2,000 条或 2 MiB 名称/路径预算立即关闭目录句柄；目录预览限制为 200 条及 128 KiB 内容预算。临时 raw session 建立和目录读取共用 30 秒 timeout，超时 future 析构会话；异常长 UTF-8 路径也按字符边界截断预览正文。
+- 影响文件：`src/sftp.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024 src/sftp.rs`、`cargo check`、`cargo test --quiet sftp::lifecycle_tests`（6 项）、`cargo test --quiet`（75 项）、`git diff --check` 和 tracking docs validator 通过；保留既有 `block v0.1.6` future-incompat warning。GUI 手工验证未执行。
+- 对 plan 的更新：环境与依赖策略保持不变；需要真实 SSH/SFTP 目录验证截断提示、普通/超大目录浏览、目录预览、文件预览和传输不回归。
+
+## 2026-07-10 完成 SFTP 目录分页加载环境验证
+
+- 时间：2026-07-10 17:41 +0800
+- 触发原因：用户要求超大 SFTP 目录支持动态加载，同时不能取消上一项的总内存上限。
+- 执行内容：SFTP worker 使用持久 `BrowseCursor` 保存 raw SFTP session、目录句柄和已收取的待发条目；每次“加载更多”最多追加 250 项。cursor 在 EOF、2,000 项/2 MiB 总预算、路径切换、worker 关闭、空闲 worker 重建和读取失败时关闭；页结果事件携带追加、是否还有更多和预算截断状态。远端列表页脚新增显式加载更多按钮与总上限提示，继续使用虚拟列表渲染。
+- 影响文件：`src/sftp.rs`，`src/terminal.rs`，`src/app/actions/session.rs`，`src/app/actions/sftp.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/views/sftp_panel.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024`、`cargo check`、`cargo test --quiet sftp::lifecycle_tests`（7 项）、`cargo test --quiet`（76 项）、`git diff --check` 和 tracking docs validator 通过；保留既有 `block v0.1.6` future-incompat warning。GUI 手工验证未执行。
+- 对 plan 的更新：环境与依赖策略保持不变；需要真实 SFTP 目录验证多次加载、EOF 自动隐藏按钮、总上限提示、导航和 idle worker 重建后的 cursor 回收。
