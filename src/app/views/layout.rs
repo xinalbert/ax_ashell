@@ -79,24 +79,6 @@ impl Render for AxShell {
                             .size_full()
                             .relative()
                             .overflow_hidden()
-                            .when(show_platform_menu_bar, |this| {
-                                this.child(
-                                    div()
-                                        .flex_none()
-                                        .h(px(30.))
-                                        .w_full()
-                                        .px_2()
-                                        .items_center()
-                                        .bg(cx.theme().tab_bar)
-                                        .border_b_1()
-                                        .border_color(cx.theme().border)
-                                        .child(
-                                            self.app_menu_bar
-                                                .clone()
-                                                .expect("windows app menu bar initialized"),
-                                        ),
-                                )
-                            })
                             .when(
                                 self.active_title_bar_style
                                     == crate::session::config::TitleBarStyle::Native,
@@ -133,24 +115,6 @@ impl Render for AxShell {
                     .size_full()
                     .relative()
                     .overflow_hidden()
-                    .when(show_platform_menu_bar, |this| {
-                        this.child(
-                            div()
-                                .flex_none()
-                                .h(px(30.))
-                                .w_full()
-                                .px_2()
-                                .items_center()
-                                .bg(cx.theme().tab_bar)
-                                .border_b_1()
-                                .border_color(cx.theme().border)
-                                .child(
-                                    self.app_menu_bar
-                                        .clone()
-                                        .expect("windows app menu bar initialized"),
-                                ),
-                        )
-                    })
                     .when(
                         self.active_title_bar_style
                             == crate::session::config::TitleBarStyle::Native,
@@ -321,6 +285,24 @@ impl Render for AxShell {
                                     .child(self.render_tab_bar(cx)),
                                 cx,
                             ),
+                        ),
+                )
+            })
+            .when(show_platform_menu_bar, |this| {
+                this.child(
+                    div()
+                        .flex_none()
+                        .h(px(30.))
+                        .w_full()
+                        .px_2()
+                        .items_center()
+                        .bg(cx.theme().tab_bar)
+                        .border_b_1()
+                        .border_color(cx.theme().border)
+                        .child(
+                            self.app_menu_bar
+                                .clone()
+                                .expect("windows/linux app menu bar initialized"),
                         ),
                 )
             })

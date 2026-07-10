@@ -1,5 +1,7 @@
 use super::*;
 
+const TERMINAL_SCROLLBAR_GUTTER_WIDTH: f32 = 16.0;
+
 impl AxShell {
     pub(super) fn render_terminal_panel(
         &mut self,
@@ -103,7 +105,7 @@ impl AxShell {
                     .hovered_url
                     .as_ref()
                     .map_or(false, |hu| hu.tab_id == *tab_id);
-                let mut el = div()
+                let terminal = div()
                     .size_full()
                     .pl(terminal_left_inset)
                     .overflow_hidden()
@@ -133,7 +135,18 @@ impl AxShell {
                         ),
                     ));
                 let scrollbar = this.terminal_scrollbars.entry(tab_id.clone()).or_default();
-                el = el.vertical_scrollbar(scrollbar);
+                let mut el = h_flex()
+                    .size_full()
+                    .overflow_hidden()
+                    .child(div().flex_1().min_w(px(0.)).h_full().child(terminal))
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(TERMINAL_SCROLLBAR_GUTTER_WIDTH))
+                            .h_full()
+                            .relative()
+                            .child(Scrollbar::vertical(scrollbar)),
+                    );
 
                 // When disconnected, overlay a reconnect bar at the bottom of the terminal.
                 // Uses absolute positioning so the terminal element itself is unchanged,

@@ -14,7 +14,7 @@ use gpui_component::{
     input::Input,
     menu::{ContextMenuExt as _, PopupMenuItem},
     progress::Progress,
-    scroll::{ScrollableElement as _, Scrollbar, ScrollbarShow},
+    scroll::{Scrollbar, ScrollbarShow},
     tab::{Tab, TabBar},
     text::{TextView, TextViewStyle},
     v_flex,
