@@ -16,6 +16,42 @@
 - 验证结果：`rustfmt --edition 2024 src/terminal.rs` 通过；`cargo test --quiet terminal::tests::` 通过，11 个测试全部通过；`cargo check` 通过；`cargo test --quiet` 通过，50 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过
 - 对 plan 的更新：代码侧实现已完成；真实 macOS / Linux / Windows GUI 按键事件和用户 shell 自定义绑定仍需实机确认
 
+## 2026-07-10 刷新环境记录到 SFTP 懒连接
+
+- 触发原因：用户认可资源消耗评估结论，要求先落地“SFTP 懒连接”，避免打开 SSH 会话时立即建立独立 SFTP 连接
+- 执行内容：复查 `src/app/actions/session.rs`、`src/app/actions/sftp.rs`、`src/app/actions/pane.rs`、`src/app/workspace/workspace.rs`、`src/app/lifecycle/event_loop.rs`、`src/app/dialogs/` 和 `src/sftp.rs`；确认主技术栈、依赖版本和测试环境未变，问题集中在 app 层过早启动 SFTP worker 和 UI 侧默认句柄已存在的假设
+- 影响文件：`src/app/actions/session.rs`，`src/app/actions/sftp.rs`，`src/app/actions/pane.rs`，`src/app/workspace/workspace.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/dialogs/delete_confirm.rs`，`src/app/dialogs/transfers.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：确认本轮验证命令收敛为 `rustfmt --edition 2024` 针对受影响 Rust 文件、`cargo check`、`cargo test --quiet`、`git diff --check` 与 tracking docs validator；无需联网，无需多 agent
+- 对 plan 的更新：允许继续实施“group 级统一 ensure handle；移除 SSH 打开和 split pane 时的 SFTP 预启动；SFTP 页面/上传下载/编辑/删除/传输控制入口统一按需建连”
+
+## 2026-07-10 完成 SFTP 懒连接环境验证
+
+- 触发原因：SFTP 按需建连实现和本机验证已完成，需要回写当前环境结论与剩余手工边界
+- 执行内容：在 `src/app/actions/sftp.rs` 增加 group 级 `ensure_sftp_handle_for_group()` / `ensure_active_sftp_handle()` / `restart_sftp_handle_for_group()`；移除 `src/app/actions/session.rs` 和 `src/app/actions/pane.rs` 中打开 SSH 与 split pane 时的 `spawn_sftp()` 预启动；让 `src/app/workspace/workspace.rs` 打开 SFTP 页面时按需建连，并让新建目录、删除、编辑、上传下载、传输控制等 UI 入口统一先 ensure handle
+- 影响文件：`src/app/actions/session.rs`，`src/app/actions/sftp.rs`，`src/app/actions/pane.rs`，`src/app/workspace/workspace.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/dialogs/delete_confirm.rs`，`src/app/dialogs/transfers.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024 src/app/actions/session.rs src/app/actions/sftp.rs src/app/actions/pane.rs src/app/workspace/workspace.rs src/app/lifecycle/event_loop.rs src/app/dialogs/delete_confirm.rs src/app/dialogs/transfers.rs src/app/views/sftp_panel/transfer_panel.rs` 通过；`cargo check` 通过；`cargo test --quiet` 通过，50 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过；仍保留既有 `block v0.1.6` future-incompat warning
+- 对 plan 的更新：本轮代码侧实现已完成；下一阶段可继续做 SFTP 空闲断开和自动重连，GUI 手工验证仍需确认“只在打开或首次使用 SFTP 时才建连”
+
+## 2026-07-10 刷新环境记录到 SFTP 空闲断开
+
+- 触发原因：用户确认继续第二阶段，实现空闲时回收 SFTP 连接
+- 执行内容：复查 `src/app.rs`、`src/app/lifecycle/init.rs`、`src/app/lifecycle/event_loop.rs`、`src/app/actions/sftp.rs`、`src/sftp.rs` 和 `src/terminal.rs`；确认当前问题可限制在 app 层 group 级 handle 与事件泵；确认 `self.transfers` 中 `Running` / `Paused` 可作为活跃传输保护条件
+- 影响文件：`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/actions/sftp.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：确认本轮验证命令收敛为 `rustfmt --edition 2024 src/app.rs src/app/lifecycle/init.rs src/app/lifecycle/event_loop.rs src/app/actions/sftp.rs`、`cargo check`、`cargo test --quiet`、`git diff --check` 与 tracking docs validator；无需联网，无需多 agent
+- 对 plan 的更新：允许继续实施“新增 group 级 last_activity；事件泵定期回收无活跃传输且不可见的 SFTP 连接；下一次使用时继续走 ensure 自动重连”
+
+## 2026-07-10 完成 SFTP 空闲断开环境验证
+
+- 触发原因：SFTP 空闲断开实现和本机验证已完成，需要回写当前环境结论与剩余边界
+- 执行内容：在 `src/app.rs` / `src/app/lifecycle/init.rs` 增加 group 级 `sftp_last_activity`；在 `src/app/actions/sftp.rs` 增加 `mark_sftp_activity_for_group()`、活跃传输判断和 `sweep_idle_sftp_connections()`，默认 300 秒空闲后回收；在 `src/app/lifecycle/event_loop.rs` 中把 idle sweep 接入事件泵，并在 `SftpEntries` / `SftpStatus` / `SftpHome` / `TransferStarted` 等事件上刷新活跃时间；同步在 group 关闭和 SFTP 页面打开路径清理或刷新活跃状态
+- 影响文件：`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/actions/sftp.rs`，`src/app/actions/session.rs`，`src/app/workspace/workspace.rs`，`src/app/dialogs/transfers.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024 src/app.rs src/app/lifecycle/init.rs src/app/lifecycle/event_loop.rs src/app/actions/sftp.rs src/app/actions/session.rs src/app/workspace/workspace.rs src/app/dialogs/transfers.rs src/app/views/sftp_panel/transfer_panel.rs` 通过；`cargo check` 通过；`cargo test --quiet` 通过，50 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过；仍保留既有 `block v0.1.6` future-incompat warning
+- 对 plan 的更新：第二阶段代码侧实现已完成；下一步如需继续降低占用，可评估为远程编辑 watcher 增加会话 pin/refcount，或继续做 SSH 休眠策略
+
 ## 2026-07-09 刷新环境记录到非交互文本可选复制
 
 - 触发原因：用户希望程序中各处文字内容能复制，而不是完全不可选中
