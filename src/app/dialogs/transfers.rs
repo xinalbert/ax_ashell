@@ -164,7 +164,8 @@ impl AxShell {
                                     .on_click(window.listener_for(&view, {
                                         let id = t.info.id.clone();
                                         move |this, _, _, _| {
-                                            if let Some(handle) = this.active_sftp_handle() {
+                                            if let Some(handle) = this.ensure_active_sftp_handle() {
+                                                this.mark_active_sftp_activity();
                                                 handle.pause_transfer(id.clone());
                                             }
                                         }
@@ -179,7 +180,8 @@ impl AxShell {
                                     .on_click(window.listener_for(&view, {
                                         let id = t.info.id.clone();
                                         move |this, _, _, _| {
-                                            if let Some(handle) = this.active_sftp_handle() {
+                                            if let Some(handle) = this.ensure_active_sftp_handle() {
+                                                this.mark_active_sftp_activity();
                                                 handle.cancel_transfer(id.clone());
                                             }
                                         }
@@ -198,7 +200,8 @@ impl AxShell {
                                     .on_click(window.listener_for(&view, {
                                         let id = t.info.id.clone();
                                         move |this, _, _, _| {
-                                            if let Some(handle) = this.active_sftp_handle() {
+                                            if let Some(handle) = this.ensure_active_sftp_handle() {
+                                                this.mark_active_sftp_activity();
                                                 handle.resume_transfer(id.clone());
                                             }
                                         }
@@ -213,7 +216,8 @@ impl AxShell {
                                     .on_click(window.listener_for(&view, {
                                         let id = t.info.id.clone();
                                         move |this, _, _, _| {
-                                            if let Some(handle) = this.active_sftp_handle() {
+                                            if let Some(handle) = this.ensure_active_sftp_handle() {
+                                                this.mark_active_sftp_activity();
                                                 handle.cancel_transfer(id.clone());
                                             }
                                         }

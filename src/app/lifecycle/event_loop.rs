@@ -33,6 +33,7 @@ impl AxShell {
                         let drain = this.drain_backend_events(cx);
                         let terminal_due = this.should_flush_terminal_refresh();
                         let system_sampled = this.sample_system_if_due();
+                        let sftp_closed = this.sweep_idle_sftp_connections();
                         this.sync_theme_if_due(cx);
                         let selecting = this.active_terminal_has_selection();
                         let is_blinking = matches!(
@@ -44,7 +45,12 @@ impl AxShell {
                         let blink_due = !selecting
                             && is_blinking
                             && now.duration_since(last_blink_time) >= CURSOR_BLINK_INTERVAL;
-                        if drain.ui_changed || terminal_due || system_sampled || blink_due {
+                        if drain.ui_changed
+                            || terminal_due
+                            || system_sampled
+                            || blink_due
+                            || sftp_closed
+                        {
                             cx.notify();
                             idle_ticks = 0;
                             if blink_due {
@@ -63,7 +69,11 @@ impl AxShell {
                                 idle_ticks = 1;
                             }
                         }
-                        if drain.terminal_changed || drain.ui_changed || system_sampled || blink_due
+                        if drain.terminal_changed
+                            || drain.ui_changed
+                            || system_sampled
+                            || blink_due
+                            || sftp_closed
                         {
                             idle_ticks = 0;
                         }
@@ -117,7 +127,7 @@ impl AxShell {
                     if !name.is_empty() {
                         let base_path = self.sftp_path_input.read(cx).text().to_string();
                         let path = crate::sftp::join_remote(&base_path, &name);
-                        if let Some(handle) = self.active_sftp_handle() {
+                        if let Some(handle) = self.ensure_active_sftp_handle() {
                             let _ = handle
                                 .commands
                                 .send(crate::sftp::SftpCommand::CreateDir(path));
@@ -243,6 +253,7 @@ impl AxShell {
                     entries,
                 } => {
                     result.ui_changed = true;
+                    self.mark_sftp_activity_for_group(&tab_id);
                     if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
                         && let Some(sftp) = group.sftp.as_mut()
                     {
@@ -275,6 +286,7 @@ impl AxShell {
                 }
                 BackendEvent::SftpPreview { tab_id, preview } => {
                     result.ui_changed = true;
+                    self.mark_sftp_activity_for_group(&tab_id);
                     if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
                         && let Some(sftp) = group.sftp.as_mut()
                     {
@@ -284,6 +296,7 @@ impl AxShell {
                 }
                 BackendEvent::SftpStatus { tab_id, text } => {
                     result.ui_changed = true;
+                    self.mark_sftp_activity_for_group(&tab_id);
                     if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
                         && let Some(sftp) = group.sftp.as_mut()
                     {
@@ -381,6 +394,7 @@ impl AxShell {
                 }
                 BackendEvent::TransferStarted { tab_id, info } => {
                     result.ui_changed = true;
+                    self.mark_sftp_activity_for_group(&tab_id);
                     let tab_title = self.transfer_source_title(&tab_id);
                     self.transfers.insert(
                         0,
@@ -400,6 +414,7 @@ impl AxShell {
                 }
                 BackendEvent::SftpHome { tab_id, home } => {
                     result.ui_changed = true;
+                    self.mark_sftp_activity_for_group(&tab_id);
                     if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
                         && let Some(sftp) = group.sftp.as_mut()
                     {

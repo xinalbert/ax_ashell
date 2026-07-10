@@ -35,6 +35,8 @@ pub(crate) fn is_editable_text_file(filename: &str) -> bool {
 }
 
 impl AxShell {
+    const SFTP_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
     pub(crate) fn default_local_browser_dir() -> String {
         BaseDirs::new()
             .map(|dirs| dirs.home_dir().to_string_lossy().to_string())
@@ -167,10 +169,146 @@ impl AxShell {
             .and_then(|g| g.sftp.as_mut())
     }
 
-    pub(crate) fn active_sftp_handle(&self) -> Option<&SftpHandle> {
-        self.active_group
-            .as_ref()
-            .and_then(|id| self.sftp_handles.get(id))
+    fn session_for_sftp_group(&self, group_id: &str) -> Option<crate::session::config::Session> {
+        let group = self
+            .tab_groups
+            .iter()
+            .find(|group| group.id == group_id && group.sftp.is_some())?;
+        if let Some(active_tab_id) = self.active_tab.as_ref()
+            && group.pane_root.contains(active_tab_id)
+            && let Some(session) = self
+                .tabs
+                .iter()
+                .find(|tab| tab.id == *active_tab_id)
+                .and_then(|tab| tab.session.clone())
+        {
+            return Some(session);
+        }
+        group.pane_root.tab_ids().into_iter().find_map(|tab_id| {
+            self.tabs
+                .iter()
+                .find(|tab| tab.id == tab_id)
+                .and_then(|tab| tab.session.clone())
+        })
+    }
+
+    pub(crate) fn ensure_sftp_handle_for_group(&mut self, group_id: &str) -> Option<SftpHandle> {
+        if self
+            .tab_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .is_none_or(|group| group.sftp.is_none())
+        {
+            return None;
+        }
+        if let Some(handle) = self.sftp_handles.get(group_id)
+            && !handle.commands.is_closed()
+        {
+            return Some(handle.clone());
+        }
+        self.sftp_handles.remove(group_id);
+
+        let session = self.session_for_sftp_group(group_id)?;
+        let handle = crate::sftp::spawn_sftp(
+            self.runtime_state.runtime.handle(),
+            group_id.to_string(),
+            session,
+            self.runtime_state.events_tx.clone(),
+        );
+        self.sftp_handles
+            .insert(group_id.to_string(), handle.clone());
+        self.mark_sftp_activity_for_group(group_id);
+        if let Some(group) = self
+            .tab_groups
+            .iter_mut()
+            .find(|group| group.id == group_id)
+            && let Some(sftp) = group.sftp.as_mut()
+        {
+            sftp.status = rust_i18n::t!("sftp_connecting").to_string();
+        }
+        Some(handle)
+    }
+
+    pub(crate) fn ensure_active_sftp_handle(&mut self) -> Option<SftpHandle> {
+        let active_group_id = self.active_group.clone()?;
+        self.ensure_sftp_handle_for_group(&active_group_id)
+    }
+
+    pub(crate) fn restart_sftp_handle_for_group(&mut self, group_id: &str) -> Option<SftpHandle> {
+        let should_restart = self.sftp_handles.contains_key(group_id)
+            || self
+                .tab_groups
+                .iter()
+                .find(|group| group.id == group_id)
+                .is_some_and(|group| group.sftp_page_open);
+        if !should_restart {
+            return None;
+        }
+        if let Some(handle) = self.sftp_handles.remove(group_id) {
+            handle.close();
+        }
+        self.ensure_sftp_handle_for_group(group_id)
+    }
+
+    pub(crate) fn mark_sftp_activity_for_group(&mut self, group_id: &str) {
+        self.sftp_last_activity
+            .insert(group_id.to_string(), std::time::Instant::now());
+    }
+
+    pub(crate) fn mark_active_sftp_activity(&mut self) {
+        if let Some(group_id) = self.active_group.clone() {
+            self.mark_sftp_activity_for_group(&group_id);
+        }
+    }
+
+    fn group_has_active_sftp_transfer(&self, group_id: &str) -> bool {
+        self.transfers.iter().any(|transfer| {
+            transfer.tab_id == group_id
+                && matches!(
+                    transfer.state,
+                    crate::terminal::TransferState::Running
+                        | crate::terminal::TransferState::Paused
+                )
+        })
+    }
+
+    pub(crate) fn sweep_idle_sftp_connections(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        let active_group = self.active_group.clone();
+        let mut closed_any = false;
+        let group_ids: Vec<String> = self.sftp_handles.keys().cloned().collect();
+        for group_id in group_ids {
+            if active_group.as_deref() == Some(group_id.as_str())
+                && self.active_group_sftp_page_open()
+            {
+                continue;
+            }
+            if self.group_has_active_sftp_transfer(&group_id) {
+                self.mark_sftp_activity_for_group(&group_id);
+                continue;
+            }
+            let Some(last_activity) = self.sftp_last_activity.get(&group_id).copied() else {
+                self.mark_sftp_activity_for_group(&group_id);
+                continue;
+            };
+            if now.duration_since(last_activity) < Self::SFTP_IDLE_TIMEOUT {
+                continue;
+            }
+            if let Some(handle) = self.sftp_handles.remove(&group_id) {
+                handle.close();
+                closed_any = true;
+            }
+            self.sftp_last_activity.remove(&group_id);
+            if let Some(group) = self
+                .tab_groups
+                .iter_mut()
+                .find(|group| group.id == group_id)
+                && let Some(sftp) = group.sftp.as_mut()
+            {
+                sftp.status = "sftp idle, reconnecting on next use".to_string();
+            }
+        }
+        closed_any
     }
 
     pub(crate) fn active_shell_working_dir(&self) -> Option<String> {
@@ -196,7 +334,8 @@ impl AxShell {
 
     pub(crate) fn navigate_sftp(&mut self, path: String, cx: &mut Context<Self>) {
         let resolved = self.resolve_active_sftp_path(&path);
-        if let Some(handle) = self.active_sftp_handle() {
+        if let Some(handle) = self.ensure_active_sftp_handle() {
+            self.mark_active_sftp_activity();
             tracing::info!("[sftp] navigating to directory: '{}'", resolved);
             handle.list_dir(resolved.clone());
             if let Some(sftp) = self.active_sftp_mut() {
@@ -232,8 +371,9 @@ impl AxShell {
 
         self.pending_sftp_selection_path = Some(resolved);
         self.activate_group_page(active_group_id, WorkspacePage::Sftp, window, cx);
-        if let Some(handle) = self.active_sftp_handle() {
+        if let Some(handle) = self.ensure_active_sftp_handle() {
             if let Some(target_path) = self.pending_sftp_selection_path.clone() {
+                self.mark_active_sftp_activity();
                 handle.reveal_path(target_path.clone());
                 if let Some(sftp) = self.active_sftp_mut() {
                     sftp.status = target_path;
@@ -414,9 +554,10 @@ impl AxShell {
         let Some(remote_dir) = self.active_sftp().map(|sftp| sftp.current_path.clone()) else {
             return;
         };
-        let Some(handle) = self.active_sftp_handle() else {
+        let Some(handle) = self.ensure_active_sftp_handle() else {
             return;
         };
+        self.mark_active_sftp_activity();
         let selected_count = selected.len();
         tracing::info!(
             "[sftp] initiating upload of {} local browser entries to '{}'",
@@ -471,7 +612,8 @@ impl AxShell {
         let Some(menu) = self.sftp_context_menu.take() else {
             return;
         };
-        if let Some(handle) = self.active_sftp_handle() {
+        if let Some(handle) = self.ensure_active_sftp_handle() {
+            self.mark_active_sftp_activity();
             tracing::info!("[sftp] triggering edit for file: '{}'", menu.remote_path);
             handle.edit_file(menu.remote_path);
         }
@@ -484,9 +626,10 @@ impl AxShell {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(handle) = self.active_sftp_handle().cloned() else {
+        let Some(handle) = self.ensure_active_sftp_handle() else {
             return;
         };
+        self.mark_active_sftp_activity();
         let local_dir = self.local_file_browser.current_path.clone();
         tracing::info!(
             "[sftp] initiating download of '{}' to '{}'",
@@ -500,13 +643,14 @@ impl AxShell {
     }
 
     pub(crate) fn upload_sftp_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(handle) = self.active_sftp_handle().cloned() else {
-            return;
-        };
         let remote_dir = self
             .active_sftp()
             .map(|sftp| sftp.current_path.clone())
             .unwrap_or_else(|| "/".into());
+        let Some(handle) = self.ensure_active_sftp_handle() else {
+            return;
+        };
+        self.mark_active_sftp_activity();
         let path_prompt = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -544,13 +688,14 @@ impl AxShell {
     }
 
     pub(crate) fn upload_sftp_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(handle) = self.active_sftp_handle().cloned() else {
-            return;
-        };
         let remote_dir = self
             .active_sftp()
             .map(|sftp| sftp.current_path.clone())
             .unwrap_or_else(|| "/".into());
+        let Some(handle) = self.ensure_active_sftp_handle() else {
+            return;
+        };
+        self.mark_active_sftp_activity();
         let path_prompt = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -630,9 +775,10 @@ impl AxShell {
             return;
         }
 
-        let Some(handle) = self.active_sftp_handle().cloned() else {
+        let Some(handle) = self.ensure_active_sftp_handle() else {
             return;
         };
+        self.mark_active_sftp_activity();
         let local_dir = self.local_file_browser.current_path.clone();
         tracing::info!(
             "[sftp] initiating batch download of {} entries to '{}'",
@@ -657,20 +803,23 @@ impl AxShell {
         if paths.is_empty() {
             return;
         }
-        if let Some(sftp) = self.active_sftp() {
-            if let Some(handle) = self.active_sftp_handle() {
-                tracing::info!(
-                    "[sftp] initiating batch upload of {} files to '{}'",
-                    paths.len(),
-                    sftp.current_path
-                );
-                let _ = handle.commands.send(crate::sftp::SftpCommand::UploadPaths {
-                    locals: paths,
-                    remote_dir: sftp.current_path.clone(),
-                });
-                self.sftp_transfer_tab = crate::app::SftpTransferTab::Active;
-                cx.notify();
-            }
-        }
+        let Some(remote_dir) = self.active_sftp().map(|sftp| sftp.current_path.clone()) else {
+            return;
+        };
+        let Some(handle) = self.ensure_active_sftp_handle() else {
+            return;
+        };
+        self.mark_active_sftp_activity();
+        tracing::info!(
+            "[sftp] initiating batch upload of {} files to '{}'",
+            paths.len(),
+            remote_dir
+        );
+        let _ = handle.commands.send(crate::sftp::SftpCommand::UploadPaths {
+            locals: paths,
+            remote_dir,
+        });
+        self.sftp_transfer_tab = crate::app::SftpTransferTab::Active;
+        cx.notify();
     }
 }

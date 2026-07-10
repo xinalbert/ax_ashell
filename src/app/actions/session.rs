@@ -631,14 +631,6 @@ impl AxShell {
                 self.saved_scroll_handle.scroll_to_item(index);
             }
         }
-        cx.notify();
-        let sftp_handle = crate::sftp::spawn_sftp(
-            self.runtime_state.runtime.handle(),
-            group_id.clone(),
-            session,
-            self.runtime_state.events_tx.clone(),
-        );
-        self.sftp_handles.insert(group_id.clone(), sftp_handle);
         self.active_tab = Some(id.clone());
         self.pending_sftp_path_sync = Some("/".into());
         self.status = "ssh tab opened".into();
@@ -726,23 +718,8 @@ impl AxShell {
                     .find(|t| group.pane_root.contains(&t.id) && t.session.is_some())
                     .and_then(|t| t.session.clone());
 
-                if let Some(session) = group_session {
-                    if let Some(old_handle) = self.sftp_handles.remove(&group_id) {
-                        old_handle.close();
-                    }
-                    let sftp_handle = crate::sftp::spawn_sftp(
-                        self.runtime_state.runtime.handle(),
-                        group_id.clone(),
-                        session,
-                        self.runtime_state.events_tx.clone(),
-                    );
-                    self.sftp_handles.insert(group_id.clone(), sftp_handle);
-
-                    if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == group_id) {
-                        if let Some(sftp) = group.sftp.as_mut() {
-                            sftp.status = rust_i18n::t!("sftp_connecting").to_string();
-                        }
-                    }
+                if group_session.is_some() {
+                    self.restart_sftp_handle_for_group(&group_id);
                 }
             }
         } else {
@@ -906,6 +883,7 @@ impl AxShell {
             if let Some(handle) = self.sftp_handles.remove(&group.id) {
                 handle.close();
             }
+            self.sftp_last_activity.remove(&group.id);
             self.tab_groups.remove(group_ix.unwrap());
             self.pane_root.remove_tab(&id);
         } else {
@@ -941,6 +919,7 @@ impl AxShell {
             for (_, handle) in self.sftp_handles.drain() {
                 handle.close();
             }
+            self.sftp_last_activity.clear();
             return;
         }
 

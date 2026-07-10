@@ -63,13 +63,6 @@ impl AxShell {
                     DEFAULT_ROWS,
                     self.runtime_state.events_tx.clone(),
                 );
-                let sftp_handle = crate::sftp::spawn_sftp(
-                    self.runtime_state.runtime.handle(),
-                    new_id.clone(),
-                    session.clone(),
-                    self.runtime_state.events_tx.clone(),
-                );
-                self.sftp_handles.insert(new_id.clone(), sftp_handle);
                 TerminalTab::new_ssh(
                     new_id.clone(),
                     &session,

@@ -53,7 +53,7 @@ impl AxShell {
                         selected_entries.clone().into_iter().collect();
                     move |_, window, cx| {
                         view.update(cx, |this, cx| {
-                            if let Some(handle) = this.active_sftp_handle() {
+                            if let Some(handle) = this.ensure_active_sftp_handle() {
                                 let _ = handle.commands.send(
                                     crate::sftp::SftpCommand::DeletePaths(paths_to_delete.clone()),
                                 );
@@ -184,7 +184,7 @@ impl AxShell {
                                     let view = view.clone();
                                     move |_, window, cx| {
                                         view.update(cx, |this, cx| {
-                                            if let Some(handle) = this.active_sftp_handle() {
+                                            if let Some(handle) = this.ensure_active_sftp_handle() {
                                                 let _ = handle.commands.send(
                                                     crate::sftp::SftpCommand::DeletePaths(
                                                         paths_to_delete.clone(),

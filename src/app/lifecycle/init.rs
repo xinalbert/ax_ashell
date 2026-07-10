@@ -465,6 +465,7 @@ impl AxShell {
                 bar_bounds: None,
             },
             sftp_handles: std::collections::HashMap::new(),
+            sftp_last_activity: std::collections::HashMap::new(),
             runtime_state: RuntimeState {
                 runtime: Runtime::new().expect("create tokio runtime"),
                 events_rx,

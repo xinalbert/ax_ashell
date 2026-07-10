@@ -26,7 +26,10 @@ mod types;
 #[path = "app/workspace/workspace.rs"]
 mod workspace;
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 use crate::app::resizable::ResizableState;
 use gpui::{Bounds, Entity, FocusHandle, Pixels, SharedString, UniformListScrollHandle};
@@ -154,6 +157,7 @@ pub(crate) struct AxShell {
     pub(crate) monitoring: MonitoringState,
     pub(crate) search: SearchState,
     pub(crate) sftp_handles: std::collections::HashMap<String, crate::sftp::SftpHandle>,
+    pub(crate) sftp_last_activity: HashMap<String, Instant>,
     pub(crate) runtime_state: RuntimeState,
     pub(crate) last_window_size: Option<gpui::Size<Pixels>>,
     pub(crate) last_sidebar_width: Option<Pixels>,

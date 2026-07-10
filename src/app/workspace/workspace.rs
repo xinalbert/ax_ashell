@@ -201,6 +201,8 @@ impl AxShell {
             && group.sftp.is_some()
         {
             group.sftp_page_open = true;
+            self.ensure_sftp_handle_for_group(&active_group_id);
+            self.mark_sftp_activity_for_group(&active_group_id);
             self.set_workspace_page(WorkspacePage::Sftp, cx);
             self.focus_handle.focus(window, cx);
         } else {
@@ -438,23 +440,8 @@ impl AxShell {
                     .find(|t| group.pane_root.contains(&t.id) && t.session.is_some())
                     .and_then(|t| t.session.clone());
 
-                if let Some(session) = group_session {
-                    if let Some(old_handle) = self.sftp_handles.remove(&group_id) {
-                        old_handle.close();
-                    }
-                    let sftp_handle = crate::sftp::spawn_sftp(
-                        self.runtime_state.runtime.handle(),
-                        group_id.clone(),
-                        session,
-                        self.runtime_state.events_tx.clone(),
-                    );
-                    self.sftp_handles.insert(group_id.clone(), sftp_handle);
-
-                    if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == group_id) {
-                        if let Some(sftp) = group.sftp.as_mut() {
-                            sftp.status = rust_i18n::t!("sftp_connecting").to_string();
-                        }
-                    }
+                if group_session.is_some() {
+                    self.restart_sftp_handle_for_group(&group_id);
                 }
             }
         }
