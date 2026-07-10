@@ -1390,3 +1390,17 @@
 - 计划状态变更：无
 - 验证结果：terminal 38 项与 SFTP 14 项定向测试通过；`cargo check` 和 `cargo test --quiet`（78 项）通过；`git diff --check` 和 tracking docs validator 通过；保留既有 `block v0.1.6` future-incompat warning。
 - 对 plan 的更新：运行环境、依赖和业务行为不变；允许按功能、重构、文档三个 review unit 提交。
+## 2026-07-10 刷新环境记录到源码模块边界治理
+
+- 日期：2026-07-10 20:40 +0800
+- 变化摘要：运行时、依赖和工具链未变化；当前实施范围从 terminal/SFTP 大文件拆分切换为全源码模块边界治理，计划逐项迁移全应用事件、SFTP 状态、session/config 类型、proxy/X server 运行时职责和 app 模块入口。
+- 受影响文件：`src/`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 更新后的命令或环境：继续使用 Rust 2024、Cargo 和现有锁定依赖；每阶段运行 `rustfmt --edition 2024`、定向测试与 `cargo check`，最终运行 `cargo test --quiet`、`git diff --check` 和 tracking docs validator。
+- 验证结果：本机 `rustc 1.96.1`、`cargo 1.96.1` 可用；基线 `cargo check` 与 `git diff --check` 通过；无需联网、不使用多 agent、不修改 `Cargo.toml` / `Cargo.lock`。
+## 2026-07-10 完成源码模块边界治理环境验证
+
+- 日期：2026-07-10 21:26 +0800
+- 变化摘要：新增全应用事件、proxy transport 和 platform X Server 模块；session/config、terminal/SFTP 和 app 模块所有权完成迁移；`src/system.rs` 更名为 `src/monitoring.rs`；运行时、依赖、manifest/lock 和配置 schema 不变。
+- 受影响文件：`src/`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/project-map.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；源码验证为 `rustfmt --edition 2024`、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking docs validator。
+- 验证结果：`cargo check` 无源码告警；`cargo test --quiet` 78 项全部通过；`git diff --check` 通过。Windows 专用 X Server 单元测试在当前 macOS 主机不执行，真实 proxy/X11 联机未验证；保留既有 `block v0.1.6` future-incompat warning。
