@@ -10,8 +10,8 @@ use crate::{
     app::{
         LocalFileBrowserState, constants,
         state::{
-            appearance::AppearanceState, monitoring::MonitoringState, runtime::RuntimeState,
-            search::SearchState,
+            appearance::AppearanceState, lifecycle::LifecycleState, monitoring::MonitoringState,
+            runtime::RuntimeState, search::SearchState,
         },
     },
     session::config::{AuthMethod, ConfigStore},
@@ -267,6 +267,8 @@ impl AxShell {
                 .values()
                 .map(|input| cx.subscribe_in(input, window, Self::on_input_event)),
         );
+        _subscriptions
+            .push(cx.observe_window_activation(window, Self::on_window_activation_changed));
 
         let (events_tx, events_rx) = std::sync::mpsc::channel();
         let workspace_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
@@ -387,6 +389,7 @@ impl AxShell {
                 cursor_style: config.cursor_style(),
                 last_theme_sync: Instant::now(),
             },
+            lifecycle: LifecycleState::new(window.is_window_active()),
             tabs: Vec::new(),
             active_tab: None,
             tab_groups: Vec::new(),
@@ -421,6 +424,8 @@ impl AxShell {
             },
             sftp_context_menu: None,
             sftp_creating_folder: false,
+            sftp_close_remember_choice: false,
+            sftp_close_confirm_group_id: None,
             sftp_new_folder_input,
             sftp_delete_scroll_handle: gpui::ScrollHandle::new(),
             show_hidden_files: config.show_hidden_files(),
@@ -493,6 +498,9 @@ impl AxShell {
                 events_tx,
                 pending_terminal_refresh: false,
                 last_terminal_refresh: Instant::now(),
+                pending_ui_refresh: false,
+                last_ui_refresh: Instant::now(),
+                last_sftp_idle_sweep: Instant::now(),
             },
             last_window_size: None,
             last_sidebar_width,

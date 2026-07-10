@@ -1,15 +1,24 @@
-use std::sync::Arc;
+use std::{
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
 use russh::{
     Channel, ChannelMsg, ChannelOpenFailure, Disconnect,
     client::{self, Handler, Msg},
 };
-use tokio::sync::mpsc;
+use tokio::{
+    sync::mpsc,
+    task::{JoinHandle, JoinSet},
+};
 
 use crate::{
     session::config::{ConfigStore, Session},
-    terminal::{BackendCommand, BackendEvent, BackendTx},
+    terminal::{BackendCommand, BackendEvent, BackendShutdown, BackendTx},
 };
 
 pub(crate) mod connection;
@@ -24,6 +33,45 @@ use x11::X11ForwardingState;
 
 const BASH_CWD_PROMPT_COMMAND: &str =
     r#"printf '\033]7;file://%s%s\033\\' "$(hostname 2>/dev/null || printf localhost)" "$PWD""#;
+const SSH_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+
+struct SshBackendShutdown {
+    commands: mpsc::UnboundedSender<BackendCommand>,
+    join: Mutex<Option<JoinHandle<()>>>,
+    runtime: tokio::runtime::Handle,
+    shutdown_requested: Arc<AtomicBool>,
+}
+
+impl BackendShutdown for SshBackendShutdown {
+    fn shutdown(&self) {
+        if self.shutdown_requested.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let _ = self.commands.send(BackendCommand::Close);
+        let join = self
+            .join
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        let Some(mut join) = join else {
+            return;
+        };
+
+        self.runtime.spawn(async move {
+            if tokio::time::timeout(SSH_SHUTDOWN_TIMEOUT, &mut join)
+                .await
+                .is_ok()
+            {
+                return;
+            }
+
+            tracing::warn!("[ssh] graceful shutdown timed out; aborting terminal task");
+            join.abort();
+            let _ = join.await;
+        });
+    }
+}
 
 pub fn spawn_ssh_terminal(
     runtime: &tokio::runtime::Handle,
@@ -35,7 +83,9 @@ pub fn spawn_ssh_terminal(
 ) -> BackendTx {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<BackendCommand>();
     let task_tab = tab_id.clone();
-    runtime.spawn(async move {
+    let shutdown_requested = Arc::new(AtomicBool::new(false));
+    let task_shutdown_requested = shutdown_requested.clone();
+    let join = runtime.spawn(async move {
         if let Err(err) = run_ssh(
             task_tab.clone(),
             session,
@@ -43,16 +93,27 @@ pub fn spawn_ssh_terminal(
             rows,
             cmd_rx,
             events.clone(),
+            task_shutdown_requested.clone(),
         )
         .await
         {
-            let _ = events.send(BackendEvent::Closed {
-                tab_id: task_tab,
-                reason: format!("{err:#}"),
-            });
+            if !task_shutdown_requested.load(Ordering::SeqCst) {
+                let _ = events.send(BackendEvent::Closed {
+                    tab_id: task_tab,
+                    reason: format!("{err:#}"),
+                });
+            }
         }
     });
-    BackendTx::Ssh(cmd_tx)
+    BackendTx::Ssh {
+        commands: cmd_tx.clone(),
+        shutdown: Arc::new(SshBackendShutdown {
+            commands: cmd_tx,
+            join: Mutex::new(Some(join)),
+            runtime: runtime.clone(),
+            shutdown_requested,
+        }),
+    }
 }
 
 async fn run_ssh(
@@ -62,6 +123,7 @@ async fn run_ssh(
     rows: u16,
     mut commands: mpsc::UnboundedReceiver<BackendCommand>,
     events: std::sync::mpsc::Sender<BackendEvent>,
+    shutdown_requested: Arc<AtomicBool>,
 ) -> Result<()> {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
     let x11 = X11ForwardingState::from_config(&config);
@@ -129,6 +191,7 @@ async fn run_ssh(
 
     let exit_reason;
     let mut is_graceful_close = false;
+    let mut child_tasks = JoinSet::new();
 
     loop {
         tokio::select! {
@@ -148,7 +211,7 @@ async fn run_ssh(
                         let handle_clone = handle.clone();
                         let tab_id_clone = tab_id.clone();
                         let events_clone = events.clone();
-                        tokio::spawn(async move {
+                        child_tasks.spawn(async move {
                             match sample_remote_system_with_handle(handle_clone).await {
                                 Ok(snapshot) => {
                                     let _ = events_clone.send(BackendEvent::RemoteSystem {
@@ -169,7 +232,7 @@ async fn run_ssh(
                         let handle_clone = handle.clone();
                         let tab_id_clone = tab_id.clone();
                         let events_clone = events.clone();
-                        tokio::spawn(async move {
+                        child_tasks.spawn(async move {
                             match query_remote_working_directory_with_handle(handle_clone).await {
                                 Ok(path) => {
                                     let _ = events_clone.send(BackendEvent::WorkingDirectoryResolved {
@@ -194,6 +257,7 @@ async fn run_ssh(
                     }
                 }
             }
+            Some(_) = child_tasks.join_next(), if !child_tasks.is_empty() => {}
             msg = channel.wait() => {
                 match msg {
                     Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, ext: _ }) => {
@@ -231,16 +295,24 @@ async fn run_ssh(
         }
     }
 
+    cancel_ssh_child_tasks(&mut child_tasks).await;
     let _ = handle
         .lock()
         .await
         .disconnect(Disconnect::ByApplication, "bye", "")
         .await;
-    let _ = events.send(BackendEvent::Closed {
-        tab_id,
-        reason: exit_reason,
-    });
+    if !shutdown_requested.load(Ordering::SeqCst) {
+        let _ = events.send(BackendEvent::Closed {
+            tab_id,
+            reason: exit_reason,
+        });
+    }
     Ok(())
+}
+
+async fn cancel_ssh_child_tasks(child_tasks: &mut JoinSet<()>) {
+    child_tasks.abort_all();
+    while child_tasks.join_next().await.is_some() {}
 }
 
 async fn request_shell_integration_env(channel: &mut Channel<Msg>) {
@@ -341,5 +413,51 @@ impl Handler for ClientHandler {
 
             x11::handle_x11_channel(channel, originator_address, originator_port, reply, x11).await
         }
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use std::sync::{Arc, Mutex, atomic::AtomicBool};
+
+    use tokio::{sync::mpsc, task::JoinSet};
+
+    use crate::terminal::{BackendCommand, BackendShutdown};
+
+    use super::{SshBackendShutdown, cancel_ssh_child_tasks};
+
+    #[tokio::test]
+    async fn closing_ssh_session_aborts_auxiliary_tasks() {
+        let mut child_tasks = JoinSet::new();
+        child_tasks.spawn(async {
+            std::future::pending::<()>().await;
+        });
+
+        cancel_ssh_child_tasks(&mut child_tasks).await;
+
+        assert!(child_tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn shutdown_controller_sends_close_and_reaps_finished_task() {
+        let (commands, mut receiver) = mpsc::unbounded_channel();
+        let controller = SshBackendShutdown {
+            commands,
+            join: Mutex::new(Some(tokio::spawn(async {}))),
+            runtime: tokio::runtime::Handle::current(),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+        };
+
+        controller.shutdown();
+
+        assert!(matches!(receiver.recv().await, Some(BackendCommand::Close)));
+        tokio::task::yield_now().await;
+        assert!(
+            controller
+                .join
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_none()
+        );
     }
 }

@@ -9,6 +9,7 @@ pub(super) fn settings_monitoring_page(
 ) -> SettingPage {
     let show_monitoring_dashboard = shell.config.show_monitoring_dashboard();
     let monitoring_position = shell.config.monitoring_position().to_string();
+    let deep_sleep_after_minutes = shell.config.deep_sleep_after_minutes();
 
     SettingPage::new(t!("settings_monitoring").to_string())
         .icon(IconName::PanelLeftOpen)
@@ -93,5 +94,61 @@ pub(super) fn settings_monitoring_page(
                         }
                     }),
                 )),
+        )
+        .group(
+            SettingGroup::new()
+                .title(t!("settings_resource_usage").to_string())
+                .item(
+                    SettingItem::new(
+                        t!("deep_sleep_after_unfocused").to_string(),
+                        SettingField::render({
+                            let view = view.clone();
+                            move |_, _window, _cx| {
+                                Button::new("deep-sleep-after-unfocused")
+                                    .small()
+                                    .label(match deep_sleep_after_minutes {
+                                        0 => t!("deep_sleep_disabled").to_string(),
+                                        1 => t!("deep_sleep_after_1_minute").to_string(),
+                                        5 => t!("deep_sleep_after_5_minutes").to_string(),
+                                        15 => t!("deep_sleep_after_15_minutes").to_string(),
+                                        _ => t!("deep_sleep_after_30_minutes").to_string(),
+                                    })
+                                    .dropdown_menu_with_anchor(Anchor::BottomRight, {
+                                        let view = view.clone();
+                                        move |mut menu, window, _cx| {
+                                            for (minutes, label) in [
+                                                (0, t!("deep_sleep_disabled").to_string()),
+                                                (1, t!("deep_sleep_after_1_minute").to_string()),
+                                                (5, t!("deep_sleep_after_5_minutes").to_string()),
+                                                (15, t!("deep_sleep_after_15_minutes").to_string()),
+                                                (30, t!("deep_sleep_after_30_minutes").to_string()),
+                                            ] {
+                                                menu = menu.item(
+                                                    PopupMenuItem::new(label)
+                                                        .checked(
+                                                            deep_sleep_after_minutes == minutes,
+                                                        )
+                                                        .on_click(window.listener_for(
+                                                            &view,
+                                                            move |this, _, _window, cx| {
+                                                                this.config
+                                                                    .set_deep_sleep_after_minutes(
+                                                                        minutes,
+                                                                    );
+                                                                let _ = this.config.save();
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                );
+                                            }
+                                            menu
+                                        }
+                                    })
+                                    .into_any_element()
+                            }
+                        }),
+                    )
+                    .description(t!("deep_sleep_after_unfocused_hint").to_string()),
+                ),
         )
 }

@@ -4,7 +4,8 @@ mod path;
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -14,7 +15,7 @@ use russh_sftp::client::SftpSession;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
 };
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -36,6 +37,7 @@ pub use self::path::format_mtime;
 pub(crate) use self::path::{join_remote, parent_dir, resolve_remote_path};
 
 const SFTP_BROWSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const SFTP_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone)]
 pub struct RemoteEntry {
@@ -55,28 +57,46 @@ pub struct PreviewData {
     pub is_binary: bool,
 }
 
-#[derive(Debug)]
-pub enum SftpCommand {
-    ListDir(String),
-    RevealPath(String),
+enum SftpCommand {
+    ListDir {
+        path: String,
+        pin: SftpWorkPin,
+    },
+    RevealPath {
+        path: String,
+        pin: SftpWorkPin,
+    },
     #[allow(dead_code)]
-    Preview(String),
+    Preview {
+        path: String,
+        pin: SftpWorkPin,
+    },
     Download {
         remote: String,
         local_dir: String,
+        pin: SftpWorkPin,
     },
     EditFile {
         remote_path: String,
+        pin: SftpWorkPin,
     },
-    CreateDir(String),
-    DeletePaths(Vec<String>),
+    CreateDir {
+        path: String,
+        pin: SftpWorkPin,
+    },
+    DeletePaths {
+        paths: Vec<String>,
+        pin: SftpWorkPin,
+    },
     UploadEditedFile {
         local_path: String,
         remote_path: String,
+        pin: SftpWorkPin,
     },
     UploadPaths {
         locals: Vec<String>,
         remote_dir: String,
+        pin: SftpWorkPin,
     },
     PauseTransfer(String),
     ResumeTransfer(String),
@@ -92,7 +112,7 @@ enum RevealPathKind {
     Missing,
 }
 
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 
 pub struct TransferStateFlag(pub Arc<AtomicU8>);
 
@@ -225,64 +245,149 @@ fn fail_transfer_start(
     );
 }
 
-pub struct SftpHandle {
-    pub commands: UnboundedSender<SftpCommand>,
-    #[allow(dead_code)]
-    join: Option<JoinHandle<()>>,
+struct SftpWorkTracker {
+    pins: AtomicUsize,
+}
+
+impl SftpWorkTracker {
+    fn pin(self: &Arc<Self>) -> SftpWorkPin {
+        self.pins.fetch_add(1, Ordering::SeqCst);
+        SftpWorkPin {
+            tracker: self.clone(),
+        }
+    }
+
+    fn active_pins(&self) -> usize {
+        self.pins.load(Ordering::SeqCst)
+    }
+}
+
+struct SftpWorkPin {
+    tracker: Arc<SftpWorkTracker>,
+}
+
+impl Drop for SftpWorkPin {
+    fn drop(&mut self) {
+        let previous = self.tracker.pins.fetch_sub(1, Ordering::SeqCst);
+        debug_assert!(previous > 0, "SFTP work pin underflow");
+    }
+}
+
+pub(crate) struct SftpHandle {
+    commands: UnboundedSender<SftpCommand>,
+    worker: Arc<SftpWorker>,
+}
+
+struct SftpWorker {
+    runtime: tokio::runtime::Handle,
+    join: Mutex<Option<JoinHandle<()>>>,
+    closing: std::sync::atomic::AtomicBool,
+    work_tracker: Arc<SftpWorkTracker>,
 }
 
 impl Clone for SftpHandle {
     fn clone(&self) -> Self {
         Self {
             commands: self.commands.clone(),
-            join: None,
+            worker: self.worker.clone(),
         }
     }
 }
 
 impl SftpHandle {
-    pub fn list_dir(&self, path: String) {
-        let _ = self.commands.send(SftpCommand::ListDir(path));
+    fn send_work_command(&self, build: impl FnOnce(SftpWorkPin) -> SftpCommand) -> bool {
+        let pin = self.worker.work_tracker.pin();
+        self.commands.send(build(pin)).is_ok()
     }
 
-    pub fn reveal_path(&self, path: String) {
-        let _ = self.commands.send(SftpCommand::RevealPath(path));
+    pub(crate) fn commands_closed(&self) -> bool {
+        self.commands.is_closed()
+    }
+
+    pub(crate) fn active_work_pins(&self) -> usize {
+        self.worker.work_tracker.active_pins()
+    }
+
+    pub(crate) fn list_dir(&self, path: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::ListDir { path, pin })
+    }
+
+    pub(crate) fn reveal_path(&self, path: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::RevealPath { path, pin })
     }
 
     #[allow(dead_code)]
-    pub fn preview(&self, path: String) {
-        let _ = self.commands.send(SftpCommand::Preview(path));
+    pub(crate) fn preview(&self, path: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::Preview { path, pin })
     }
 
-    pub fn download(&self, remote: String, local_dir: String) {
-        let _ = self
-            .commands
-            .send(SftpCommand::Download { remote, local_dir });
+    pub(crate) fn download(&self, remote: String, local_dir: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::Download {
+            remote,
+            local_dir,
+            pin,
+        })
     }
 
-    pub fn upload_paths(&self, locals: Vec<String>, remote_dir: String) {
-        let _ = self
-            .commands
-            .send(SftpCommand::UploadPaths { locals, remote_dir });
+    pub(crate) fn upload_paths(&self, locals: Vec<String>, remote_dir: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::UploadPaths {
+            locals,
+            remote_dir,
+            pin,
+        })
     }
 
-    pub fn edit_file(&self, remote_path: String) {
-        let _ = self.commands.send(SftpCommand::EditFile { remote_path });
+    pub(crate) fn edit_file(&self, remote_path: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::EditFile { remote_path, pin })
     }
 
-    pub fn close(&self) {
+    pub(crate) fn create_dir(&self, path: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::CreateDir { path, pin })
+    }
+
+    pub(crate) fn delete_paths(&self, paths: Vec<String>) -> bool {
+        self.send_work_command(|pin| SftpCommand::DeletePaths { paths, pin })
+    }
+
+    pub(crate) fn close(&self) {
         let _ = self.commands.send(SftpCommand::Close);
+        if self.worker.closing.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let join = self
+            .worker
+            .join
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        let Some(mut join) = join else {
+            return;
+        };
+
+        self.worker.runtime.spawn(async move {
+            if tokio::time::timeout(SFTP_SHUTDOWN_TIMEOUT, &mut join)
+                .await
+                .is_ok()
+            {
+                return;
+            }
+
+            tracing::warn!("[sftp] graceful shutdown timed out; aborting worker");
+            join.abort();
+            let _ = join.await;
+        });
     }
 
-    pub fn pause_transfer(&self, id: String) {
+    pub(crate) fn pause_transfer(&self, id: String) {
         let _ = self.commands.send(SftpCommand::PauseTransfer(id));
     }
 
-    pub fn resume_transfer(&self, id: String) {
+    pub(crate) fn resume_transfer(&self, id: String) {
         let _ = self.commands.send(SftpCommand::ResumeTransfer(id));
     }
 
-    pub fn cancel_transfer(&self, id: String) {
+    pub(crate) fn cancel_transfer(&self, id: String) {
         let _ = self.commands.send(SftpCommand::CancelTransfer(id));
     }
 }
@@ -295,6 +400,11 @@ pub fn spawn_sftp(
 ) -> SftpHandle {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let cmd_tx_clone = cmd_tx.clone();
+    let work_tracker = Arc::new(SftpWorkTracker {
+        pins: AtomicUsize::new(0),
+    });
+    let initial_pin = work_tracker.pin();
+    let worker_tracker = work_tracker.clone();
     let join = runtime.spawn(async move {
         if let Err(err) = run_sftp(
             tab_id.clone(),
@@ -302,6 +412,8 @@ pub fn spawn_sftp(
             cmd_rx,
             cmd_tx_clone,
             events.clone(),
+            worker_tracker,
+            initial_pin,
         )
         .await
         {
@@ -317,7 +429,12 @@ pub fn spawn_sftp(
     });
     SftpHandle {
         commands: cmd_tx,
-        join: Some(join),
+        worker: Arc::new(SftpWorker {
+            runtime: runtime.clone(),
+            join: Mutex::new(Some(join)),
+            closing: std::sync::atomic::AtomicBool::new(false),
+            work_tracker,
+        }),
     }
 }
 
@@ -327,6 +444,8 @@ async fn run_sftp(
     mut commands: UnboundedReceiver<SftpCommand>,
     commands_tx: UnboundedSender<SftpCommand>,
     events: std::sync::mpsc::Sender<BackendEvent>,
+    work_tracker: Arc<SftpWorkTracker>,
+    initial_pin: SftpWorkPin,
 ) -> Result<()> {
     let _ = events.send(BackendEvent::SftpStatus {
         tab_id: tab_id.clone(),
@@ -353,13 +472,33 @@ async fn run_sftp(
     });
 
     emit_entries_with_timeout(&events, &tab_id, &sftp, &home).await?;
+    drop(initial_pin);
 
     let mut active_transfers: std::collections::HashMap<String, TransferStateFlag> =
         std::collections::HashMap::new();
+    let mut child_tasks = JoinSet::new();
 
-    while let Some(command) = commands.recv().await {
+    loop {
+        let command = tokio::select! {
+            command = commands.recv() => command,
+            result = child_tasks.join_next(), if !child_tasks.is_empty() => {
+                if let Some(Err(err)) = result
+                    && !err.is_cancelled()
+                {
+                    tracing::warn!("[sftp] child task failed: {err}");
+                }
+                continue;
+            }
+        };
+        let Some(command) = command else {
+            cancel_sftp_child_tasks(&mut active_transfers, &mut child_tasks).await;
+            break;
+        };
         match command {
-            SftpCommand::Close => break,
+            SftpCommand::Close => {
+                cancel_sftp_child_tasks(&mut active_transfers, &mut child_tasks).await;
+                break;
+            }
             SftpCommand::PauseTransfer(id) => {
                 if let Some(flag) = active_transfers.get(&id) {
                     flag.pause();
@@ -378,7 +517,7 @@ async fn run_sftp(
             SftpCommand::TransferFinished(id) => {
                 active_transfers.remove(&id);
             }
-            SftpCommand::ListDir(path) => {
+            SftpCommand::ListDir { path, pin: _pin } => {
                 let actual_path = if path == "~" {
                     home.clone()
                 } else if let Some(rest) = path.strip_prefix("~/") {
@@ -396,7 +535,7 @@ async fn run_sftp(
                     });
                 }
             }
-            SftpCommand::RevealPath(path) => {
+            SftpCommand::RevealPath { path, pin: _pin } => {
                 let actual_path = if path == "~" {
                     home.clone()
                 } else if let Some(rest) = path.strip_prefix("~/") {
@@ -425,7 +564,7 @@ async fn run_sftp(
                     }
                 }
             }
-            SftpCommand::Preview(path) => match preview_impl(&sftp, &path).await {
+            SftpCommand::Preview { path, pin: _pin } => match preview_impl(&sftp, &path).await {
                 Ok(preview) => {
                     let _ = events.send(BackendEvent::SftpPreview {
                         tab_id: tab_id.clone(),
@@ -439,7 +578,11 @@ async fn run_sftp(
                     });
                 }
             },
-            SftpCommand::Download { remote, local_dir } => {
+            SftpCommand::Download {
+                remote,
+                local_dir,
+                pin,
+            } => {
                 let id = uuid::Uuid::new_v4().to_string();
                 let flag = TransferStateFlag::new();
                 active_transfers.insert(id.clone(), TransferStateFlag(flag.0.clone()));
@@ -462,7 +605,8 @@ async fn run_sftp(
                 let tab_id_clone = tab_id.clone();
                 let commands_tx_clone = commands_tx.clone();
 
-                tokio::spawn(async move {
+                child_tasks.spawn(async move {
+                    let _transfer_pin = pin;
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
                         Err(err) => {
@@ -507,7 +651,11 @@ async fn run_sftp(
                     let _ = commands_tx_clone.send(SftpCommand::TransferFinished(id));
                 });
             }
-            SftpCommand::UploadPaths { locals, remote_dir } => {
+            SftpCommand::UploadPaths {
+                locals,
+                remote_dir,
+                pin,
+            } => {
                 let id = uuid::Uuid::new_v4().to_string();
                 let flag = TransferStateFlag::new();
                 active_transfers.insert(id.clone(), TransferStateFlag(flag.0.clone()));
@@ -555,8 +703,10 @@ async fn run_sftp(
                 let events_clone = events.clone();
                 let tab_id_clone = tab_id.clone();
                 let commands_tx_clone = commands_tx.clone();
+                let work_tracker_clone = work_tracker.clone();
 
-                tokio::spawn(async move {
+                child_tasks.spawn(async move {
+                    let _transfer_pin = pin;
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
                         Err(err) => {
@@ -581,7 +731,7 @@ async fn run_sftp(
                     {
                         Ok(summary) => {
                             send_sftp_status(&events_clone, &tab_id_clone, summary);
-                            let _ = commands_tx_clone.send(SftpCommand::ListDir(remote_dir));
+                            queue_list_dir(&commands_tx_clone, &work_tracker_clone, remote_dir);
                         }
                         Err(err) => {
                             let err_msg = format!("{err:#}");
@@ -597,7 +747,7 @@ async fn run_sftp(
                     let _ = commands_tx_clone.send(SftpCommand::TransferFinished(id));
                 });
             }
-            SftpCommand::EditFile { remote_path } => {
+            SftpCommand::EditFile { remote_path, pin } => {
                 let id = uuid::Uuid::new_v4().to_string();
                 let config = crate::session::config::ConfigStore::load()
                     .unwrap_or_else(|_| crate::session::config::ConfigStore::in_memory());
@@ -609,8 +759,10 @@ async fn run_sftp(
                 let commands_tx_clone = commands_tx.clone();
                 let events_clone = events.clone();
                 let tab_id_clone = tab_id.clone();
+                let work_tracker_clone = work_tracker.clone();
 
-                tokio::spawn(async move {
+                child_tasks.spawn(async move {
+                    let _edit_watcher_pin = pin;
                     let flag = TransferStateFlag::new();
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
@@ -689,10 +841,12 @@ async fn run_sftp(
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         while let Ok(_) = rx.try_recv() {} // drain pending
 
+                        let upload_pin = work_tracker_clone.pin();
                         if commands_tx_clone
                             .send(SftpCommand::UploadEditedFile {
                                 local_path: local_path.to_string_lossy().to_string(),
                                 remote_path: remote_path.clone(),
+                                pin: upload_pin,
                             })
                             .is_err()
                         {
@@ -704,12 +858,14 @@ async fn run_sftp(
             SftpCommand::UploadEditedFile {
                 local_path,
                 remote_path,
+                pin,
             } => {
                 let handle_clone = handle.clone();
                 let events_clone = events.clone();
                 let tab_id_clone = tab_id.clone();
 
-                tokio::spawn(async move {
+                child_tasks.spawn(async move {
+                    let _auto_upload_pin = pin;
                     let flag = TransferStateFlag::new();
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
@@ -756,7 +912,7 @@ async fn run_sftp(
                     }
                 });
             }
-            SftpCommand::CreateDir(path) => {
+            SftpCommand::CreateDir { path, pin: _pin } => {
                 let actual_path = if path == "~" {
                     home.clone()
                 } else if let Some(rest) = path.strip_prefix("~/") {
@@ -777,9 +933,9 @@ async fn run_sftp(
 
                         // Re-fetch the parent directory to show the newly created folder
                         if let Some(parent) = parent_dir(&actual_path) {
-                            let _ = commands_tx.send(SftpCommand::ListDir(parent));
+                            queue_list_dir(&commands_tx, &work_tracker, parent);
                         } else {
-                            let _ = commands_tx.send(SftpCommand::ListDir("/".to_string()));
+                            queue_list_dir(&commands_tx, &work_tracker, "/".to_string());
                         }
                     }
                     Err(err) => {
@@ -790,7 +946,7 @@ async fn run_sftp(
                     }
                 }
             }
-            SftpCommand::DeletePaths(paths) => {
+            SftpCommand::DeletePaths { paths, pin: _pin } => {
                 tracing::info!("[sftp] batch deleting {} paths", paths.len());
                 let _ = events.send(BackendEvent::SftpStatus {
                     tab_id: tab_id.clone(),
@@ -833,9 +989,9 @@ async fn run_sftp(
                         first.clone()
                     };
                     if let Some(parent) = parent_dir(&actual_path) {
-                        let _ = commands_tx.send(SftpCommand::ListDir(parent));
+                        queue_list_dir(&commands_tx, &work_tracker, parent);
                     } else {
-                        let _ = commands_tx.send(SftpCommand::ListDir("/".to_string()));
+                        queue_list_dir(&commands_tx, &work_tracker, "/".to_string());
                     }
                 }
             }
@@ -846,6 +1002,68 @@ async fn run_sftp(
         .disconnect(Disconnect::ByApplication, "bye", "")
         .await;
     Ok(())
+}
+
+fn queue_list_dir(
+    commands: &UnboundedSender<SftpCommand>,
+    work_tracker: &Arc<SftpWorkTracker>,
+    path: String,
+) {
+    let pin = work_tracker.pin();
+    let _ = commands.send(SftpCommand::ListDir { path, pin });
+}
+
+async fn cancel_sftp_child_tasks(
+    active_transfers: &mut std::collections::HashMap<String, TransferStateFlag>,
+    child_tasks: &mut JoinSet<()>,
+) {
+    for transfer in active_transfers.values() {
+        transfer.cancel();
+    }
+    active_transfers.clear();
+    child_tasks.abort_all();
+    while child_tasks.join_next().await.is_some() {}
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use std::{collections::HashMap, sync::atomic::Ordering};
+
+    use tokio::task::JoinSet;
+
+    use super::{SftpWorkTracker, TransferStateFlag, cancel_sftp_child_tasks};
+
+    #[tokio::test]
+    async fn closing_worker_cancels_transfers_and_aborts_child_tasks() {
+        let transfer = TransferStateFlag::new();
+        let transfer_state = transfer.0.clone();
+        let mut active_transfers = HashMap::from([("transfer-1".to_string(), transfer)]);
+        let mut child_tasks = JoinSet::new();
+        child_tasks.spawn(async {
+            std::future::pending::<()>().await;
+        });
+
+        cancel_sftp_child_tasks(&mut active_transfers, &mut child_tasks).await;
+
+        assert_eq!(transfer_state.load(Ordering::SeqCst), 2);
+        assert!(active_transfers.is_empty());
+        assert!(child_tasks.is_empty());
+    }
+
+    #[test]
+    fn work_pins_remain_active_until_the_last_guard_drops() {
+        let tracker = std::sync::Arc::new(SftpWorkTracker {
+            pins: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let first = tracker.pin();
+        let second = tracker.pin();
+
+        assert_eq!(tracker.active_pins(), 2);
+        drop(first);
+        assert_eq!(tracker.active_pins(), 1);
+        drop(second);
+        assert_eq!(tracker.active_pins(), 0);
+    }
 }
 
 async fn open_sftp_session(

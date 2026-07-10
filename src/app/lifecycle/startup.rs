@@ -632,6 +632,7 @@ pub(crate) fn open_main_window(cx: &mut App) {
                 );
                 return true;
             }
+            let _ = view_clone.update(cx, |app, _| app.shutdown_all_backends());
             view_clone.read(cx).save_layout_state(window, cx);
             true
         });

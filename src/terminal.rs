@@ -110,21 +110,44 @@ pub enum BackendEvent {
     SyncFinished(crate::sync::SyncResult),
 }
 
+pub trait BackendShutdown: Send + Sync {
+    /// Start a non-blocking, backend-specific shutdown and resource reap.
+    fn shutdown(&self);
+}
+
 #[derive(Clone)]
 pub enum BackendTx {
-    Local(Sender<BackendCommand>),
-    Ssh(tokio::sync::mpsc::UnboundedSender<BackendCommand>),
+    Local {
+        commands: Sender<BackendCommand>,
+        shutdown: std::sync::Arc<dyn BackendShutdown>,
+    },
+    Ssh {
+        commands: tokio::sync::mpsc::UnboundedSender<BackendCommand>,
+        shutdown: std::sync::Arc<dyn BackendShutdown>,
+    },
 }
 
 impl BackendTx {
     pub fn send(&self, command: BackendCommand) {
+        if matches!(command, BackendCommand::Close) {
+            self.shutdown();
+            return;
+        }
+
         match self {
-            Self::Local(tx) => {
-                let _ = tx.send(command);
+            Self::Local { commands, .. } => {
+                let _ = commands.send(command);
             }
-            Self::Ssh(tx) => {
-                let _ = tx.send(command);
+            Self::Ssh { commands, .. } => {
+                let _ = commands.send(command);
             }
+        }
+    }
+
+    /// Signal the backend and schedule its resource reaper without blocking UI work.
+    pub fn shutdown(&self) {
+        match self {
+            Self::Local { shutdown, .. } | Self::Ssh { shutdown, .. } => shutdown.shutdown(),
         }
     }
 }
@@ -345,10 +368,21 @@ impl TerminalTab {
 
     /// Replace the backend with a new one. The `Term`'s internal listener
     /// shares the same `Arc`, so user input is automatically routed to the
-    /// new backend. The old backend must be closed by the caller.
+    /// new backend. The previous backend is always asked to stop first.
     pub fn set_backend(&mut self, new_backend: BackendTx) {
-        if let Ok(mut backend) = self.backend.lock() {
-            *backend = new_backend;
+        let old_backend = self
+            .backend
+            .lock()
+            .ok()
+            .map(|mut backend| std::mem::replace(&mut *backend, new_backend));
+        if let Some(old_backend) = old_backend {
+            old_backend.shutdown();
+        }
+    }
+
+    pub fn shutdown_backend(&self) {
+        if let Ok(backend) = self.backend.lock() {
+            backend.shutdown();
         }
     }
 
@@ -1240,11 +1274,26 @@ pub struct Transfer {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    };
+
     use gpui::{Keystroke, Modifiers};
 
     use super::{
-        TerminalPlatform, encode_key, encode_key_for_platform, extract_shell_working_directory,
+        BackendCommand, BackendShutdown, BackendTx, TerminalPlatform, encode_key,
+        encode_key_for_platform, extract_shell_working_directory,
     };
+
+    struct CountingShutdown(AtomicUsize);
+
+    impl BackendShutdown for CountingShutdown {
+        fn shutdown(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 
     fn key(key: &str, modifiers: Modifiers) -> Keystroke {
         Keystroke {
@@ -1397,5 +1446,20 @@ mod tests {
 
         assert_eq!(path.as_deref(), Some("/tmp"));
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn close_command_uses_the_backend_shutdown_controller() {
+        let (commands, receiver) = mpsc::channel();
+        let shutdown = Arc::new(CountingShutdown(AtomicUsize::new(0)));
+        let backend = BackendTx::Local {
+            commands,
+            shutdown: shutdown.clone(),
+        };
+
+        backend.send(BackendCommand::Close);
+
+        assert_eq!(shutdown.0.load(Ordering::SeqCst), 1);
+        assert!(receiver.try_recv().is_err());
     }
 }

@@ -68,6 +68,10 @@ pub struct ConfigFile {
     pub transfers: Vec<crate::terminal::Transfer>,
     #[serde(default)]
     pub show_hidden_files: bool,
+    #[serde(default = "default_sftp_transfer_close_behavior")]
+    pub sftp_transfer_close_behavior: String,
+    #[serde(default = "default_deep_sleep_after_minutes")]
+    pub deep_sleep_after_minutes: u32,
     #[serde(default)]
     pub lock_layout: bool,
     #[serde(default = "default_monitoring_position")]
@@ -334,6 +338,28 @@ fn default_show_monitoring_dashboard() -> bool {
     true
 }
 
+fn default_sftp_transfer_close_behavior() -> String {
+    "ask".to_string()
+}
+
+fn default_deep_sleep_after_minutes() -> u32 {
+    5
+}
+
+fn normalize_deep_sleep_after_minutes(value: u32) -> u32 {
+    match value {
+        0 | 1 | 5 | 15 | 30 => value,
+        _ => default_deep_sleep_after_minutes(),
+    }
+}
+
+fn normalize_sftp_transfer_close_behavior(value: &str) -> String {
+    match value {
+        "keep_page_open" | "background" | "cancel_disconnect" => value.to_string(),
+        _ => default_sftp_transfer_close_behavior(),
+    }
+}
+
 fn default_s3_region() -> String {
     "us-east-1".to_string()
 }
@@ -408,6 +434,8 @@ impl Default for ConfigFile {
             body_panels: None,
             transfers: Vec::new(),
             show_hidden_files: false,
+            sftp_transfer_close_behavior: default_sftp_transfer_close_behavior(),
+            deep_sleep_after_minutes: default_deep_sleep_after_minutes(),
             lock_layout: false,
             monitoring_position: default_monitoring_position(),
             show_monitoring_dashboard: default_show_monitoring_dashboard(),
@@ -516,6 +544,10 @@ impl ConfigStore {
             std::mem::take(&mut cache.ssh_connect_retry_delays_ms),
             cache.ssh_connect_retry_count,
         );
+        cache.sftp_transfer_close_behavior =
+            normalize_sftp_transfer_close_behavior(&cache.sftp_transfer_close_behavior);
+        cache.deep_sleep_after_minutes =
+            normalize_deep_sleep_after_minutes(cache.deep_sleep_after_minutes);
         Ok(Self { path, cache })
     }
 
@@ -1148,6 +1180,22 @@ impl ConfigStore {
         self.cache.show_hidden_files = val;
     }
 
+    pub fn sftp_transfer_close_behavior(&self) -> &str {
+        &self.cache.sftp_transfer_close_behavior
+    }
+
+    pub fn set_sftp_transfer_close_behavior(&mut self, value: &str) {
+        self.cache.sftp_transfer_close_behavior = normalize_sftp_transfer_close_behavior(value);
+    }
+
+    pub fn deep_sleep_after_minutes(&self) -> u32 {
+        self.cache.deep_sleep_after_minutes
+    }
+
+    pub fn set_deep_sleep_after_minutes(&mut self, value: u32) {
+        self.cache.deep_sleep_after_minutes = normalize_deep_sleep_after_minutes(value);
+    }
+
     pub fn lock_layout(&self) -> bool {
         self.cache.lock_layout
     }
@@ -1515,6 +1563,51 @@ mod retry_settings_tests {
         assert_eq!(
             normalize_ssh_connect_retry_delays_ms(vec![], 2),
             default_ssh_connect_retry_delays_ms()
+        );
+    }
+}
+
+#[cfg(test)]
+mod sftp_transfer_close_tests {
+    use super::{default_sftp_transfer_close_behavior, normalize_sftp_transfer_close_behavior};
+
+    #[test]
+    fn sftp_transfer_close_behavior_accepts_supported_values() {
+        assert_eq!(
+            normalize_sftp_transfer_close_behavior("background"),
+            "background"
+        );
+        assert_eq!(
+            normalize_sftp_transfer_close_behavior("cancel_disconnect"),
+            "cancel_disconnect"
+        );
+    }
+
+    #[test]
+    fn sftp_transfer_close_behavior_falls_back_to_ask() {
+        assert_eq!(
+            normalize_sftp_transfer_close_behavior("unexpected"),
+            default_sftp_transfer_close_behavior()
+        );
+    }
+}
+
+#[cfg(test)]
+mod deep_sleep_settings_tests {
+    use super::{default_deep_sleep_after_minutes, normalize_deep_sleep_after_minutes};
+
+    #[test]
+    fn deep_sleep_after_minutes_accepts_supported_values() {
+        for value in [0, 1, 5, 15, 30] {
+            assert_eq!(normalize_deep_sleep_after_minutes(value), value);
+        }
+    }
+
+    #[test]
+    fn deep_sleep_after_minutes_falls_back_to_five_minutes() {
+        assert_eq!(
+            normalize_deep_sleep_after_minutes(2),
+            default_deep_sleep_after_minutes()
         );
     }
 }

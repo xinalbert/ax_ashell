@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use gpui::{Bounds, Context, Pixels, Window, point, px, size};
+use gpui_component::WindowExt as _;
 use rust_i18n::t;
 
 use crate::{
@@ -180,6 +181,9 @@ impl AxShell {
     pub(crate) fn toggle_active_sftp_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.workspace_page == WorkspacePage::Sftp {
             if let Some(active_group_id) = self.active_group.clone() {
+                if self.confirm_sftp_close_with_shortcut(&active_group_id, window, cx) {
+                    return;
+                }
                 self.close_sftp_page(active_group_id, window, cx);
             } else {
                 self.set_workspace_page(WorkspacePage::Terminal, cx);
@@ -242,6 +246,77 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.group_has_active_sftp_transfer(&group_id) {
+            self.close_sftp_page_now(group_id, window, cx);
+            return;
+        }
+
+        self.show_sftp_transfer_close_dialog(group_id, window, cx);
+    }
+
+    pub(crate) fn confirm_sftp_close_with_shortcut(
+        &mut self,
+        group_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.active_dialog != Some(crate::app::DialogKind::SftpCloseConfirm)
+            || self.sftp_close_confirm_group_id.as_deref() != Some(group_id)
+        {
+            return false;
+        }
+
+        let choice = self.config.sftp_transfer_close_behavior().to_string();
+        if choice == "ask" {
+            self.status = rust_i18n::t!("sftp_shortcut_choice_not_set").into();
+            cx.notify();
+            return true;
+        }
+
+        self.apply_sftp_transfer_close_choice(group_id.to_string(), &choice, false, window, cx);
+        self.active_dialog = None;
+        self.sftp_close_confirm_group_id = None;
+        window.close_dialog(cx);
+        true
+    }
+
+    pub(crate) fn apply_sftp_transfer_close_choice(
+        &mut self,
+        group_id: String,
+        choice: &str,
+        remember: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if remember {
+            self.config.set_sftp_transfer_close_behavior(choice);
+            if let Err(err) = self.config.save() {
+                tracing::warn!("failed to save SFTP close preference: {err:#}");
+            }
+        }
+        self.sftp_close_remember_choice = false;
+        self.sftp_close_confirm_group_id = None;
+
+        match choice {
+            "keep_page_open" => {
+                self.status = rust_i18n::t!("sftp_close_kept_for_transfer").into();
+                cx.notify();
+            }
+            "background" => self.close_sftp_page_now(group_id, window, cx),
+            "cancel_disconnect" => {
+                self.release_sftp_handle_for_group(&group_id, true);
+                self.close_sftp_page_now(group_id, window, cx);
+            }
+            _ => unreachable!("invalid SFTP close choice"),
+        }
+    }
+
+    pub(crate) fn close_sftp_page_now(
+        &mut self,
+        group_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let was_active_sftp_page = self.workspace_page == WorkspacePage::Sftp
             && self.active_group.as_deref() == Some(group_id.as_str());
 
@@ -262,7 +337,7 @@ impl AxShell {
     }
 
     pub(crate) fn request_active_system_snapshot(&mut self) {
-        if !self.is_monitoring_visible() {
+        if !self.lifecycle.is_foreground() || !self.is_monitoring_visible() {
             return;
         }
         let Some(ref tab_id) = self.monitoring.system_tab_id.clone() else {

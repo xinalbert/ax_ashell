@@ -233,6 +233,7 @@ pub(crate) enum DialogKind {
     SessionSelector,
     Transfers,
     NewSsh,
+    SftpCloseConfirm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

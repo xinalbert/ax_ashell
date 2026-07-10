@@ -61,6 +61,18 @@ pub(super) fn normalize_session_group_name(value: &str) -> String {
 }
 
 impl AxShell {
+    /// Stop terminal and SFTP backends without blocking the GPUI event loop.
+    pub(crate) fn shutdown_all_backends(&mut self) {
+        for tab in &self.tabs {
+            tab.shutdown_backend();
+        }
+
+        let group_ids = self.sftp_handles.keys().cloned().collect::<Vec<_>>();
+        for group_id in group_ids {
+            self.release_sftp_handle_for_group(&group_id, true);
+        }
+    }
+
     pub(crate) fn open_local(&mut self, cx: &mut Context<Self>) {
         let id = Uuid::new_v4().to_string();
         match local::spawn_local_terminal(
@@ -880,10 +892,7 @@ impl AxShell {
                     self.tabs.retain(|t| t.id != *tab_id);
                 }
             }
-            if let Some(handle) = self.sftp_handles.remove(&group.id) {
-                handle.close();
-            }
-            self.sftp_last_activity.remove(&group.id);
+            self.release_sftp_handle_for_group(&group.id, true);
             self.tab_groups.remove(group_ix.unwrap());
             self.pane_root.remove_tab(&id);
         } else {
@@ -916,10 +925,10 @@ impl AxShell {
             self.monitoring.net_rx_history.clear();
             self.monitoring.net_tx_history.clear();
             self.monitoring.status = None;
-            for (_, handle) in self.sftp_handles.drain() {
-                handle.close();
+            let group_ids = self.sftp_handles.keys().cloned().collect::<Vec<_>>();
+            for group_id in group_ids {
+                self.release_sftp_handle_for_group(&group_id, true);
             }
-            self.sftp_last_activity.clear();
             return;
         }
 

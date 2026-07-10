@@ -3,10 +3,16 @@ use std::time::Duration;
 use gpui::{Context, Window, px};
 use gpui_component::input::{InputEvent, InputState};
 
-use crate::{AxShell, terminal::BackendEvent};
+use crate::{AxShell, app::state::lifecycle::WindowLifecycleState, terminal::BackendEvent};
 
 const ACTIVE_PUMP_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_PUMP_INTERVAL: Duration = Duration::from_millis(33);
+const BACKGROUND_PUMP_INTERVAL: Duration = Duration::from_millis(250);
+const DEEP_SLEEP_PUMP_INTERVAL: Duration = Duration::from_secs(1);
+const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
+const DEEP_SLEEP_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
+const FOREGROUND_SFTP_IDLE_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
+const BACKGROUND_SFTP_IDLE_SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 const IDLE_NOTIFY_INTERVAL_TICKS: u32 = 30;
 const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(600);
 
@@ -22,34 +28,46 @@ impl AxShell {
             let mut idle_ticks = 0u32;
             let mut last_blink_time = std::time::Instant::now();
             loop {
-                let sleep_for = if idle_ticks == 0 {
-                    ACTIVE_PUMP_INTERVAL
-                } else {
-                    IDLE_PUMP_INTERVAL
+                let sleep_for = match this.read_with(cx, |this, _| this.lifecycle.state()) {
+                    Ok(WindowLifecycleState::Foreground) if idle_ticks == 0 => ACTIVE_PUMP_INTERVAL,
+                    Ok(WindowLifecycleState::Foreground) => IDLE_PUMP_INTERVAL,
+                    Ok(WindowLifecycleState::Background) => BACKGROUND_PUMP_INTERVAL,
+                    Ok(WindowLifecycleState::DeepSleep) => DEEP_SLEEP_PUMP_INTERVAL,
+                    Err(_) => break,
                 };
                 cx.background_executor().timer(sleep_for).await;
                 if this
                     .update(cx, |this, cx| {
+                        let now = std::time::Instant::now();
+                        let lifecycle_changed = this.advance_window_lifecycle(now);
                         let drain = this.drain_backend_events(cx);
+                        if drain.ui_changed {
+                            this.schedule_ui_refresh();
+                        }
                         let terminal_due = this.should_flush_terminal_refresh();
-                        let system_sampled = this.sample_system_if_due();
-                        let sftp_closed = this.sweep_idle_sftp_connections();
-                        this.sync_theme_if_due(cx);
+                        let ui_due = this.should_flush_ui_refresh();
+                        let system_sampled =
+                            this.lifecycle.is_foreground() && this.sample_system_if_due();
+                        let sftp_closed = this.sweep_idle_sftp_connections_if_due(now);
+                        if this.lifecycle.is_foreground() {
+                            this.sync_theme_if_due(cx);
+                        }
                         let selecting = this.active_terminal_has_selection();
                         let is_blinking = matches!(
                             this.appearance.cursor_style,
                             crate::session::config::CursorStyle::Blink
                                 | crate::session::config::CursorStyle::BeamBlink
                         );
-                        let now = std::time::Instant::now();
-                        let blink_due = !selecting
+                        let blink_due = this.lifecycle.is_foreground()
+                            && !selecting
                             && is_blinking
                             && now.duration_since(last_blink_time) >= CURSOR_BLINK_INTERVAL;
-                        if drain.ui_changed
+                        if ui_due
                             || terminal_due
                             || system_sampled
                             || blink_due
                             || sftp_closed
+                            || lifecycle_changed
                         {
                             cx.notify();
                             idle_ticks = 0;
@@ -59,21 +77,27 @@ impl AxShell {
                             if terminal_due {
                                 this.mark_terminal_refresh_flushed(now);
                             }
+                            if ui_due {
+                                this.mark_ui_refresh_flushed(now);
+                            }
                         } else {
                             idle_ticks = idle_ticks.saturating_add(1);
-                            if idle_ticks >= IDLE_NOTIFY_INTERVAL_TICKS
+                            if this.lifecycle.is_foreground()
+                                && idle_ticks >= IDLE_NOTIFY_INTERVAL_TICKS
                                 && !selecting
                                 && !this.runtime_state.pending_terminal_refresh
+                                && !this.runtime_state.pending_ui_refresh
                             {
                                 cx.notify();
                                 idle_ticks = 1;
                             }
                         }
                         if drain.terminal_changed
-                            || drain.ui_changed
+                            || ui_due
                             || system_sampled
                             || blink_due
                             || sftp_closed
+                            || lifecycle_changed
                         {
                             idle_ticks = 0;
                         }
@@ -85,6 +109,30 @@ impl AxShell {
             }
         })
         .detach();
+    }
+
+    pub(crate) fn on_window_activation_changed(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let now = std::time::Instant::now();
+        if !self
+            .lifecycle
+            .set_window_active(window.is_window_active(), now)
+        {
+            return;
+        }
+
+        if self.lifecycle.is_foreground() {
+            self.monitoring.last_sample = now - crate::system::SystemSampler::interval();
+            self.appearance.last_theme_sync = now - Duration::from_secs(1);
+            self.sync_theme_if_due(cx);
+            self.schedule_terminal_refresh();
+            self.schedule_ui_refresh();
+            self.sample_system_if_due();
+        }
+        cx.notify();
     }
 
     pub(crate) fn on_input_event(
@@ -128,9 +176,7 @@ impl AxShell {
                         let base_path = self.sftp_path_input.read(cx).text().to_string();
                         let path = crate::sftp::join_remote(&base_path, &name);
                         if let Some(handle) = self.ensure_active_sftp_handle() {
-                            let _ = handle
-                                .commands
-                                .send(crate::sftp::SftpCommand::CreateDir(path));
+                            let _ = handle.create_dir(path);
                         }
                     }
                     self.sftp_creating_folder = false;
@@ -349,6 +395,9 @@ impl AxShell {
                     if is_stale {
                         continue;
                     }
+                    if let Some(tab) = self.tabs.iter().find(|tab| tab.id == tab_id) {
+                        tab.shutdown_backend();
+                    }
                     let is_graceful_exit =
                         reason == "local shell closed" || reason == "ssh session closed";
                     if is_graceful_exit {
@@ -498,12 +547,29 @@ impl AxShell {
         self.runtime_state.pending_terminal_refresh = true;
     }
 
+    fn schedule_ui_refresh(&mut self) {
+        self.runtime_state.pending_ui_refresh = true;
+    }
+
     fn should_flush_terminal_refresh(&self) -> bool {
         if !self.runtime_state.pending_terminal_refresh {
             return false;
         }
 
-        self.runtime_state.last_terminal_refresh.elapsed() >= ACTIVE_PUMP_INTERVAL
+        self.runtime_state.last_terminal_refresh.elapsed() >= self.refresh_interval()
+    }
+
+    fn should_flush_ui_refresh(&self) -> bool {
+        self.runtime_state.pending_ui_refresh
+            && self.runtime_state.last_ui_refresh.elapsed() >= self.refresh_interval()
+    }
+
+    fn refresh_interval(&self) -> Duration {
+        match self.lifecycle.state() {
+            WindowLifecycleState::Foreground => ACTIVE_PUMP_INTERVAL,
+            WindowLifecycleState::Background => BACKGROUND_REFRESH_INTERVAL,
+            WindowLifecycleState::DeepSleep => DEEP_SLEEP_REFRESH_INTERVAL,
+        }
     }
 
     fn mark_terminal_refresh_flushed(&mut self, now: std::time::Instant) {
@@ -511,8 +577,37 @@ impl AxShell {
         self.runtime_state.last_terminal_refresh = now;
     }
 
+    fn mark_ui_refresh_flushed(&mut self, now: std::time::Instant) {
+        self.runtime_state.pending_ui_refresh = false;
+        self.runtime_state.last_ui_refresh = now;
+    }
+
+    fn advance_window_lifecycle(&mut self, now: std::time::Instant) -> bool {
+        let changed = self
+            .lifecycle
+            .advance(now, self.config.deep_sleep_after_minutes());
+        if changed {
+            tracing::debug!(state = ?self.lifecycle.state(), "window lifecycle changed");
+        }
+        changed
+    }
+
+    fn sweep_idle_sftp_connections_if_due(&mut self, now: std::time::Instant) -> bool {
+        let interval = if self.lifecycle.is_foreground() {
+            FOREGROUND_SFTP_IDLE_SWEEP_INTERVAL
+        } else {
+            BACKGROUND_SFTP_IDLE_SWEEP_INTERVAL
+        };
+        if now.duration_since(self.runtime_state.last_sftp_idle_sweep) < interval {
+            return false;
+        }
+
+        self.runtime_state.last_sftp_idle_sweep = now;
+        self.sweep_idle_sftp_connections()
+    }
+
     pub(crate) fn sample_system_if_due(&mut self) -> bool {
-        if !self.is_monitoring_visible() {
+        if !self.lifecycle.is_foreground() || !self.is_monitoring_visible() {
             return false;
         }
         if self.monitoring.last_sample.elapsed() >= crate::system::SystemSampler::interval() {

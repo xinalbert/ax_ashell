@@ -211,11 +211,13 @@ impl AxShell {
             return None;
         }
         if let Some(handle) = self.sftp_handles.get(group_id)
-            && !handle.commands.is_closed()
+            && !handle.commands_closed()
         {
             return Some(handle.clone());
         }
-        self.sftp_handles.remove(group_id);
+        if let Some(handle) = self.sftp_handles.remove(group_id) {
+            handle.close();
+        }
 
         let session = self.session_for_sftp_group(group_id)?;
         let restore_path = self
@@ -266,9 +268,7 @@ impl AxShell {
         if !should_restart {
             return None;
         }
-        if let Some(handle) = self.sftp_handles.remove(group_id) {
-            handle.close();
-        }
+        self.release_sftp_handle_for_group(group_id, true);
         self.ensure_sftp_handle_for_group(group_id)
     }
 
@@ -283,7 +283,7 @@ impl AxShell {
         }
     }
 
-    fn group_has_active_sftp_transfer(&self, group_id: &str) -> bool {
+    pub(crate) fn group_has_active_sftp_transfer(&self, group_id: &str) -> bool {
         self.transfers.iter().any(|transfer| {
             transfer.tab_id == group_id
                 && matches!(
@@ -294,40 +294,105 @@ impl AxShell {
         })
     }
 
+    pub(crate) fn release_sftp_handle_for_group(
+        &mut self,
+        group_id: &str,
+        cancel_active_transfers: bool,
+    ) {
+        if cancel_active_transfers {
+            let transfer_ids = self
+                .transfers
+                .iter()
+                .filter(|transfer| {
+                    transfer.tab_id == group_id
+                        && matches!(
+                            transfer.state,
+                            crate::terminal::TransferState::Running
+                                | crate::terminal::TransferState::Paused
+                        )
+                })
+                .map(|transfer| transfer.info.id.clone())
+                .collect::<Vec<_>>();
+            if let Some(handle) = self.sftp_handles.get(group_id) {
+                for transfer_id in &transfer_ids {
+                    handle.cancel_transfer(transfer_id.clone());
+                }
+            }
+            if !transfer_ids.is_empty() {
+                for transfer in &mut self.transfers {
+                    if transfer.tab_id == group_id
+                        && matches!(
+                            transfer.state,
+                            crate::terminal::TransferState::Running
+                                | crate::terminal::TransferState::Paused
+                        )
+                    {
+                        transfer.state = crate::terminal::TransferState::Interrupted(
+                            "SFTP connection closed".to_string(),
+                        );
+                    }
+                }
+                self.config.set_transfers(self.transfers.clone());
+            }
+        }
+
+        if let Some(handle) = self.sftp_handles.remove(group_id) {
+            handle.close();
+        }
+        self.sftp_last_activity.remove(group_id);
+    }
+
     pub(crate) fn sweep_idle_sftp_connections(&mut self) -> bool {
         let now = std::time::Instant::now();
         let active_group = self.active_group.clone();
+        let deep_sleep =
+            self.lifecycle.state() == crate::app::state::lifecycle::WindowLifecycleState::DeepSleep;
         let mut closed_any = false;
         let group_ids: Vec<String> = self.sftp_handles.keys().cloned().collect();
         for group_id in group_ids {
-            if active_group.as_deref() == Some(group_id.as_str())
-                && self.active_group_sftp_page_open()
+            let is_active_group = active_group.as_deref() == Some(group_id.as_str());
+            if (deep_sleep && is_active_group)
+                || (!deep_sleep && is_active_group && self.active_group_sftp_page_open())
             {
                 continue;
             }
-            if self.group_has_active_sftp_transfer(&group_id) {
+            let active_work_pins = self
+                .sftp_handles
+                .get(&group_id)
+                .map(SftpHandle::active_work_pins)
+                .unwrap_or_default();
+            if active_work_pins > 0 {
                 self.mark_sftp_activity_for_group(&group_id);
                 continue;
             }
-            let Some(last_activity) = self.sftp_last_activity.get(&group_id).copied() else {
-                self.mark_sftp_activity_for_group(&group_id);
-                continue;
-            };
-            if now.duration_since(last_activity) < Self::SFTP_IDLE_TIMEOUT {
+
+            let last_activity = self.sftp_last_activity.get(&group_id).copied();
+            if !should_reclaim_sftp_worker(
+                deep_sleep,
+                active_work_pins,
+                last_activity,
+                now,
+                Self::SFTP_IDLE_TIMEOUT,
+            ) {
+                if last_activity.is_none() {
+                    self.mark_sftp_activity_for_group(&group_id);
+                }
                 continue;
             }
-            if let Some(handle) = self.sftp_handles.remove(&group_id) {
-                handle.close();
-                closed_any = true;
-            }
-            self.sftp_last_activity.remove(&group_id);
+
+            self.release_sftp_handle_for_group(&group_id, false);
+            closed_any = true;
             if let Some(group) = self
                 .tab_groups
                 .iter_mut()
                 .find(|group| group.id == group_id)
                 && let Some(sftp) = group.sftp.as_mut()
             {
-                sftp.status = "sftp idle, reconnecting on next use".to_string();
+                sftp.status = if deep_sleep {
+                    "sftp deep sleep, reconnecting on next use".to_string()
+                } else {
+                    "sftp idle, reconnecting on next use".to_string()
+                };
             }
         }
         closed_any
@@ -743,10 +808,7 @@ impl AxShell {
             selected_count,
             remote_dir
         );
-        let _ = handle.commands.send(crate::sftp::SftpCommand::UploadPaths {
-            locals: paths,
-            remote_dir: remote_dir.clone(),
-        });
+        let _ = handle.upload_paths(paths, remote_dir.clone());
         self.sftp_transfer_tab = crate::app::SftpTransferTab::Active;
         self.local_file_browser.status =
             format!("uploading {selected_count} item(s) to {remote_dir}");
@@ -1104,10 +1166,7 @@ impl AxShell {
             local_dir
         );
         for remote in selected {
-            let _ = handle.commands.send(crate::sftp::SftpCommand::Download {
-                remote,
-                local_dir: local_dir.clone(),
-            });
+            let _ = handle.download(remote, local_dir.clone());
         }
         if let Some(sftp_mut) = self.active_sftp_mut() {
             sftp_mut.selected_entries.clear();
@@ -1133,11 +1192,73 @@ impl AxShell {
             paths.len(),
             remote_dir
         );
-        let _ = handle.commands.send(crate::sftp::SftpCommand::UploadPaths {
-            locals: paths,
-            remote_dir,
-        });
+        let _ = handle.upload_paths(paths, remote_dir);
         self.sftp_transfer_tab = crate::app::SftpTransferTab::Active;
         cx.notify();
+    }
+}
+
+fn should_reclaim_sftp_worker(
+    deep_sleep: bool,
+    active_work_pins: usize,
+    last_activity: Option<std::time::Instant>,
+    now: std::time::Instant,
+    idle_timeout: std::time::Duration,
+) -> bool {
+    if active_work_pins > 0 {
+        return false;
+    }
+    if deep_sleep {
+        return true;
+    }
+    last_activity.is_some_and(|last_activity| now.duration_since(last_activity) >= idle_timeout)
+}
+
+#[cfg(test)]
+mod idle_reclaim_tests {
+    use std::time::{Duration, Instant};
+
+    use super::should_reclaim_sftp_worker;
+
+    #[test]
+    fn deep_sleep_reclaims_only_unpinned_workers() {
+        let now = Instant::now();
+
+        assert!(should_reclaim_sftp_worker(
+            true,
+            0,
+            Some(now),
+            now,
+            Duration::from_secs(300),
+        ));
+        assert!(!should_reclaim_sftp_worker(
+            true,
+            1,
+            Some(now - Duration::from_secs(3600)),
+            now,
+            Duration::from_secs(300),
+        ));
+    }
+
+    #[test]
+    fn background_reclaim_still_requires_idle_timeout() {
+        let now = Instant::now();
+        let timeout = Duration::from_secs(300);
+
+        assert!(!should_reclaim_sftp_worker(
+            false,
+            0,
+            Some(now - Duration::from_secs(299)),
+            now,
+            timeout,
+        ));
+        assert!(should_reclaim_sftp_worker(
+            false,
+            0,
+            Some(now - timeout),
+            now,
+            timeout,
+        ));
+        assert!(!should_reclaim_sftp_worker(false, 0, None, now, timeout));
     }
 }

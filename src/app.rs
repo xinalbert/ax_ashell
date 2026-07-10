@@ -40,8 +40,8 @@ use crate::{
     terminal::{TerminalComposition, TerminalFrozenSelection, TerminalTab},
 };
 use state::{
-    appearance::AppearanceState, monitoring::MonitoringState, runtime::RuntimeState,
-    search::SearchState,
+    appearance::AppearanceState, lifecycle::LifecycleState, monitoring::MonitoringState,
+    runtime::RuntimeState, search::SearchState,
 };
 
 pub(crate) use types::{
@@ -95,6 +95,7 @@ pub(crate) struct AxShell {
     pub(crate) ssh_auth_method: AuthMethod,
     pub(crate) editing_session_id: Option<String>,
     pub(crate) appearance: AppearanceState,
+    pub(crate) lifecycle: LifecycleState,
     pub(crate) tabs: Vec<TerminalTab>,
     pub(crate) active_tab: Option<String>,
     pub(crate) tab_groups: Vec<TabGroup>,
@@ -120,6 +121,8 @@ pub(crate) struct AxShell {
     pub(crate) local_file_browser: LocalFileBrowserState,
     pub(crate) sftp_context_menu: Option<SftpContextMenuState>,
     pub(crate) sftp_creating_folder: bool,
+    pub(crate) sftp_close_remember_choice: bool,
+    pub(crate) sftp_close_confirm_group_id: Option<String>,
     pub(crate) sftp_new_folder_input: Entity<InputState>,
     pub(crate) sftp_delete_scroll_handle: gpui::ScrollHandle,
     pub(crate) show_hidden_files: bool,

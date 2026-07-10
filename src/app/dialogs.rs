@@ -6,6 +6,7 @@ use gpui::{
 use gpui_component::{
     ActiveTheme as _, Disableable as _, IconName, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants as _},
+    checkbox::Checkbox,
     dialog::Dialog,
     h_flex,
     input::Input,
@@ -23,6 +24,7 @@ use crate::{AxShell, session::config::AuthMethod, system::format_bytes};
 mod delete_confirm;
 mod selector;
 mod settings;
+mod sftp_close_confirm;
 mod ssh;
 mod transfers;
 

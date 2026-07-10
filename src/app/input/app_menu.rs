@@ -34,6 +34,11 @@ pub(crate) fn refresh(cx: &mut App) {
 }
 
 fn quit(_: &Quit, cx: &mut App) {
+    for window_handle in cx.windows() {
+        if let Some(window) = window_handle.downcast::<crate::AxShell>() {
+            let _ = window.update(cx, |app, _, _| app.shutdown_all_backends());
+        }
+    }
     cx.quit();
 }
 
