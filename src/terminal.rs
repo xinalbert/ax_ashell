@@ -1100,6 +1100,11 @@ fn normalize_shell_working_directory(value: &str) -> Option<String> {
             Some(index) => &uri_path[index..],
             None => "",
         }
+    } else if let Some(uri_path) = decoded.strip_prefix("kitty-shell-cwd://") {
+        match uri_path.find('/') {
+            Some(index) => &uri_path[index..],
+            None => "",
+        }
     } else {
         decoded.as_str()
     };
@@ -1366,6 +1371,16 @@ mod tests {
             extract_shell_working_directory(b"\x1b]7;file://host/home/test/My%20Project\x07");
 
         assert_eq!(path.as_deref(), Some("/home/test/My Project"));
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn captures_kitty_cwd_uri() {
+        let (path, pending) = extract_shell_working_directory(
+            b"\x1b]7;kitty-shell-cwd://host/home/test/Kitty%20Project\x07",
+        );
+
+        assert_eq!(path.as_deref(), Some("/home/test/Kitty Project"));
         assert!(pending.is_empty());
     }
 

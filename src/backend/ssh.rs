@@ -22,6 +22,9 @@ pub(crate) use legacy::{negotiation_error_details, ssh_client_config};
 use system_probe::sample_remote_system_with_handle;
 use x11::X11ForwardingState;
 
+const BASH_CWD_PROMPT_COMMAND: &str =
+    r#"printf '\033]7;file://%s%s\033\\' "$(hostname 2>/dev/null || printf localhost)" "$PWD""#;
+
 pub fn spawn_ssh_terminal(
     runtime: &tokio::runtime::Handle,
     tab_id: String,
@@ -84,6 +87,7 @@ async fn run_ssh(
         .request_pty(true, "xterm-256color", cols.into(), rows.into(), 0, 0, &[])
         .await
         .context("request pty")?;
+    request_shell_integration_env(&mut channel).await;
     if let Some(x11) = x11.as_ref() {
         match channel
             .request_x11(
@@ -237,6 +241,16 @@ async fn run_ssh(
         reason: exit_reason,
     });
     Ok(())
+}
+
+async fn request_shell_integration_env(channel: &mut Channel<Msg>) {
+    let _ = channel.set_env(false, "TERM_PROGRAM", "AxShell").await;
+    let _ = channel
+        .set_env(false, "AXSHELL_SHELL_INTEGRATION", "1")
+        .await;
+    let _ = channel
+        .set_env(false, "PROMPT_COMMAND", BASH_CWD_PROMPT_COMMAND)
+        .await;
 }
 
 async fn query_remote_working_directory_with_handle(
