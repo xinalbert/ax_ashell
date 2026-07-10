@@ -1,5 +1,15 @@
 # 外部检索记录
 
+## 2026-07-10 终端系统文本导航快捷键
+
+- 时间：2026-07-10 07:54 +0800
+- 检索问题：终端输入是否应按平台习惯支持 `Ctrl+←/→`、macOS `Command+←/→` 和 `Option+←/→`，这些按键应该编码成什么
+- 检索原因：用户明确要求检索；实现路径依赖 macOS 文本导航习惯、Readline 控制序列和 xterm modified cursor 序列的兼容边界
+- 来源列表：Apple Support `Keyboard shortcuts in Terminal on Mac` <https://support.apple.com/guide/terminal/keyboard-shortcuts-trmlshtcts/mac>；Apple Support `Text tool keyboard shortcuts in Motion on Mac` <https://support.apple.com/guide/motion/text-tool-keyboard-shortcuts-motn192e4990/mac>；GNU Bash Manual `Commands For Moving` <https://www.gnu.org/software/bash/manual/html_node/Commands-For-Moving.html>；XTerm Control Sequences <https://invisible-island.net/xterm/ctlseqs/ctlseqs.html>
+- 关键结论：macOS 文本输入习惯中 `Command+←/→` 对应移动到行首/行尾，`Option+←/→` 对应按词移动；Readline 常见序列为 `C-a` / `C-e` 和 `M-b` / `M-f`；Windows/Linux 终端中的 `Ctrl+←/→` 通常走 xterm modified cursor，例如 `CSI 1;5D` / `CSI 1;5C`
+- 对实施计划的影响：在 `src/terminal.rs` 增加平台文本导航别名；macOS 只对 `Command+Arrow` 和 `Option+Arrow` 特判，不全局启用 `option_as_meta`，避免影响 Option 输入字符；现有非 macOS `Ctrl+Arrow` modified cursor 逻辑保留
+- 未解决问题：真实 shell 可能自定义 keybind；GUI 层实际键盘事件仍需要在真实平台手工确认
+
 ## 2026-07-09 VS Code 终端工作目录捕获方法
 
 - 时间：2026-07-09 13:57 +0800

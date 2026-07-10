@@ -1,3 +1,21 @@
+## 2026-07-10 刷新环境记录到终端系统文本导航快捷键
+
+- 触发原因：用户要求终端输入继承各系统文本导航习惯，包括 Windows/Linux `Ctrl+←/→`、macOS `Command+←/→` 和 `Option+←/→`，并明确要求检索
+- 执行内容：复查 `Cargo.toml`、`src/app/actions/terminal.rs`、`src/terminal.rs`、`.github/workflows/ci.yml` 和仓库级 `AGENTS.md`；检索 Apple、GNU Readline 和 xterm 官方资料；确认本轮主改动集中在终端按键编码层，不新增依赖、不调整配置 schema
+- 影响文件：`src/terminal.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/research.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：确认本轮验证命令收敛为 `rustfmt --edition 2024 src/terminal.rs`、聚焦 `cargo test --quiet terminal::tests::`、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking docs validator；GUI 手工按键验证仍需实机确认
+- 对 plan 的更新：允许继续实施“macOS Command/Option 箭头转为 Readline 文本导航序列；Windows/Linux Ctrl 箭头保留 xterm modified cursor”
+
+## 2026-07-10 完成终端系统文本导航快捷键环境验证
+
+- 触发原因：终端平台文本导航映射和测试已实现，需要回写本轮实际验证结果和剩余手工边界
+- 执行内容：在 `src/terminal.rs` 增加 macOS 平台文本导航映射，`Command+←/→` 发送 Readline `C-a/C-e`，`Option+←/→` 发送 Readline `M-b/M-f`；保留 Windows/Linux `Ctrl+←/→` 的 xterm modified cursor 行为；补充按键编码单元测试
+- 影响文件：`src/terminal.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/research.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024 src/terminal.rs` 通过；`cargo test --quiet terminal::tests::` 通过，11 个测试全部通过；`cargo check` 通过；`cargo test --quiet` 通过，50 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过
+- 对 plan 的更新：代码侧实现已完成；真实 macOS / Linux / Windows GUI 按键事件和用户 shell 自定义绑定仍需实机确认
+
 ## 2026-07-09 刷新环境记录到非交互文本可选复制
 
 - 触发原因：用户希望程序中各处文字内容能复制，而不是完全不可选中
