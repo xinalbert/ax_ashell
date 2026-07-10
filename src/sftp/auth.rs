@@ -9,7 +9,10 @@ use russh::{
 use crate::{
     backend::{
         auth::{load_session_private_key, private_keys_with_algs},
-        ssh::{negotiation_error_details, ssh_client_config},
+        ssh::{
+            connection::connect_transport_with_retries, negotiation_error_details,
+            ssh_client_config,
+        },
     },
     session::config::{AuthMethod, Session, SshConnectionMode, ordered_ssh_connection_modes},
 };
@@ -126,7 +129,7 @@ async fn connect_with_mode(
     addr: &str,
     mode: SshConnectionMode,
 ) -> Result<russh::client::Handle<SftpClientHandler>> {
-    let stream = crate::session::config::connect_proxy(session).await?;
+    let stream = connect_transport_with_retries(None, session, addr, mode, None).await?;
     client::connect_stream(Arc::new(ssh_client_config(mode)), stream, SftpClientHandler)
         .await
         .with_context(|| format!("connect {addr} failed in {} mode", mode.label()))

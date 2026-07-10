@@ -14,9 +14,6 @@ use crate::{
 
 use super::{ClientHandler, X11ForwardingState, legacy};
 
-const TRANSPORT_CONNECT_RETRY_DELAYS: [Duration; 2] =
-    [Duration::from_millis(500), Duration::from_millis(1500)];
-
 pub(super) async fn connect_and_authenticate(
     tab_id: &str,
     session: &Session,
@@ -248,7 +245,8 @@ async fn connect_with_mode(
     events: &std::sync::mpsc::Sender<BackendEvent>,
     x11: Option<Arc<X11ForwardingState>>,
 ) -> Result<russh::client::Handle<ClientHandler>> {
-    let stream = connect_transport_with_retries(tab_id, session, addr, mode, events).await?;
+    let stream =
+        connect_transport_with_retries(Some(tab_id), session, addr, mode, Some(events)).await?;
     client::connect_stream(
         Arc::new(legacy::ssh_client_config(mode)),
         stream,
@@ -258,20 +256,27 @@ async fn connect_with_mode(
     .with_context(|| format!("connect {addr} failed in {} mode", mode.label()))
 }
 
-async fn connect_transport_with_retries(
-    tab_id: &str,
+pub(crate) async fn connect_transport_with_retries(
+    tab_id: Option<&str>,
     session: &Session,
     addr: &str,
     mode: SshConnectionMode,
-    events: &std::sync::mpsc::Sender<BackendEvent>,
+    events: Option<&std::sync::mpsc::Sender<BackendEvent>>,
 ) -> Result<Box<dyn ProxyStream>> {
+    let config = crate::session::config::ConfigStore::load()
+        .unwrap_or_else(|_| crate::session::config::ConfigStore::in_memory());
+    let retry_delays = config
+        .ssh_connect_retry_delays_ms()
+        .into_iter()
+        .map(Duration::from_millis)
+        .collect::<Vec<_>>();
     let mut attempt = 0usize;
 
     loop {
         match crate::session::config::connect_proxy(session).await {
             Ok(stream) => return Ok(stream),
             Err(err) => {
-                let Some(delay) = TRANSPORT_CONNECT_RETRY_DELAYS.get(attempt).copied() else {
+                let Some(delay) = retry_delays.get(attempt).copied() else {
                     return Err(err);
                 };
                 if !is_retryable_transport_error(&err) {
@@ -287,13 +292,15 @@ async fn connect_transport_with_retries(
                     err,
                     delay
                 );
-                let _ = events.send(BackendEvent::Status {
-                    tab_id: tab_id.to_string(),
-                    text: format!(
-                        "tcp connection to {addr} failed ({err}); retrying in {:.1}s",
-                        delay.as_secs_f32()
-                    ),
-                });
+                if let (Some(tab_id), Some(events)) = (tab_id, events) {
+                    let _ = events.send(BackendEvent::Status {
+                        tab_id: tab_id.to_string(),
+                        text: format!(
+                            "tcp connection to {addr} failed ({err}); retrying in {:.1}s",
+                            delay.as_secs_f32()
+                        ),
+                    });
+                }
                 sleep(delay).await;
             }
         }

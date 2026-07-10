@@ -12,7 +12,7 @@ use crate::{
     terminal::{BackendCommand, BackendEvent, BackendTx},
 };
 
-mod connection;
+pub(crate) mod connection;
 mod legacy;
 mod system_probe;
 mod x11;

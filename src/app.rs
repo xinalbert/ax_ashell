@@ -73,6 +73,8 @@ pub(crate) struct AxShell {
     pub(crate) global_proxy_port_input: Entity<InputState>,
     pub(crate) global_proxy_user_input: Entity<InputState>,
     pub(crate) global_proxy_password_input: Entity<InputState>,
+    pub(crate) ssh_retry_count_input: Entity<InputState>,
+    pub(crate) ssh_retry_delays_input: Entity<InputState>,
     pub(crate) xquartz_app_path_input: Entity<InputState>,
     pub(crate) sync_endpoint_input: Entity<InputState>,
     pub(crate) sync_username_input: Entity<InputState>,

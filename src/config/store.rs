@@ -44,6 +44,10 @@ pub struct ConfigFile {
     pub right_click_copy_paste: bool,
     #[serde(default)]
     pub keyword_highlight: bool,
+    #[serde(default = "default_ssh_connect_retry_count")]
+    pub ssh_connect_retry_count: u32,
+    #[serde(default = "default_ssh_connect_retry_delays_ms")]
+    pub ssh_connect_retry_delays_ms: Vec<u64>,
     #[serde(default = "default_ui_font_family")]
     pub ui_font_family: String,
     #[serde(default = "default_terminal_font_family")]
@@ -120,6 +124,14 @@ pub struct ConfigFile {
 
 fn default_read_env_proxy() -> bool {
     true
+}
+
+fn default_ssh_connect_retry_count() -> u32 {
+    2
+}
+
+fn default_ssh_connect_retry_delays_ms() -> Vec<u64> {
+    vec![500, 1500]
 }
 
 fn default_global_proxy_type() -> String {
@@ -384,6 +396,8 @@ impl Default for ConfigFile {
             custom_theme: CustomThemeConfig::default(),
             right_click_copy_paste: false,
             keyword_highlight: false,
+            ssh_connect_retry_count: default_ssh_connect_retry_count(),
+            ssh_connect_retry_delays_ms: default_ssh_connect_retry_delays_ms(),
             ui_font_family: default_ui_font_family(),
             terminal_font_family: default_terminal_font_family(),
             title_bar_style: TitleBarStyle::default(),
@@ -496,6 +510,12 @@ impl ConfigStore {
         } else if cache.monitoring_position != "Bottom" && cache.monitoring_position != "Sidebar" {
             cache.monitoring_position = default_monitoring_position();
         }
+        cache.ssh_connect_retry_count =
+            normalize_ssh_connect_retry_count(cache.ssh_connect_retry_count);
+        cache.ssh_connect_retry_delays_ms = normalize_ssh_connect_retry_delays_ms(
+            std::mem::take(&mut cache.ssh_connect_retry_delays_ms),
+            cache.ssh_connect_retry_count,
+        );
         Ok(Self { path, cache })
     }
 
@@ -998,6 +1018,29 @@ impl ConfigStore {
         self.cache.keyword_highlight = val;
     }
 
+    pub fn ssh_connect_retry_count(&self) -> u32 {
+        normalize_ssh_connect_retry_count(self.cache.ssh_connect_retry_count)
+    }
+
+    pub fn set_ssh_connect_retry_count(&mut self, val: u32) {
+        self.cache.ssh_connect_retry_count = normalize_ssh_connect_retry_count(val);
+        let delays = std::mem::take(&mut self.cache.ssh_connect_retry_delays_ms);
+        self.cache.ssh_connect_retry_delays_ms =
+            normalize_ssh_connect_retry_delays_ms(delays, self.cache.ssh_connect_retry_count);
+    }
+
+    pub fn ssh_connect_retry_delays_ms(&self) -> Vec<u64> {
+        normalize_ssh_connect_retry_delays_ms(
+            self.cache.ssh_connect_retry_delays_ms.clone(),
+            self.ssh_connect_retry_count(),
+        )
+    }
+
+    pub fn set_ssh_connect_retry_delays_ms(&mut self, delays: Vec<u64>) {
+        self.cache.ssh_connect_retry_delays_ms =
+            normalize_ssh_connect_retry_delays_ms(delays, self.ssh_connect_retry_count());
+    }
+
     pub fn terminal_font_family(&self) -> &str {
         if self.cache.terminal_font_family.is_empty() {
             "Maple Mono NF CN"
@@ -1382,6 +1425,34 @@ pub fn active_proxy(session: &Session) -> Option<(String, String, Option<u16>)> 
     }
 }
 
+fn normalize_ssh_connect_retry_count(value: u32) -> u32 {
+    value.min(10)
+}
+
+fn normalize_ssh_connect_retry_delays_ms(mut delays: Vec<u64>, count: u32) -> Vec<u64> {
+    let target_len = count as usize;
+    if target_len == 0 {
+        return Vec::new();
+    }
+
+    delays.retain(|delay| *delay > 0);
+    if delays.is_empty() {
+        delays = default_ssh_connect_retry_delays_ms();
+    }
+
+    let mut normalized = Vec::with_capacity(target_len);
+    for index in 0..target_len {
+        let delay = delays
+            .get(index)
+            .copied()
+            .or_else(|| delays.last().copied())
+            .unwrap_or(500)
+            .clamp(100, 60_000);
+        normalized.push(delay);
+    }
+    normalized
+}
+
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::{
@@ -1414,6 +1485,36 @@ mod tests {
                 "-clipboard".to_string(),
                 "-ac".to_string(),
             ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod retry_settings_tests {
+    use super::{
+        default_ssh_connect_retry_delays_ms, normalize_ssh_connect_retry_count,
+        normalize_ssh_connect_retry_delays_ms,
+    };
+
+    #[test]
+    fn retry_count_is_clamped() {
+        assert_eq!(normalize_ssh_connect_retry_count(2), 2);
+        assert_eq!(normalize_ssh_connect_retry_count(99), 10);
+    }
+
+    #[test]
+    fn retry_delays_fill_from_last_value() {
+        assert_eq!(
+            normalize_ssh_connect_retry_delays_ms(vec![250, 750], 4),
+            vec![250, 750, 750, 750]
+        );
+    }
+
+    #[test]
+    fn retry_delays_fall_back_to_defaults_when_empty() {
+        assert_eq!(
+            normalize_ssh_connect_retry_delays_ms(vec![], 2),
+            default_ssh_connect_retry_delays_ms()
         );
     }
 }

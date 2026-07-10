@@ -99,6 +99,23 @@ impl AxShell {
                 .masked(true)
                 .default_value(config.global_proxy_password())
         });
+        let ssh_retry_count_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("2")
+                .default_value(config.ssh_connect_retry_count().to_string())
+        });
+        let ssh_retry_delays_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("500, 1500")
+                .default_value(
+                    config
+                        .ssh_connect_retry_delays_ms()
+                        .into_iter()
+                        .map(|delay| delay.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                )
+        });
         let xquartz_app_path_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(crate::session::config::default_local_x_server_app_path())
@@ -221,6 +238,8 @@ impl AxShell {
             cx.subscribe_in(&proxy_port_input, window, Self::on_input_event),
             cx.subscribe_in(&proxy_user_input, window, Self::on_input_event),
             cx.subscribe_in(&proxy_password_input, window, Self::on_input_event),
+            cx.subscribe_in(&ssh_retry_count_input, window, Self::on_input_event),
+            cx.subscribe_in(&ssh_retry_delays_input, window, Self::on_input_event),
             cx.subscribe_in(&xquartz_app_path_input, window, Self::on_input_event),
             cx.subscribe_in(&sftp_path_input, window, Self::on_input_event),
             cx.subscribe_in(&local_sftp_path_input, window, Self::on_input_event),
@@ -331,6 +350,8 @@ impl AxShell {
             global_proxy_port_input,
             global_proxy_user_input,
             global_proxy_password_input,
+            ssh_retry_count_input,
+            ssh_retry_delays_input,
             xquartz_app_path_input,
             sync_endpoint_input,
             sync_username_input,
