@@ -17,6 +17,7 @@ use crate::{
 };
 
 const LOCAL_CHILD_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+const LOCAL_TERM: &str = "xterm-256color";
 
 struct LocalBackendThreads {
     reader: thread::JoinHandle<()>,
@@ -88,28 +89,7 @@ pub fn spawn_local_terminal(
         }
     });
 
-    let mut cmd = CommandBuilder::new(&shell);
-    cmd.env(
-        "TERM",
-        std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into()),
-    );
-    cmd.env(
-        "COLORTERM",
-        std::env::var("COLORTERM").unwrap_or_else(|_| "truecolor".into()),
-    );
-    cmd.env("TERM_PROGRAM", "AxShell");
-    if let Ok(path) = std::env::var("PATH") {
-        cmd.env("PATH", path);
-    }
-    if let Ok(lang) = std::env::var("LANG") {
-        cmd.env("LANG", lang);
-    } else {
-        cmd.env("LANG", "en_US.UTF-8");
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        cmd.env("HOME", home);
-    }
-    cmd.env("SHELL", shell);
+    let cmd = local_shell_command(&shell);
     let mut child = pair.slave.spawn_command(cmd).context("spawn local shell")?;
     let child_killer = child.clone_killer();
     drop(pair.slave);
@@ -217,4 +197,41 @@ pub fn spawn_local_terminal(
             shutdown_requested,
         }),
     })
+}
+
+fn local_shell_command(shell: &str) -> CommandBuilder {
+    let mut cmd = CommandBuilder::new(shell);
+    cmd.env("TERM", LOCAL_TERM);
+    cmd.env(
+        "COLORTERM",
+        std::env::var("COLORTERM").unwrap_or_else(|_| "truecolor".into()),
+    );
+    cmd.env("TERM_PROGRAM", "AxShell");
+    if let Ok(path) = std::env::var("PATH") {
+        cmd.env("PATH", path);
+    }
+    if let Ok(lang) = std::env::var("LANG") {
+        cmd.env("LANG", lang);
+    } else {
+        cmd.env("LANG", "en_US.UTF-8");
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        cmd.env("HOME", home);
+    }
+    cmd.env("SHELL", shell);
+    cmd
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsStr;
+
+    use super::{LOCAL_TERM, local_shell_command};
+
+    #[test]
+    fn local_shell_declares_the_supported_terminal_type() {
+        let command = local_shell_command("test-shell");
+
+        assert_eq!(command.get_env("TERM"), Some(OsStr::new(LOCAL_TERM)));
+    }
 }

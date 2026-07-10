@@ -605,3 +605,106 @@ fn hash_ansi_color<H: Hasher>(color: AnsiColor, state: &mut H) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, mpsc};
+
+    use alacritty_terminal::term::TermMode;
+
+    use crate::{
+        events::backend_event_channel,
+        terminal::{BackendShutdown, BackendTx},
+    };
+
+    use super::TerminalTab;
+
+    struct NoopShutdown;
+
+    impl BackendShutdown for NoopShutdown {
+        fn shutdown(&self) {}
+    }
+
+    #[test]
+    fn csi_2k_erases_the_entire_current_line() {
+        let mut tab = test_tab(8, 4);
+        tab.feed(b"abcdef");
+
+        tab.feed(b"\r\x1b[2K");
+
+        assert_eq!(row_text(&tab, 0), "        ");
+    }
+
+    #[test]
+    fn csi_2j_erases_the_visible_display() {
+        let mut tab = test_tab(8, 4);
+        tab.feed(b"\x1b[1;1Hfirst\x1b[2;1Hsecond");
+
+        tab.feed(b"\x1b[2J");
+
+        for row in 0..4 {
+            assert_eq!(row_text(&tab, row), "        ");
+        }
+    }
+
+    #[test]
+    fn decstbm_scrolls_only_inside_the_configured_region() {
+        let mut tab = test_tab(8, 5);
+        tab.feed(b"\x1b[1;1H1111\x1b[2;1H2222\x1b[3;1H3333\x1b[4;1H4444\x1b[5;1H5555");
+
+        tab.feed(b"\x1b[2;4r\x1b[4;1H\n");
+
+        assert_eq!(row_text(&tab, 0), "1111    ");
+        assert_eq!(row_text(&tab, 1), "3333    ");
+        assert_eq!(row_text(&tab, 2), "4444    ");
+        assert_eq!(row_text(&tab, 3), "        ");
+        assert_eq!(row_text(&tab, 4), "5555    ");
+    }
+
+    #[test]
+    fn alternate_screen_restores_the_primary_buffer() {
+        let mut tab = test_tab(12, 4);
+        tab.feed(b"primary");
+
+        tab.feed(b"\x1b[?1049h\x1b[1;1H");
+        assert!(tab.term.mode().contains(TermMode::ALT_SCREEN));
+        tab.feed(b"alternate");
+        assert_eq!(row_text(&tab, 0), "alternate   ");
+
+        tab.feed(b"\x1b[?1049l");
+
+        assert!(!tab.term.mode().contains(TermMode::ALT_SCREEN));
+        assert_eq!(row_text(&tab, 0), "primary     ");
+    }
+
+    fn test_tab(cols: u16, rows: u16) -> TerminalTab {
+        let (commands, _commands_rx) = mpsc::channel();
+        let backend = BackendTx::Local {
+            commands,
+            shutdown: Arc::new(NoopShutdown),
+        };
+        let (events, _events_rx) = backend_event_channel();
+        let mut tab = TerminalTab::new_local(
+            "test-tab".to_string(),
+            "test terminal".to_string(),
+            backend,
+            events,
+        );
+        tab.resize(cols, rows);
+        tab
+    }
+
+    fn row_text(tab: &TerminalTab, row: i32) -> String {
+        let snapshot = tab.render_snapshot();
+        (0..snapshot.cols as i32)
+            .map(|col| {
+                snapshot
+                    .cells
+                    .iter()
+                    .find(|cell| cell.row == row && cell.col == col)
+                    .map(|cell| cell.cell.c)
+                    .unwrap_or(' ')
+            })
+            .collect()
+    }
+}
