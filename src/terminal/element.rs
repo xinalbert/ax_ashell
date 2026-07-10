@@ -887,6 +887,7 @@ impl Element for TerminalElement {
             prepaint.bounds.origin.x,
             prepaint.bounds.origin.y + y_offset,
         );
+        window.paint_quad(fill(prepaint.bounds, cx.theme().background));
 
         for rect in &prepaint.rects {
             rect.paint(draw_origin, prepaint.metrics, window);
