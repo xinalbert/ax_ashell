@@ -1,3 +1,21 @@
+## 2026-07-11 Windows Ctrl 点击跳转修复预检
+
+- 触发原因：用户反馈 Windows 下终端 URL/SFTP Ctrl+点击跳转不工作，实际按 Windows 键才触发。
+- 执行内容：复查 `Cargo.toml`、`.github/workflows/ci.yml`、`src/app/actions/terminal.rs`、`src/app/actions/session.rs`、`src/app/terminal.rs` 和 `src/terminal/highlight.rs`；确认项目环境不变，问题范围是 GPUI mouse modifier 判定误用 `platform`。
+- 影响文件：`src/app/actions/terminal.rs`，`src/app/actions/session.rs`，`src/app/terminal.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：确认本轮不新增依赖、不修改 `Cargo.toml` / `Cargo.lock`、不需要联网、不使用多 agent；验证命令收敛为 Rust 格式化、相关单元测试、`cargo check`、`git diff --check` 和 tracking docs validator。
+- 对 plan 的更新：无
+
+## 2026-07-11 完成 Windows Ctrl 点击跳转环境验证
+
+- 触发原因：终端 URL/SFTP 点击跳转修饰键修复和本机验证已完成，需要回写环境记录。
+- 执行内容：在 `src/app/terminal.rs` 增加平台可测的 Command/Ctrl 链接激活 helper；替换 `src/app/actions/terminal.rs` 和 `src/app/actions/session.rs` 中终端 hover、点击打开和缩放滚轮的错误 `platform` 判定；补充单元测试并刷新当前环境记录。
+- 影响文件：`src/app.rs`，`src/app/actions/terminal.rs`，`src/app/actions/session.rs`，`src/app/terminal.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`
+- 计划状态变更：无
+- 验证结果：`rustfmt --edition 2024 src/app.rs src/app/actions/terminal.rs src/app/actions/session.rs src/app/terminal.rs` 通过；`cargo test --quiet app::terminal::tests::terminal_link_activation -- --nocapture` 通过，2 个测试全部通过；`cargo check` 通过；`cargo test --quiet` 通过，94 个测试全部通过；`git diff --check` 通过；tracking docs validator 通过；真实 Windows GUI 点击仍需手工确认。
+- 对 plan 的更新：无
+
 ## 2026-07-10 刷新环境记录到终端系统文本导航快捷键
 
 - 触发原因：用户要求终端输入继承各系统文本导航习惯，包括 Windows/Linux `Ctrl+←/→`、macOS `Command+←/→` 和 `Option+←/→`，并明确要求检索
@@ -1448,6 +1466,22 @@
 - 受影响文件：`src/diagnostics.rs`，`src/config/store.rs`，相关 app 保存调用点，`src/backend/ssh.rs`，`src/backend/ssh/`，`src/sftp/`，跟踪文档
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo 和现有 tracing 依赖；无需联网、多 agent 或外部服务即可完成静态与单元测试。
 - 验证结果：全部变更 Rust 文件格式化通过；阶段 `cargo check` 和 `git diff --check` 通过；未修改 `Cargo.toml` / `Cargo.lock`。
+
+## 2026-07-11 刷新环境记录到快捷键设置完整化
+
+- 日期：2026-07-11 10:07 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮将 Settings 未覆盖但实际生效的应用级快捷键接入现有 keybinding 配置和录制路径。
+- 受影响文件：`src/app/input/keybinding_recorder.rs`，`src/app/actions/terminal.rs`，`src/app/views/layout.rs`，`src/main.rs`，`src/app/dialogs/settings/keybindings.rs`，`locales/`，`docs/features/workspace*.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；验证命令为相关 `rustfmt --edition 2024`、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking docs validator。
+- 验证结果：本机工具链满足仓库约束；现有 GPUI action/keybinding、settings 录制和 config `key_bindings` 足以完成实施，无需新增依赖、联网或多 agent。工作树中既有 Windows Ctrl 点击改动将原样保留。
+
+## 2026-07-11 完成快捷键设置完整化环境验证
+
+- 日期：2026-07-11 10:22 +0800
+- 变化摘要：实际生效的 workspace 与 terminal-focus 应用级快捷键已接入 Settings `Key Bindings`；运行时、依赖、配置 schema、manifest/lock 和 CI 配置保持不变。
+- 受影响文件：`src/app/input/keybinding_recorder.rs`，`src/app/actions/terminal.rs`，`src/main.rs`，`locales/`，`docs/features/workspace*.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：相关 `rustfmt` 通过；`cargo check` 通过；`cargo test --quiet` 94 项全部通过；`git diff --check` 和 tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning，真实 GUI 快捷键录制与触发仍需手工确认。
 
 ## 2026-07-11 完成全应用日志覆盖环境验证
 
