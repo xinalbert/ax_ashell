@@ -9,6 +9,7 @@ use gpui::{
 
 use crate::{
     AxShell, TerminalBacktabKey, TerminalTabKey,
+    app::terminal_link_activation_modifier_pressed,
     terminal::{BackendCommand, TerminalComposition, TerminalFrozenSelection, encode_key},
 };
 
@@ -23,7 +24,8 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.cmd_ctrl_pressed = event.keystroke.modifiers.platform;
+        self.cmd_ctrl_pressed =
+            terminal_link_activation_modifier_pressed(&event.keystroke.modifiers);
         // If the search input is focused, skip terminal key processing
         // so the input can handle text entry, paste, etc. normally.
         if self
@@ -483,7 +485,7 @@ impl AxShell {
 
         // Track URL hover
         let mut hovered_url = None;
-        let cmd_ctrl_pressed = event.modifiers.platform;
+        let cmd_ctrl_pressed = terminal_link_activation_modifier_pressed(&event.modifiers);
         if let Some((row, col, _side)) = self.terminal_grid_point_and_side(event.position) {
             if let Some(snapshot) = self.active_snapshot() {
                 if let Some(active_id) = &self.active_tab {
@@ -635,8 +637,8 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Platform modifier (Cmd on macOS, Ctrl on Windows/Linux) + scroll → zoom terminal font size
-        if event.modifiers.platform {
+        // Cmd on macOS, Ctrl on Windows/Linux + scroll → zoom terminal font size.
+        if event.modifiers.secondary() {
             let delta = match event.delta {
                 ScrollDelta::Lines(point) => point.y as f32 * 20.0,
                 ScrollDelta::Pixels(point) => point.y.as_f32(),

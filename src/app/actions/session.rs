@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use crate::{
     AxShell, PaneLayout, TabGroup,
-    app::WorkspacePage,
     app::constants::{DEFAULT_COLS, DEFAULT_ROWS},
+    app::{WorkspacePage, terminal_link_activation_modifier_pressed},
     backend::{local, ssh},
     session::{AuthMethod, Session},
     terminal::{BackendCommand, RenderSnapshot, TabKind, TerminalTab},
@@ -1026,7 +1026,7 @@ impl AxShell {
             }
         }
         if event.button == MouseButton::Left {
-            if event.modifiers.platform {
+            if terminal_link_activation_modifier_pressed(&event.modifiers) {
                 if let Some((row, col, _side)) = self.terminal_grid_point_and_side(event.position) {
                     if let Some(snapshot) = self.active_snapshot() {
                         if let Some((target, _)) =

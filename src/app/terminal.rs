@@ -3,7 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use gpui::{Pixels, Point, Size, point, px, size};
+use gpui::{Modifiers, Pixels, Point, Size, point, px, size};
 use gpui_component::scroll::ScrollbarHandle;
 
 use crate::terminal;
@@ -27,6 +27,39 @@ impl TerminalFontMetrics {
             cell_width: (font_size * 0.646).max(6.0),
             line_height: (font_size * 1.385).max(font_size + 2.0),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TerminalLinkActivationPlatform {
+    MacOs,
+    Other,
+}
+
+impl TerminalLinkActivationPlatform {
+    fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::MacOs
+        } else {
+            Self::Other
+        }
+    }
+}
+
+pub(crate) fn terminal_link_activation_modifier_pressed(modifiers: &Modifiers) -> bool {
+    terminal_link_activation_modifier_pressed_for_platform(
+        modifiers,
+        TerminalLinkActivationPlatform::current(),
+    )
+}
+
+fn terminal_link_activation_modifier_pressed_for_platform(
+    modifiers: &Modifiers,
+    platform: TerminalLinkActivationPlatform,
+) -> bool {
+    match platform {
+        TerminalLinkActivationPlatform::MacOs => modifiers.platform,
+        TerminalLinkActivationPlatform::Other => modifiers.control,
     }
 }
 
@@ -95,4 +128,49 @@ pub(crate) struct HoveredUrl {
     pub(crate) target: HoverTargetKind,
     pub(crate) tab_id: String,
     pub(crate) cells: Vec<(usize, usize)>,
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::Modifiers;
+
+    use super::{
+        TerminalLinkActivationPlatform, terminal_link_activation_modifier_pressed_for_platform,
+    };
+
+    #[test]
+    fn terminal_link_activation_uses_command_on_macos() {
+        assert!(terminal_link_activation_modifier_pressed_for_platform(
+            &Modifiers {
+                platform: true,
+                ..Modifiers::default()
+            },
+            TerminalLinkActivationPlatform::MacOs,
+        ));
+        assert!(!terminal_link_activation_modifier_pressed_for_platform(
+            &Modifiers {
+                control: true,
+                ..Modifiers::default()
+            },
+            TerminalLinkActivationPlatform::MacOs,
+        ));
+    }
+
+    #[test]
+    fn terminal_link_activation_uses_control_off_macos() {
+        assert!(terminal_link_activation_modifier_pressed_for_platform(
+            &Modifiers {
+                control: true,
+                ..Modifiers::default()
+            },
+            TerminalLinkActivationPlatform::Other,
+        ));
+        assert!(!terminal_link_activation_modifier_pressed_for_platform(
+            &Modifiers {
+                platform: true,
+                ..Modifiers::default()
+            },
+            TerminalLinkActivationPlatform::Other,
+        ));
+    }
 }
