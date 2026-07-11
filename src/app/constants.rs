@@ -16,7 +16,24 @@ pub(crate) const REPOSITORY_URL: &str = "https://github.com/xinalbert/axshell";
 pub(crate) const ISSUES_URL: &str = "https://github.com/xinalbert/axshell/issues";
 
 pub(crate) fn public_version_label() -> String {
-    format_public_version(env!("CARGO_PKG_VERSION"))
+    public_version_label_from_metadata(
+        option_env!("AXSHELL_PUBLIC_VERSION"),
+        env!("CARGO_PKG_VERSION"),
+    )
+}
+
+fn public_version_label_from_metadata(
+    injected_public_version: Option<&str>,
+    cargo_version: &str,
+) -> String {
+    if let Some(version) = injected_public_version
+        .map(str::trim)
+        .filter(|version| !version.is_empty())
+    {
+        return version.to_string();
+    }
+
+    format_public_version(cargo_version)
 }
 
 fn format_public_version(version: &str) -> String {
@@ -46,4 +63,36 @@ fn format_public_version(version: &str) -> String {
         public.push_str(suffix);
     }
     public
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn injected_release_public_version_takes_precedence() {
+        let label = public_version_label_from_metadata(Some(" 2026.07.11.1 "), "2026.7.6");
+
+        assert_eq!(label, "2026.07.11.1");
+    }
+
+    #[test]
+    fn empty_injected_version_falls_back_to_cargo_version() {
+        let label = public_version_label_from_metadata(Some(" "), "2026.7.6-2");
+
+        assert_eq!(label, "2026.07.06.2");
+    }
+
+    #[test]
+    fn cargo_date_version_is_formatted_for_public_display() {
+        assert_eq!(format_public_version("2026.7.6"), "2026.07.06");
+        assert_eq!(format_public_version("2026.7.6-1"), "2026.07.06.1");
+    }
+
+    #[test]
+    fn public_version_label_reads_injected_build_metadata() {
+        if let Some(version) = option_env!("AXSHELL_PUBLIC_VERSION") {
+            assert_eq!(public_version_label(), version.trim());
+        }
+    }
 }
