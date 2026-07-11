@@ -34,7 +34,20 @@ Open terminal search with `Cmd/Ctrl + F`. Search covers the terminal buffer, hig
 | Split pane | `Cmd + Shift + H/J/K/L` | `Ctrl + Shift + H/J/K/L` |
 | Close pane | `Cmd + W` | `Ctrl + W` |
 
-Copy and paste use `Cmd + C/V` on macOS and `Ctrl + Shift + C/V` on Linux and Windows. All workspace bindings can be changed in **Key Bindings** settings.
+Copy and paste use `Cmd + C/V` on macOS and `Ctrl + Shift + C/V` on Linux and Windows.
+
+When the terminal itself has focus, these additional bindings are available:
+
+| Action | Default |
+| --- | --- |
+| Send Tab / Backtab to shell | `Tab` / `Shift + Tab` |
+| Open session selector from terminal | `Cmd/Ctrl + Shift + O` |
+| Copy / paste in terminal on Linux and Windows | `Ctrl + C/V` |
+| Focus pane from terminal | `Alt + H/J/K/L` |
+| Split pane from terminal | `Alt + Shift + H/J/K/L` |
+| Close terminal tab | `Alt + Q` |
+
+All workspace and terminal-focus bindings can be changed in **Key Bindings** settings.
 
 <!-- Screenshot target: ../images/features/workspace-tabs-panes.png -->
 <!-- Screenshot target: ../images/features/workspace-keybindings.png -->

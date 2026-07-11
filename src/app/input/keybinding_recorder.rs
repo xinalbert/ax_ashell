@@ -40,130 +40,288 @@ gpui::actions!(
 pub struct KeybindingsPage;
 
 #[derive(Clone, Copy)]
-pub(crate) struct WorkspaceAction {
-    id: &'static str,
-    label_key: &'static str,
-    default_suffix: &'static str,
+enum DefaultKeystroke {
+    Secondary(&'static str),
+    Literal(&'static str),
+    Platform {
+        macos: Option<&'static str>,
+        other: Option<&'static str>,
+    },
 }
 
-pub(crate) const WORKSPACE_ACTIONS: &[WorkspaceAction] = &[
-    WorkspaceAction {
+#[derive(Clone, Copy)]
+pub(crate) struct KeybindingAction {
+    id: &'static str,
+    label_key: &'static str,
+    default: DefaultKeystroke,
+}
+
+pub(crate) const CONFIGURABLE_ACTIONS: &[KeybindingAction] = &[
+    KeybindingAction {
         id: "OpenSettings",
         label_key: "settings_open_settings",
-        default_suffix: ",",
+        default: DefaultKeystroke::Secondary(","),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "OpenSession",
         label_key: "settings_open_session",
-        default_suffix: "o",
+        default: DefaultKeystroke::Secondary("o"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "OpenTransfers",
         label_key: "settings_open_transfers",
-        default_suffix: "t",
+        default: DefaultKeystroke::Secondary("t"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "NewSsh",
         label_key: "settings_new_ssh",
-        default_suffix: "n",
+        default: DefaultKeystroke::Secondary("n"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "OpenSearch",
         label_key: "settings_open_search",
-        default_suffix: "f",
+        default: DefaultKeystroke::Secondary("f"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "PrevTab",
         label_key: "settings_prev_tab",
-        default_suffix: if cfg!(target_os = "macos") {
-            "shift-["
-        } else {
-            "shift-tab"
+        default: DefaultKeystroke::Platform {
+            macos: Some("cmd-shift-["),
+            other: Some("ctrl-shift-tab"),
         },
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "NextTab",
         label_key: "settings_next_tab",
-        default_suffix: if cfg!(target_os = "macos") {
-            "shift-]"
-        } else {
-            "tab"
+        default: DefaultKeystroke::Platform {
+            macos: Some("cmd-shift-]"),
+            other: Some("ctrl-tab"),
         },
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "ToggleSidebar",
         label_key: "settings_toggle_sidebar",
-        default_suffix: "s",
+        default: DefaultKeystroke::Secondary("s"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "ToggleSftpZoom",
         label_key: "settings_toggle_sftp_zoom",
-        default_suffix: "m",
+        default: DefaultKeystroke::Secondary("m"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "FocusPaneLeft",
         label_key: "settings_focus_pane_left",
-        default_suffix: "h",
+        default: DefaultKeystroke::Secondary("h"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "FocusPaneRight",
         label_key: "settings_focus_pane_right",
-        default_suffix: "l",
+        default: DefaultKeystroke::Secondary("l"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "FocusPaneUp",
         label_key: "settings_focus_pane_up",
-        default_suffix: "k",
+        default: DefaultKeystroke::Secondary("k"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "FocusPaneDown",
         label_key: "settings_focus_pane_down",
-        default_suffix: "j",
+        default: DefaultKeystroke::Secondary("j"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "SplitPaneLeft",
         label_key: "settings_split_pane_left",
-        default_suffix: "shift-h",
+        default: DefaultKeystroke::Secondary("shift-h"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "SplitPaneRight",
         label_key: "settings_split_pane_right",
-        default_suffix: "shift-l",
+        default: DefaultKeystroke::Secondary("shift-l"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "SplitPaneUp",
         label_key: "settings_split_pane_up",
-        default_suffix: "shift-k",
+        default: DefaultKeystroke::Secondary("shift-k"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "SplitPaneDown",
         label_key: "settings_split_pane_down",
-        default_suffix: "shift-j",
+        default: DefaultKeystroke::Secondary("shift-j"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "ClosePane",
         label_key: "settings_close_pane",
-        default_suffix: "w",
+        default: DefaultKeystroke::Secondary("w"),
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "Copy",
         label_key: "settings_copy",
-        default_suffix: if cfg!(target_os = "macos") {
-            "c"
-        } else {
-            "shift-c"
+        default: DefaultKeystroke::Platform {
+            macos: Some("cmd-c"),
+            other: Some("ctrl-shift-c"),
         },
     },
-    WorkspaceAction {
+    KeybindingAction {
         id: "Paste",
         label_key: "settings_paste",
-        default_suffix: if cfg!(target_os = "macos") {
-            "v"
-        } else {
-            "shift-v"
+        default: DefaultKeystroke::Platform {
+            macos: Some("cmd-v"),
+            other: Some("ctrl-shift-v"),
         },
     },
+    KeybindingAction {
+        id: "TerminalSendTab",
+        label_key: "settings_terminal_send_tab",
+        default: DefaultKeystroke::Literal("tab"),
+    },
+    KeybindingAction {
+        id: "TerminalSendBacktab",
+        label_key: "settings_terminal_send_backtab",
+        default: DefaultKeystroke::Literal("shift-tab"),
+    },
+    KeybindingAction {
+        id: "TerminalOpenSession",
+        label_key: "settings_terminal_open_session",
+        default: DefaultKeystroke::Secondary("shift-o"),
+    },
+    KeybindingAction {
+        id: "TerminalCopySelection",
+        label_key: "settings_terminal_copy_selection",
+        default: DefaultKeystroke::Platform {
+            macos: None,
+            other: Some("ctrl-c"),
+        },
+    },
+    KeybindingAction {
+        id: "TerminalPasteClipboard",
+        label_key: "settings_terminal_paste_clipboard",
+        default: DefaultKeystroke::Platform {
+            macos: None,
+            other: Some("ctrl-v"),
+        },
+    },
+    KeybindingAction {
+        id: "TerminalFocusPaneLeft",
+        label_key: "settings_terminal_focus_pane_left",
+        default: DefaultKeystroke::Literal("alt-h"),
+    },
+    KeybindingAction {
+        id: "TerminalFocusPaneRight",
+        label_key: "settings_terminal_focus_pane_right",
+        default: DefaultKeystroke::Literal("alt-l"),
+    },
+    KeybindingAction {
+        id: "TerminalFocusPaneUp",
+        label_key: "settings_terminal_focus_pane_up",
+        default: DefaultKeystroke::Literal("alt-k"),
+    },
+    KeybindingAction {
+        id: "TerminalFocusPaneDown",
+        label_key: "settings_terminal_focus_pane_down",
+        default: DefaultKeystroke::Literal("alt-j"),
+    },
+    KeybindingAction {
+        id: "TerminalSplitPaneLeft",
+        label_key: "settings_terminal_split_pane_left",
+        default: DefaultKeystroke::Literal("alt-shift-h"),
+    },
+    KeybindingAction {
+        id: "TerminalSplitPaneRight",
+        label_key: "settings_terminal_split_pane_right",
+        default: DefaultKeystroke::Literal("alt-shift-l"),
+    },
+    KeybindingAction {
+        id: "TerminalSplitPaneUp",
+        label_key: "settings_terminal_split_pane_up",
+        default: DefaultKeystroke::Literal("alt-shift-k"),
+    },
+    KeybindingAction {
+        id: "TerminalSplitPaneDown",
+        label_key: "settings_terminal_split_pane_down",
+        default: DefaultKeystroke::Literal("alt-shift-j"),
+    },
+    KeybindingAction {
+        id: "TerminalCloseTab",
+        label_key: "settings_terminal_close_tab",
+        default: DefaultKeystroke::Literal("alt-q"),
+    },
 ];
+
+const KEYBINDING_GROUPS: &[(&str, &[&str])] = &[
+    (
+        "settings_group_keybind_general",
+        &[
+            "OpenSettings",
+            "OpenSession",
+            "OpenTransfers",
+            "NewSsh",
+            "OpenSearch",
+            "PrevTab",
+            "NextTab",
+            "Copy",
+            "Paste",
+        ],
+    ),
+    (
+        "settings_group_keybind_zoom",
+        &["ToggleSidebar", "ToggleSftpZoom"],
+    ),
+    (
+        "settings_group_keybind_focus",
+        &[
+            "FocusPaneLeft",
+            "FocusPaneRight",
+            "FocusPaneUp",
+            "FocusPaneDown",
+        ],
+    ),
+    (
+        "settings_group_keybind_panel",
+        &[
+            "SplitPaneLeft",
+            "SplitPaneRight",
+            "SplitPaneUp",
+            "SplitPaneDown",
+            "ClosePane",
+        ],
+    ),
+    (
+        "settings_group_keybind_terminal",
+        &[
+            "TerminalSendTab",
+            "TerminalSendBacktab",
+            "TerminalOpenSession",
+            "TerminalCopySelection",
+            "TerminalPasteClipboard",
+            "TerminalFocusPaneLeft",
+            "TerminalFocusPaneRight",
+            "TerminalFocusPaneUp",
+            "TerminalFocusPaneDown",
+            "TerminalSplitPaneLeft",
+            "TerminalSplitPaneRight",
+            "TerminalSplitPaneUp",
+            "TerminalSplitPaneDown",
+            "TerminalCloseTab",
+        ],
+    ),
+];
+
+impl DefaultKeystroke {
+    fn value(self) -> Option<String> {
+        match self {
+            Self::Secondary(suffix) => Some(format!("{}-{}", default_modifier(), suffix)),
+            Self::Literal(keystroke) => Some(keystroke.to_string()),
+            Self::Platform { macos, other } => {
+                let keystroke = if cfg!(target_os = "macos") {
+                    macos
+                } else {
+                    other
+                };
+                keystroke.map(str::to_string)
+            }
+        }
+    }
+}
 
 pub(crate) fn default_modifier() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -174,10 +332,10 @@ pub(crate) fn default_modifier() -> &'static str {
 }
 
 pub(crate) fn default_keystroke(action_id: &str) -> Option<String> {
-    WORKSPACE_ACTIONS
+    CONFIGURABLE_ACTIONS
         .iter()
         .find(|action| action.id == action_id)
-        .map(|action| format!("{}-{}", default_modifier(), action.default_suffix))
+        .and_then(|action| action.default.value())
 }
 
 pub(crate) fn configured_keystroke(config: &ConfigStore, action_id: &str) -> Option<String> {
@@ -201,7 +359,8 @@ pub(crate) fn event_matches_action(
     {
         return true;
     }
-    normalize_recorded_keystroke(event).is_some_and(|keystroke| keystroke == configured)
+    normalize_recorded_keystroke(event)
+        .is_some_and(|keystroke| keystroke_strings_match(&keystroke, &configured))
 }
 
 fn matches_default_action_event(action_id: &str, event: &KeyDownEvent) -> bool {
@@ -278,11 +437,11 @@ pub(crate) fn normalize_recorded_keystroke(event: &KeyDownEvent) -> Option<Strin
     if event.keystroke.modifiers.alt {
         parts.push("alt".to_string());
     }
-    if event.keystroke.modifiers.shift {
-        parts.push("shift".to_string());
-    }
     if event.keystroke.modifiers.platform {
         parts.push("cmd".to_string());
+    }
+    if event.keystroke.modifiers.shift {
+        parts.push("shift".to_string());
     }
     if event.keystroke.modifiers.function {
         parts.push("fn".to_string());
@@ -297,6 +456,17 @@ pub(crate) fn format_keystroke(keystroke: &str) -> String {
     Keystroke::parse(keystroke)
         .map(|stroke| Kbd::format(&stroke))
         .unwrap_or_else(|_| keystroke.to_string())
+}
+
+fn keystroke_strings_match(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+
+    match (Keystroke::parse(left), Keystroke::parse(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
 }
 
 pub(crate) fn bind_workspace_keys_from_config(cx: &mut App, config: &ConfigStore) {
@@ -324,6 +494,27 @@ pub(crate) fn unbind_all_workspace_keys(cx: &mut App, config: &ConfigStore) {
             }
         };
     }
+    macro_rules! unbind_terminal_action {
+        ($id:literal, $action:expr) => {
+            let default = default_keystroke($id).expect("terminal action has default key");
+            let configured = configured_keystroke(config, $id).unwrap_or_else(|| default.clone());
+            let action_name = $action.name();
+            let context = Some(crate::app::constants::TERMINAL_KEY_CONTEXT);
+
+            bindings.push(KeyBinding::new(
+                &default,
+                Unbind(action_name.into()),
+                context,
+            ));
+            if configured != default {
+                bindings.push(KeyBinding::new(
+                    &configured,
+                    Unbind(action_name.into()),
+                    context,
+                ));
+            }
+        };
+    }
 
     unbind_action!("OpenSettings", crate::OpenSettings);
     unbind_action!("OpenSession", crate::OpenSession);
@@ -345,6 +536,8 @@ pub(crate) fn unbind_all_workspace_keys(cx: &mut App, config: &ConfigStore) {
     unbind_action!("ClosePane", crate::ClosePane);
     unbind_action!("Copy", crate::Copy);
     unbind_action!("Paste", crate::Paste);
+    unbind_terminal_action!("TerminalSendTab", crate::TerminalTabKey);
+    unbind_terminal_action!("TerminalSendBacktab", crate::TerminalBacktabKey);
 
     cx.bind_keys(bindings);
 }
@@ -356,12 +549,12 @@ pub(crate) fn find_conflict(
     current_action_id: &str,
     new_keystroke: &str,
 ) -> Option<(String, String)> {
-    for action in WORKSPACE_ACTIONS {
+    for action in CONFIGURABLE_ACTIONS {
         if action.id == current_action_id {
             continue;
         }
         let existing = configured_keystroke(config, action.id).unwrap_or_default();
-        if !existing.is_empty() && existing == new_keystroke {
+        if !existing.is_empty() && keystroke_strings_match(&existing, new_keystroke) {
             return Some((action.id.to_string(), t!(action.label_key).to_string()));
         }
     }
@@ -382,6 +575,24 @@ fn bind_workspace_actions(cx: &mut App, config: &ConfigStore) {
             }
 
             bindings.push(KeyBinding::new(&configured, $action, None));
+        };
+    }
+    macro_rules! bind_terminal_action {
+        ($id:literal, $action:expr) => {
+            let default = default_keystroke($id).expect("terminal action has default key");
+            let configured = configured_keystroke(config, $id).unwrap_or_else(|| default.clone());
+            let action_name = $action.name();
+            let context = Some(crate::app::constants::TERMINAL_KEY_CONTEXT);
+
+            if configured != default {
+                bindings.push(KeyBinding::new(
+                    &default,
+                    Unbind(action_name.into()),
+                    context,
+                ));
+            }
+
+            bindings.push(KeyBinding::new(&configured, $action, context));
         };
     }
 
@@ -405,6 +616,8 @@ fn bind_workspace_actions(cx: &mut App, config: &ConfigStore) {
     bind_action!("ClosePane", crate::ClosePane);
     bind_action!("Copy", crate::Copy);
     bind_action!("Paste", crate::Paste);
+    bind_terminal_action!("TerminalSendTab", crate::TerminalTabKey);
+    bind_terminal_action!("TerminalSendBacktab", crate::TerminalBacktabKey);
 
     cx.bind_keys(bindings);
 }
@@ -416,55 +629,15 @@ impl KeybindingsPage {
         recording_action: Option<&str>,
         keybind_error: Option<&(String, String)>,
     ) -> Vec<SettingGroup> {
-        let groups = [
-            (
-                "settings_group_keybind_general",
-                vec![
-                    "OpenSettings",
-                    "OpenSession",
-                    "OpenTransfers",
-                    "NewSsh",
-                    "OpenSearch",
-                    "PrevTab",
-                    "NextTab",
-                    "Copy",
-                    "Paste",
-                ],
-            ),
-            (
-                "settings_group_keybind_zoom",
-                vec!["ToggleSidebar", "ToggleSftpZoom"],
-            ),
-            (
-                "settings_group_keybind_focus",
-                vec![
-                    "FocusPaneLeft",
-                    "FocusPaneRight",
-                    "FocusPaneUp",
-                    "FocusPaneDown",
-                ],
-            ),
-            (
-                "settings_group_keybind_panel",
-                vec![
-                    "SplitPaneLeft",
-                    "SplitPaneRight",
-                    "SplitPaneUp",
-                    "SplitPaneDown",
-                    "ClosePane",
-                ],
-            ),
-        ];
-
         let mut result = Vec::new();
 
-        for (group_label, action_ids) in groups {
+        for &(group_label, action_ids) in KEYBINDING_GROUPS {
             let mut group = SettingGroup::new().title(t!(group_label).to_string());
 
             for action_id in action_ids {
-                let action = WORKSPACE_ACTIONS
+                let action = CONFIGURABLE_ACTIONS
                     .iter()
-                    .find(|a| a.id == action_id)
+                    .find(|a| a.id == *action_id)
                     .expect("action exists");
 
                 let recording = recording_action == Some(action.id);

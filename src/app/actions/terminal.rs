@@ -9,7 +9,7 @@ use gpui::{
 
 use crate::{
     AxShell, TerminalBacktabKey, TerminalTabKey,
-    app::terminal_link_activation_modifier_pressed,
+    app::{WorkspacePage, terminal_link_activation_modifier_pressed},
     terminal::{BackendCommand, TerminalComposition, TerminalFrozenSelection, encode_key},
 };
 
@@ -38,96 +38,8 @@ impl AxShell {
             return;
         }
 
-        if crate::app::keybinding_recorder::event_matches_action(&self.config, "PrevTab", event) {
-            self.switch_workspace_tab(-1, window, cx);
-            window.prevent_default();
-            cx.stop_propagation();
+        if self.handle_terminal_workspace_keybinding(event, window, cx) {
             return;
-        }
-
-        if crate::app::keybinding_recorder::event_matches_action(&self.config, "NextTab", event) {
-            self.switch_workspace_tab(1, window, cx);
-            window.prevent_default();
-            cx.stop_propagation();
-            return;
-        }
-
-        // Pane navigation: Alt + h/j/k/l
-        if event.keystroke.modifiers.alt
-            && !event.keystroke.modifiers.shift
-            && !event.keystroke.modifiers.control
-            && !event.keystroke.modifiers.platform
-        {
-            match event.keystroke.key.to_ascii_lowercase().as_str() {
-                "h" => self.focus_adjacent_pane("left"),
-                "j" => self.focus_adjacent_pane("down"),
-                "k" => self.focus_adjacent_pane("up"),
-                "l" => self.focus_adjacent_pane("right"),
-                "q" => {
-                    if let Some(active_id) = self.active_tab.clone() {
-                        self.close_tab(active_id, cx);
-                    }
-                }
-                _ => return,
-            }
-            window.prevent_default();
-            cx.stop_propagation();
-            cx.notify();
-            return;
-        }
-
-        // Pane split: Shift+Alt + h/j/k/l
-        if event.keystroke.modifiers.shift
-            && event.keystroke.modifiers.alt
-            && !event.keystroke.modifiers.control
-            && !event.keystroke.modifiers.platform
-        {
-            let direction = match event.keystroke.key.to_ascii_lowercase().as_str() {
-                "h" => Some("left"),
-                "j" => Some("down"),
-                "k" => Some("up"),
-                "l" => Some("right"),
-                _ => None,
-            };
-            if let Some(dir) = direction {
-                self.split_current_pane(dir, cx);
-                window.prevent_default();
-                cx.stop_propagation();
-                cx.notify();
-                return;
-            }
-        }
-
-        if event.keystroke.modifiers.secondary() && event.keystroke.key == "," {
-            self.show_settings_dialog(window, cx);
-            window.prevent_default();
-            cx.stop_propagation();
-            return;
-        }
-        if event.keystroke.modifiers.shift
-            && event.keystroke.modifiers.secondary()
-            && event.keystroke.key == "o"
-        {
-            self.show_selector_dialog(window, cx);
-            window.prevent_default();
-            cx.stop_propagation();
-            return;
-        }
-        if event.keystroke.modifiers.secondary() && event.keystroke.key.eq_ignore_ascii_case("c") {
-            if let Some(text) = self.active_terminal_selection_text() {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-                window.prevent_default();
-                cx.stop_propagation();
-                return;
-            }
-        }
-        if event.keystroke.modifiers.secondary() && event.keystroke.key.eq_ignore_ascii_case("v") {
-            if let Some(clipboard) = cx.read_from_clipboard() {
-                if let Some(text) = clipboard.text() {
-                    self.paste_into_terminal(&text, window, cx);
-                    return;
-                }
-            }
         }
 
         // If the active tab is disconnected and user presses Enter, reconnect
@@ -196,6 +108,208 @@ impl AxShell {
         if let Some(bytes) = encode_key(&event.keystroke, app_cursor_mode, false) {
             self.send_terminal_input(bytes, window, cx);
         }
+    }
+
+    fn handle_terminal_workspace_keybinding(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.terminal_key_matches("PrevTab", event) {
+            self.switch_workspace_tab(-1, window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.terminal_key_matches("NextTab", event) {
+            self.switch_workspace_tab(1, window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.terminal_key_matches("OpenSettings", event) {
+            self.show_settings_dialog(window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.terminal_key_matches("TerminalOpenSession", event)
+            || self.terminal_key_matches("OpenSession", event)
+        {
+            self.show_selector_dialog(window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.terminal_key_matches("OpenTransfers", event) {
+            self.open_sftp_transfers_page(window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.terminal_key_matches("NewSsh", event) {
+            self.show_ssh_dialog(window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.terminal_key_matches("OpenSearch", event) {
+            self.toggle_search(window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.terminal_key_matches("ToggleSidebar", event) {
+            self.sidebar_collapsed = !self.sidebar_collapsed;
+            self.config.set_sidebar_collapsed(self.sidebar_collapsed);
+            self.config.save_logged("toggle_sidebar");
+            window.prevent_default();
+            cx.stop_propagation();
+            cx.notify();
+            return true;
+        }
+
+        if self.terminal_key_matches("ToggleSftpZoom", event) {
+            self.toggle_active_sftp_page(window, cx);
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.handle_terminal_focus_keybinding(event, cx) {
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.handle_terminal_split_keybinding(event, cx) {
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.terminal_key_matches("TerminalCloseTab", event)
+            || self.terminal_key_matches("ClosePane", event)
+        {
+            if let Some(active_id) = self.active_tab.clone() {
+                self.close_tab(active_id, cx);
+            }
+            window.prevent_default();
+            cx.stop_propagation();
+            return true;
+        }
+
+        if self.terminal_key_matches("TerminalCopySelection", event)
+            || self.terminal_key_matches("Copy", event)
+        {
+            if let Some(text) = self.active_terminal_selection_text() {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                if let Some(active_id) = self.active_tab.clone() {
+                    self.clear_terminal_selection_for_tab(&active_id);
+                }
+                window.prevent_default();
+                cx.stop_propagation();
+                return true;
+            }
+            return false;
+        }
+
+        if self.terminal_key_matches("TerminalPasteClipboard", event)
+            || self.terminal_key_matches("Paste", event)
+        {
+            if let Some(clipboard) = cx.read_from_clipboard() {
+                if let Some(text) = clipboard.text() {
+                    self.paste_into_terminal(&text, window, cx);
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        false
+    }
+
+    fn handle_terminal_focus_keybinding(
+        &mut self,
+        event: &KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let direction = if self.terminal_key_matches("TerminalFocusPaneLeft", event)
+            || self.terminal_key_matches("FocusPaneLeft", event)
+        {
+            Some("left")
+        } else if self.terminal_key_matches("TerminalFocusPaneRight", event)
+            || self.terminal_key_matches("FocusPaneRight", event)
+        {
+            Some("right")
+        } else if self.terminal_key_matches("TerminalFocusPaneUp", event)
+            || self.terminal_key_matches("FocusPaneUp", event)
+        {
+            Some("up")
+        } else if self.terminal_key_matches("TerminalFocusPaneDown", event)
+            || self.terminal_key_matches("FocusPaneDown", event)
+        {
+            Some("down")
+        } else {
+            None
+        };
+
+        if let Some(direction) = direction {
+            self.focus_adjacent_pane(direction);
+            cx.notify();
+            return true;
+        }
+
+        false
+    }
+
+    fn handle_terminal_split_keybinding(
+        &mut self,
+        event: &KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let direction = if self.terminal_key_matches("TerminalSplitPaneLeft", event)
+            || self.terminal_key_matches("SplitPaneLeft", event)
+        {
+            Some("left")
+        } else if self.terminal_key_matches("TerminalSplitPaneRight", event)
+            || self.terminal_key_matches("SplitPaneRight", event)
+        {
+            Some("right")
+        } else if self.terminal_key_matches("TerminalSplitPaneUp", event)
+            || self.terminal_key_matches("SplitPaneUp", event)
+        {
+            Some("up")
+        } else if self.terminal_key_matches("TerminalSplitPaneDown", event)
+            || self.terminal_key_matches("SplitPaneDown", event)
+        {
+            Some("down")
+        } else {
+            None
+        };
+
+        if let Some(direction) = direction {
+            self.split_current_pane(direction, cx);
+            cx.notify();
+            return true;
+        }
+
+        false
+    }
+
+    fn terminal_key_matches(&self, action_id: &str, event: &KeyDownEvent) -> bool {
+        self.workspace_page == WorkspacePage::Terminal
+            && crate::app::keybinding_recorder::event_matches_action(&self.config, action_id, event)
     }
 
     pub(crate) fn on_terminal_tab_action(

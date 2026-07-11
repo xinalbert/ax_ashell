@@ -1,6 +1,5 @@
 #![windows_subsystem = "windows"]
 
-use gpui::KeyBinding;
 use gpui_component_assets::Assets;
 
 mod app;
@@ -47,18 +46,6 @@ fn main() {
     });
     app.run(move |cx| {
         gpui_component::init(cx);
-        cx.bind_keys([
-            KeyBinding::new(
-                "tab",
-                TerminalTabKey,
-                Some(app::constants::TERMINAL_KEY_CONTEXT),
-            ),
-            KeyBinding::new(
-                "shift-tab",
-                TerminalBacktabKey,
-                Some(app::constants::TERMINAL_KEY_CONTEXT),
-            ),
-        ]);
         app::startup::bind_workspace_keys(cx);
         app::app_menu::install(cx);
         app::theme::load_embedded_themes(cx);

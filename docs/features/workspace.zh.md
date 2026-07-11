@@ -34,7 +34,20 @@ AxShell 可以在一个工作区内组织本地终端、SSH 终端、SFTP 页面
 | 拆分 Pane | `Cmd + Shift + H/J/K/L` | `Ctrl + Shift + H/J/K/L` |
 | 关闭 Pane | `Cmd + W` | `Ctrl + W` |
 
-复制和粘贴在 macOS 使用 `Cmd + C/V`，在 Linux 和 Windows 使用 `Ctrl + Shift + C/V`。所有工作区快捷键都可以在 **Key Bindings** 设置中修改。
+复制和粘贴在 macOS 使用 `Cmd + C/V`，在 Linux 和 Windows 使用 `Ctrl + Shift + C/V`。
+
+终端本身获得焦点时，还可以使用这些默认快捷键：
+
+| 操作 | 默认 |
+| --- | --- |
+| 发送 Tab / 反向 Tab 到 Shell | `Tab` / `Shift + Tab` |
+| 从终端打开会话选择器 | `Cmd/Ctrl + Shift + O` |
+| Linux 和 Windows 中的终端复制 / 粘贴 | `Ctrl + C/V` |
+| 从终端聚焦 Pane | `Alt + H/J/K/L` |
+| 从终端拆分 Pane | `Alt + Shift + H/J/K/L` |
+| 关闭终端标签 | `Alt + Q` |
+
+所有工作区和终端焦点快捷键都可以在 **Key Bindings** 设置中修改。
 
 <!-- 截图目标：../images/features/workspace-tabs-panes.png -->
 <!-- 截图目标：../images/features/workspace-keybindings.png -->
