@@ -76,7 +76,7 @@ impl AxShell {
                                             MouseButton::Left,
                                             window.listener_for(&view, |this, _, window, cx| {
                                                 this.active_dialog = None;
-                                                this.open_local(cx);
+                                                this.open_local_and_focus(window, cx);
                                                 window.close_dialog(cx);
                                                 cx.notify();
                                             }),
@@ -199,8 +199,9 @@ impl AxShell {
                                                             &view,
                                                             move |this, _, window, cx| {
                                                                 this.active_dialog = None;
-                                                                this.connect_saved_session(
+                                                                this.connect_saved_session_and_focus(
                                                                     connect_id.clone(),
+                                                                    window,
                                                                     cx,
                                                                 );
                                                                 window.close_dialog(cx);

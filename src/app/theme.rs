@@ -1,7 +1,8 @@
 use anyhow::{Context as _, Result, anyhow};
-use gpui::{App, Context, SharedString, Window, px};
+use gpui::{App, Context, Entity, SharedString, Window, px};
 use gpui_component::{
-    ActiveTheme as _, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet, try_parse_color,
+    ActiveTheme as _, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet, input::InputState,
+    try_parse_color,
 };
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
@@ -30,6 +31,7 @@ pub(crate) static USING_SYSTEM_MAPLE: AtomicBool = AtomicBool::new(false);
 
 const CUSTOM_THEME_NAME_INPUT_KEY: &str = "custom_theme.theme_name";
 const CUSTOM_THEME_FILE_PREFIX: &str = "custom-";
+const IMPORTED_THEME_FILE_PREFIX: &str = "imported-";
 const CUSTOM_LIGHT_SUFFIX: &str = "[Custom Light]";
 const CUSTOM_DARK_SUFFIX: &str = "[Custom Dark]";
 
@@ -486,9 +488,9 @@ fn normalized_custom_theme_name(theme_name: &str) -> String {
     }
 }
 
-fn custom_theme_file_path(theme_dir: &Path, theme_name: &str) -> PathBuf {
+fn theme_name_slug(theme_name: &str, fallback: &str) -> String {
     let mut slug = String::new();
-    for ch in normalized_custom_theme_name(theme_name).chars() {
+    for ch in theme_name.trim().chars() {
         if ch.is_ascii_alphanumeric() {
             slug.push(ch.to_ascii_lowercase());
         } else if !slug.ends_with('-') {
@@ -496,12 +498,126 @@ fn custom_theme_file_path(theme_dir: &Path, theme_name: &str) -> PathBuf {
         }
     }
     let slug = slug.trim_matches('-');
-    let slug = if slug.is_empty() {
-        "custom-theme"
+    if slug.is_empty() {
+        fallback.to_string()
     } else {
-        slug
-    };
-    theme_dir.join(format!("{CUSTOM_THEME_FILE_PREFIX}{slug}.json"))
+        slug.to_string()
+    }
+}
+
+fn custom_theme_file_name(theme_name: &str) -> String {
+    let slug = theme_name_slug(&normalized_custom_theme_name(theme_name), "custom-theme");
+    format!("{CUSTOM_THEME_FILE_PREFIX}{slug}.json")
+}
+
+fn custom_theme_file_path(theme_dir: &Path, theme_name: &str, save_path: &str) -> PathBuf {
+    let file_name = custom_theme_file_name(theme_name);
+    let save_path = save_path.trim();
+    if save_path.is_empty() {
+        return theme_dir.join(file_name);
+    }
+
+    let path = expand_user_path(save_path);
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+    {
+        path
+    } else {
+        path.join(file_name)
+    }
+}
+
+fn imported_theme_source_name(theme_set: &ThemeSet, source_path: &Path) -> String {
+    let theme_set_name = theme_set.name.as_ref().trim();
+    if !theme_set_name.is_empty() {
+        return theme_set_name.to_string();
+    }
+
+    source_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(str::trim)
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("Theme")
+        .to_string()
+}
+
+fn imported_theme_profile_name(theme_set: &ThemeSet, source_path: &Path) -> String {
+    format!(
+        "Imported {}",
+        imported_theme_source_name(theme_set, source_path)
+    )
+}
+
+fn imported_theme_file_name(theme_set: &ThemeSet, source_path: &Path) -> String {
+    let slug = theme_name_slug(&imported_theme_source_name(theme_set, source_path), "theme");
+    format!("{IMPORTED_THEME_FILE_PREFIX}{slug}.json")
+}
+
+fn unique_imported_theme_file_path(
+    theme_dir: &Path,
+    theme_set: &ThemeSet,
+    source_path: &Path,
+) -> PathBuf {
+    let file_name = imported_theme_file_name(theme_set, source_path);
+    let stem = file_name.trim_end_matches(".json");
+    let mut path = theme_dir.join(&file_name);
+    let mut suffix = 2;
+    while path.exists() {
+        path = theme_dir.join(format!("{stem}-{suffix}.json"));
+        suffix += 1;
+    }
+    path
+}
+
+fn write_imported_theme_file(
+    theme_dir: &Path,
+    theme_set: &ThemeSet,
+    source_path: &Path,
+    content: &str,
+) -> Result<PathBuf> {
+    fs::create_dir_all(theme_dir)
+        .with_context(|| format!("failed to create {}", theme_dir.display()))?;
+    let path = unique_imported_theme_file_path(theme_dir, theme_set, source_path);
+    fs::write(&path, content).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(path)
+}
+
+fn imported_theme_names(
+    theme_set: &ThemeSet,
+    fallback_light_theme_name: &str,
+    fallback_dark_theme_name: &str,
+) -> Result<(String, String)> {
+    if theme_set.themes.is_empty() {
+        return Err(anyhow!("imported theme file does not contain any themes"));
+    }
+
+    let light_theme_name = theme_set
+        .themes
+        .iter()
+        .find(|theme| !theme.mode.is_dark())
+        .map(|theme| theme.name.to_string())
+        .unwrap_or_else(|| fallback_light_theme_name.to_string());
+    let dark_theme_name = theme_set
+        .themes
+        .iter()
+        .find(|theme| theme.mode.is_dark())
+        .map(|theme| theme.name.to_string())
+        .unwrap_or_else(|| fallback_dark_theme_name.to_string());
+
+    Ok((light_theme_name, dark_theme_name))
+}
+
+fn expand_user_path(path: &str) -> PathBuf {
+    if path == "~" || path.starts_with("~/") {
+        if let Some(dirs) = directories::BaseDirs::new() {
+            let rest = path.strip_prefix("~/").unwrap_or("");
+            return dirs.home_dir().join(rest);
+        }
+    }
+    PathBuf::from(path)
 }
 
 fn custom_theme_field_specs() -> impl Iterator<Item = &'static CustomThemeFieldSpec> {
@@ -609,6 +725,54 @@ fn build_custom_theme_config(
     serde_json::from_value(value).context("deserialize generated custom theme")
 }
 
+fn custom_theme_inherited_field_value_from_theme_value(
+    theme_value: &JsonValue,
+    mode_config: &CustomThemeModeConfig,
+    field: &CustomThemeFieldSpec,
+) -> String {
+    if field.domain == CustomThemeFieldDomain::Brightness {
+        return format!("{:.2}", mode_config.font_brightness);
+    }
+
+    let inherited = match field.domain {
+        CustomThemeFieldDomain::ThemeColor => theme_value
+            .get("colors")
+            .and_then(|colors| colors.get(field.key))
+            .and_then(JsonValue::as_str),
+        CustomThemeFieldDomain::HighlightColor => {
+            theme_value.get("highlight").and_then(|highlight| {
+                if let Some(token) = field
+                    .key
+                    .strip_prefix("syntax.")
+                    .and_then(|rest| rest.strip_suffix(".color"))
+                {
+                    highlight
+                        .get("syntax")
+                        .and_then(|syntax| syntax.get(token))
+                        .and_then(|style| style.get("color"))
+                        .and_then(JsonValue::as_str)
+                } else {
+                    highlight.get(field.key).and_then(JsonValue::as_str)
+                }
+            })
+        }
+        CustomThemeFieldDomain::Brightness => None,
+    };
+
+    inherited
+        .map(str::to_string)
+        .unwrap_or_else(|| field.placeholder.to_string())
+}
+
+fn custom_theme_inherited_field_value(
+    base_theme: &ThemeConfig,
+    mode_config: &CustomThemeModeConfig,
+    field: &CustomThemeFieldSpec,
+) -> String {
+    let theme_value = serde_json::to_value(base_theme).unwrap_or(JsonValue::Null);
+    custom_theme_inherited_field_value_from_theme_value(&theme_value, mode_config, field)
+}
+
 fn resolve_base_theme(config: &ConfigStore, mode: ThemeMode, cx: &App) -> Rc<ThemeConfig> {
     let base_name = config.custom_theme_base_name(mode);
     if let Some(theme) = ThemeRegistry::global(cx)
@@ -660,16 +824,23 @@ fn build_custom_theme_set(
     ))
 }
 
-fn write_custom_theme_file(config: &ConfigStore, theme_set: &ThemeSet) -> Result<()> {
+fn write_custom_theme_file(config: &ConfigStore, theme_set: &ThemeSet) -> Result<PathBuf> {
     let theme_dir = config
         .theme_dir()
         .or_else(|| ConfigStore::theme_dir_path().ok())
         .ok_or_else(|| anyhow!("could not resolve local theme dir"))?;
-    fs::create_dir_all(&theme_dir)
-        .with_context(|| format!("failed to create {}", theme_dir.display()))?;
-    let path = custom_theme_file_path(&theme_dir, theme_set.name.as_ref());
+    let path = custom_theme_file_path(
+        &theme_dir,
+        theme_set.name.as_ref(),
+        config.custom_theme_save_path(),
+    );
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("custom theme path has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
     let content = serde_json::to_string_pretty(theme_set).context("serialize custom theme file")?;
-    fs::write(&path, content).with_context(|| format!("failed to write {}", path.display()))
+    fs::write(&path, content).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(path)
 }
 
 impl AxShell {
@@ -688,6 +859,75 @@ impl AxShell {
 
     pub(crate) fn resolved_custom_theme_base_name(&self, mode: ThemeMode, cx: &App) -> String {
         resolve_base_theme(&self.config, mode, cx).name.to_string()
+    }
+
+    pub(crate) fn custom_theme_inherited_field_value(
+        &self,
+        mode: ThemeMode,
+        field: &CustomThemeFieldSpec,
+        cx: &App,
+    ) -> String {
+        let draft = self.config.custom_theme_draft();
+        let mode_config = if mode.is_dark() {
+            &draft.dark
+        } else {
+            &draft.light
+        };
+        let base_theme = resolve_base_theme(&self.config, mode, cx);
+        custom_theme_inherited_field_value(&base_theme, mode_config, field)
+    }
+
+    fn set_input_placeholder(
+        input: &Entity<InputState>,
+        value: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        input.update(cx, |state, cx| state.set_placeholder(value, window, cx));
+    }
+
+    pub(crate) fn sync_custom_theme_inputs_from_draft(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let draft = self.config.custom_theme_draft();
+        if let Some(input) = self.custom_theme_inputs.get(CUSTOM_THEME_NAME_INPUT_KEY) {
+            Self::set_input_value(input, draft.theme_name.clone(), window, cx);
+        }
+        Self::set_input_value(
+            &self.custom_theme_save_path_input,
+            self.config.custom_theme_save_path().to_string(),
+            window,
+            cx,
+        );
+
+        for mode in custom_theme_modes() {
+            let mode_config = if mode.is_dark() {
+                &draft.dark
+            } else {
+                &draft.light
+            };
+            let base_theme = resolve_base_theme(&self.config, mode, cx);
+            for field in custom_theme_field_specs() {
+                let input_key = custom_theme_input_key(mode, field.key);
+                let value = if field.domain == CustomThemeFieldDomain::Brightness {
+                    format!("{:.2}", mode_config.font_brightness)
+                } else {
+                    mode_config
+                        .overrides
+                        .get(field.key)
+                        .cloned()
+                        .unwrap_or_default()
+                };
+                if let Some(input) = self.custom_theme_inputs.get(&input_key) {
+                    let placeholder =
+                        custom_theme_inherited_field_value(&base_theme, mode_config, field);
+                    Self::set_input_placeholder(input, placeholder, window, cx);
+                    Self::set_input_value(input, value, window, cx);
+                }
+            }
+        }
     }
 
     pub(crate) fn active_custom_font_brightness(&self, mode: ThemeMode) -> f32 {
@@ -715,6 +955,10 @@ impl AxShell {
             }
         }
 
+        Self::resolve_registered_theme(name, mode, cx)
+    }
+
+    fn resolve_registered_theme(name: &SharedString, mode: ThemeMode, cx: &App) -> Rc<ThemeConfig> {
         if let Some(theme) = ThemeRegistry::global(cx)
             .themes()
             .get(name)
@@ -741,29 +985,59 @@ impl AxShell {
         self.apply_theme_preferences(window, cx);
         self.status = format!("theme mode: {}", cx.theme().mode.name()).into();
         self.persist_theme_preferences();
+        window.refresh();
         cx.notify();
     }
 
-    pub(crate) fn apply_theme(
+    pub(crate) fn apply_theme_profile(
         &mut self,
-        name: SharedString,
+        id: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(theme_config) = ThemeRegistry::global(cx).themes().get(&name).cloned() else {
-            self.status = format!("theme not found: {name}").into();
+        let Some(profile) = self.config.set_active_theme_profile(&id) else {
+            self.status = format!("theme profile not found: {id}").into();
             cx.notify();
             return;
         };
 
-        if theme_config.mode.is_dark() {
-            self.appearance.dark_theme_name = name.clone();
+        self.appearance.light_theme_name = if profile.light_theme_name.trim().is_empty() {
+            ThemeRegistry::global(cx).default_light_theme().name.clone()
         } else {
-            self.appearance.light_theme_name = name.clone();
-        }
-        self.apply_theme_preferences(window, cx);
-        self.status = format!("theme: {name}").into();
+            profile.light_theme_name.clone().into()
+        };
+        self.appearance.dark_theme_name = if profile.dark_theme_name.trim().is_empty() {
+            ThemeRegistry::global(cx).default_dark_theme().name.clone()
+        } else {
+            profile.dark_theme_name.clone().into()
+        };
+        let (light_theme, dark_theme) = if profile.custom_theme.is_some() {
+            (
+                self.resolve_selected_theme(
+                    &self.appearance.light_theme_name,
+                    ThemeMode::Light,
+                    cx,
+                ),
+                self.resolve_selected_theme(&self.appearance.dark_theme_name, ThemeMode::Dark, cx),
+            )
+        } else {
+            (
+                Self::resolve_registered_theme(
+                    &self.appearance.light_theme_name,
+                    ThemeMode::Light,
+                    cx,
+                ),
+                Self::resolve_registered_theme(
+                    &self.appearance.dark_theme_name,
+                    ThemeMode::Dark,
+                    cx,
+                ),
+            )
+        };
+        self.apply_theme_configs(light_theme, dark_theme, window, cx);
+        self.sync_custom_theme_inputs_from_draft(window, cx);
         self.persist_theme_preferences();
+        self.status = format!("theme profile: {}", profile.name).into();
         window.refresh();
         cx.notify();
     }
@@ -772,6 +1046,7 @@ impl AxShell {
         &mut self,
         mode: ThemeMode,
         name: &str,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.config.set_custom_theme_base_name(mode, name);
@@ -786,6 +1061,267 @@ impl AxShell {
         } else {
             self.status = format!("custom {} base: {name}", mode.name()).into();
         }
+        self.sync_custom_theme_inputs_from_draft(window, cx);
+        if let Err(err) = self.apply_custom_theme_preview(window, cx) {
+            tracing::debug!(
+                component = "theme",
+                operation = "preview_custom_theme_base",
+                error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                "Skipping custom theme base preview until inputs are valid"
+            );
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn preview_custom_theme_input(
+        &mut self,
+        input: &Entity<InputState>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(changed) = self.update_custom_theme_draft_from_input(input, cx) else {
+            return false;
+        };
+        if !changed {
+            return true;
+        }
+
+        if let Err(err) = self.apply_custom_theme_preview(window, cx) {
+            tracing::debug!(
+                component = "theme",
+                operation = "preview_custom_theme",
+                error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                "Skipping custom theme preview until inputs are valid"
+            );
+        }
+        true
+    }
+
+    fn update_custom_theme_draft_from_input(
+        &mut self,
+        input: &Entity<InputState>,
+        cx: &mut Context<Self>,
+    ) -> Option<bool> {
+        if let Some(name_input) = self.custom_theme_inputs.get(CUSTOM_THEME_NAME_INPUT_KEY)
+            && input == name_input
+        {
+            let name = name_input.read(cx).value().trim().to_string();
+            self.config.set_custom_theme_draft_name(&name);
+            return Some(true);
+        }
+
+        for mode in custom_theme_modes() {
+            for field in custom_theme_field_specs() {
+                let input_key = custom_theme_input_key(mode, field.key);
+                let Some(field_input) = self.custom_theme_inputs.get(&input_key) else {
+                    continue;
+                };
+                if input != field_input {
+                    continue;
+                }
+
+                let value = field_input.read(cx).value().trim().to_string();
+                match field.domain {
+                    CustomThemeFieldDomain::Brightness => {
+                        if value.is_empty() {
+                            return Some(false);
+                        }
+                        let Ok(brightness) = value.parse::<f32>() else {
+                            return Some(false);
+                        };
+                        if !(0.6..=1.2).contains(&brightness) {
+                            return Some(false);
+                        }
+                        self.config
+                            .set_custom_theme_font_brightness_for_mode(mode, brightness);
+                    }
+                    CustomThemeFieldDomain::ThemeColor | CustomThemeFieldDomain::HighlightColor => {
+                        if !value.is_empty() && try_parse_color(&value).is_err() {
+                            return Some(false);
+                        }
+                        self.config
+                            .set_custom_theme_override(mode, field.key, &value);
+                    }
+                }
+                return Some(true);
+            }
+        }
+
+        None
+    }
+
+    fn apply_custom_theme_preview(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<()> {
+        let (_, light, dark) = build_custom_theme_set(&self.config, cx)?;
+        self.appearance.light_theme_name = light.name.clone();
+        self.appearance.dark_theme_name = dark.name.clone();
+
+        // ThemeRegistry only inserts a name once, so preview must use this fresh pair directly.
+        self.apply_theme_configs(Rc::new(light), Rc::new(dark), window, cx);
+        self.status = "custom theme preview".into();
+        window.refresh();
+        cx.notify();
+        Ok(())
+    }
+
+    pub(crate) fn pick_custom_theme_save_path(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let start_dir = self
+            .config
+            .theme_dir()
+            .or_else(|| ConfigStore::theme_dir_path().ok())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let folder_dialog = rfd::AsyncFileDialog::new()
+            .set_directory(start_dir)
+            .pick_folder();
+
+        cx.spawn_in(window, async move |this, mut cx| {
+            if let Some(folder) = folder_dialog.await {
+                let _ = gpui::AsyncWindowContext::update(&mut cx, |window, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        Self::set_input_value(
+                            &this.custom_theme_save_path_input,
+                            folder.path().to_string_lossy().to_string(),
+                            window,
+                            cx,
+                        );
+                    });
+                });
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+        .detach();
+    }
+
+    pub(crate) fn import_custom_theme_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let start_dir = self
+            .config
+            .theme_dir()
+            .or_else(|| ConfigStore::theme_dir_path().ok())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let file_dialog = rfd::AsyncFileDialog::new()
+            .set_directory(start_dir)
+            .add_filter("Theme JSON", &["json"])
+            .pick_file();
+
+        cx.spawn_in(window, async move |this, mut cx| {
+            if let Some(file) = file_dialog.await {
+                let source_path = file.path().to_path_buf();
+                let import_result = fs::read_to_string(&source_path)
+                    .with_context(|| format!("failed to read {}", source_path.display()))
+                    .map(|content| (source_path, content));
+
+                let _ = gpui::AsyncWindowContext::update(&mut cx, |window, cx| {
+                    let _ = this.update(cx, |this, cx| match import_result {
+                        Ok((source_path, content)) => {
+                            this.finish_import_custom_theme_file(&source_path, content, window, cx);
+                        }
+                        Err(err) => {
+                            this.status = format!("failed to import theme file: {err:#}").into();
+                            cx.notify();
+                        }
+                    });
+                });
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+        .detach();
+    }
+
+    fn finish_import_custom_theme_file(
+        &mut self,
+        source_path: &Path,
+        content: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let theme_set = match serde_json::from_str::<ThemeSet>(&content) {
+            Ok(theme_set) => theme_set,
+            Err(err) => {
+                self.status = format!("failed to parse theme file: {err:#}").into();
+                cx.notify();
+                return;
+            }
+        };
+
+        let fallback_light = if self.appearance.light_theme_name.as_ref().trim().is_empty() {
+            ThemeRegistry::global(cx)
+                .default_light_theme()
+                .name
+                .to_string()
+        } else {
+            self.appearance.light_theme_name.to_string()
+        };
+        let fallback_dark = if self.appearance.dark_theme_name.as_ref().trim().is_empty() {
+            ThemeRegistry::global(cx)
+                .default_dark_theme()
+                .name
+                .to_string()
+        } else {
+            self.appearance.dark_theme_name.to_string()
+        };
+        let (light_theme_name, dark_theme_name) =
+            match imported_theme_names(&theme_set, &fallback_light, &fallback_dark) {
+                Ok(names) => names,
+                Err(err) => {
+                    self.status = format!("failed to import theme file: {err:#}").into();
+                    cx.notify();
+                    return;
+                }
+            };
+
+        if let Err(err) = ThemeRegistry::global_mut(cx).load_themes_from_str(&content) {
+            self.status = format!("failed to register imported theme: {err:#}").into();
+            cx.notify();
+            return;
+        }
+
+        let theme_dir = match self
+            .config
+            .theme_dir()
+            .or_else(|| ConfigStore::theme_dir_path().ok())
+        {
+            Some(theme_dir) => theme_dir,
+            None => {
+                self.status = "failed to resolve local theme directory".into();
+                cx.notify();
+                return;
+            }
+        };
+        let saved_path =
+            match write_imported_theme_file(&theme_dir, &theme_set, source_path, &content) {
+                Ok(path) => path,
+                Err(err) => {
+                    self.status = format!("failed to save imported theme file: {err:#}").into();
+                    cx.notify();
+                    return;
+                }
+            };
+
+        let profile_name = imported_theme_profile_name(&theme_set, source_path);
+        let profile = self.config.activate_imported_theme_profile(
+            profile_name,
+            light_theme_name.clone(),
+            dark_theme_name.clone(),
+        );
+        self.appearance.light_theme_name = light_theme_name.into();
+        self.appearance.dark_theme_name = dark_theme_name.into();
+        self.sync_custom_theme_inputs_from_draft(window, cx);
+        self.apply_theme_preferences(window, cx);
+        self.persist_theme_preferences();
+        self.status = format!(
+            "theme imported: {} ({})",
+            profile.name,
+            crate::diagnostics::mask_path(saved_path.to_string_lossy().as_ref())
+        )
+        .into();
+        window.refresh();
         cx.notify();
     }
 
@@ -803,6 +1339,7 @@ impl AxShell {
         }
         self.apply_theme_preferences(window, cx);
         self.persist_theme_preferences();
+        window.refresh();
         cx.notify();
     }
 
@@ -834,6 +1371,17 @@ impl AxShell {
             self.resolve_selected_theme(&self.appearance.light_theme_name, ThemeMode::Light, cx);
         let dark_theme =
             self.resolve_selected_theme(&self.appearance.dark_theme_name, ThemeMode::Dark, cx);
+
+        self.apply_theme_configs(light_theme, dark_theme, window, cx);
+    }
+
+    fn apply_theme_configs(
+        &self,
+        light_theme: Rc<ThemeConfig>,
+        dark_theme: Rc<ThemeConfig>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let theme = Theme::global_mut(cx);
         theme.light_theme = light_theme;
         theme.dark_theme = dark_theme;
@@ -858,6 +1406,13 @@ impl AxShell {
             .trim()
             .to_string();
         self.config.set_custom_theme_draft_name(&theme_name);
+        let save_path = self
+            .custom_theme_save_path_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
+        self.config.set_custom_theme_save_path(&save_path);
 
         for mode in custom_theme_modes() {
             for field in custom_theme_field_specs() {
@@ -914,11 +1469,14 @@ impl AxShell {
             }
         };
 
-        if let Err(err) = write_custom_theme_file(&self.config, &theme_set) {
-            self.status = format!("failed to save custom theme file: {err:#}").into();
-            cx.notify();
-            return;
-        }
+        let saved_path = match write_custom_theme_file(&self.config, &theme_set) {
+            Ok(path) => path,
+            Err(err) => {
+                self.status = format!("failed to save custom theme file: {err:#}").into();
+                cx.notify();
+                return;
+            }
+        };
 
         match serde_json::to_string_pretty(&theme_set) {
             Ok(theme_json) => {
@@ -948,6 +1506,8 @@ impl AxShell {
             custom_theme_registry_name(&self.current_custom_theme_draft_name(), ThemeMode::Light);
         let current_dark =
             custom_theme_registry_name(&self.current_custom_theme_draft_name(), ThemeMode::Dark);
+        self.config
+            .promote_active_theme_profile_to_custom(current_light.clone(), current_dark.clone());
 
         if self.appearance.light_theme_name.as_ref() == previous_draft.theme_name
             || self.appearance.light_theme_name.as_ref() == previous_light
@@ -968,7 +1528,11 @@ impl AxShell {
 
         self.apply_theme_preferences(window, cx);
         self.persist_theme_preferences();
-        self.status = "custom theme saved to theme list".into();
+        self.status = format!(
+            "custom theme saved: {}",
+            crate::diagnostics::mask_path(saved_path.to_string_lossy().as_ref())
+        )
+        .into();
         window.refresh();
         cx.notify();
     }
@@ -987,25 +1551,14 @@ impl AxShell {
             return;
         }
 
-        if let Some(input) = self.custom_theme_inputs.get(CUSTOM_THEME_NAME_INPUT_KEY) {
-            input.update(cx, |input, cx| {
-                input.set_value("Custom Theme", window, cx);
-            });
-        }
-        for mode in custom_theme_modes() {
-            for field in custom_theme_field_specs() {
-                let input_key = custom_theme_input_key(mode, field.key);
-                if let Some(input) = self.custom_theme_inputs.get(&input_key) {
-                    let reset_value = if field.domain == CustomThemeFieldDomain::Brightness {
-                        "1.00"
-                    } else {
-                        ""
-                    };
-                    input.update(cx, |input, cx| {
-                        input.set_value(reset_value, window, cx);
-                    });
-                }
-            }
+        self.sync_custom_theme_inputs_from_draft(window, cx);
+        if let Err(err) = self.apply_custom_theme_preview(window, cx) {
+            tracing::debug!(
+                component = "theme",
+                operation = "preview_custom_theme_reset",
+                error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                "Skipping custom theme reset preview until inputs are valid"
+            );
         }
 
         self.status = "custom theme editor reset".into();
@@ -1024,5 +1577,135 @@ impl AxShell {
             self.appearance.dark_theme_name.to_string(),
         );
         self.config.save_logged("save_theme_preferences");
+    }
+}
+
+#[cfg(test)]
+mod import_theme_tests {
+    use super::{
+        CUSTOM_THEME_CORE_FIELDS, CustomThemeModeConfig,
+        custom_theme_inherited_field_value_from_theme_value, imported_theme_names,
+        unique_imported_theme_file_path,
+    };
+    use gpui_component::{ThemeMode, ThemeSet};
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn imported_theme_names_use_file_modes() {
+        let theme_set: ThemeSet =
+            serde_json::from_str(include_str!("../../assets/themes/solarized.json"))
+                .expect("solarized theme parses");
+
+        let (light, dark) =
+            imported_theme_names(&theme_set, "Fallback Light", "Fallback Dark").unwrap();
+
+        assert_eq!(light, "Solarized Light");
+        assert_eq!(dark, "Solarized Dark");
+    }
+
+    #[test]
+    fn imported_theme_names_fill_missing_mode_from_fallback() {
+        let theme_set: ThemeSet = serde_json::from_str(
+            r##"{
+                "name": "Dark Only",
+                "themes": [
+                    {
+                        "name": "Only Dark",
+                        "mode": "dark",
+                        "colors": {}
+                    }
+                ]
+            }"##,
+        )
+        .expect("dark-only theme parses");
+
+        let (light, dark) =
+            imported_theme_names(&theme_set, "Fallback Light", "Fallback Dark").unwrap();
+
+        assert_eq!(light, "Fallback Light");
+        assert_eq!(dark, "Only Dark");
+    }
+
+    #[test]
+    fn embedded_single_mode_theme_families_include_light_companions() {
+        let tokyo: ThemeSet =
+            serde_json::from_str(include_str!("../../assets/themes/tokyonight.json"))
+                .expect("tokyo theme parses");
+        let matrix: ThemeSet =
+            serde_json::from_str(include_str!("../../assets/themes/matrix.json"))
+                .expect("matrix theme parses");
+
+        for name in ["Tokyo Night Light", "Tokyo Storm Light", "Tokyo Moon Light"] {
+            assert!(
+                tokyo
+                    .themes
+                    .iter()
+                    .any(|theme| theme.name.as_ref() == name && theme.mode == ThemeMode::Light),
+                "{name} light companion exists"
+            );
+        }
+        assert!(
+            matrix.themes.iter().any(
+                |theme| theme.name.as_ref() == "Matrix Light" && theme.mode == ThemeMode::Light
+            )
+        );
+    }
+
+    #[test]
+    fn imported_theme_file_path_is_unique() {
+        let theme_set: ThemeSet =
+            serde_json::from_str(include_str!("../../assets/themes/solarized.json"))
+                .expect("solarized theme parses");
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let theme_dir = std::env::temp_dir().join(format!("ax-shell-import-theme-test-{suffix}"));
+        fs::create_dir_all(&theme_dir).expect("create temp theme dir");
+
+        let first =
+            unique_imported_theme_file_path(&theme_dir, &theme_set, std::path::Path::new("x.json"));
+        fs::write(&first, "{}").expect("write first imported theme placeholder");
+        let second =
+            unique_imported_theme_file_path(&theme_dir, &theme_set, std::path::Path::new("x.json"));
+
+        assert_eq!(
+            first.file_name().and_then(|name| name.to_str()),
+            Some("imported-solarized.json")
+        );
+        assert_eq!(
+            second.file_name().and_then(|name| name.to_str()),
+            Some("imported-solarized-2.json")
+        );
+
+        fs::remove_dir_all(&theme_dir).expect("remove temp theme dir");
+    }
+
+    #[test]
+    fn inherited_field_value_comes_from_selected_base_theme() {
+        let theme_set: ThemeSet =
+            serde_json::from_str(include_str!("../../assets/themes/solarized.json"))
+                .expect("solarized theme parses");
+        let light = theme_set
+            .themes
+            .iter()
+            .find(|theme| theme.mode == ThemeMode::Light)
+            .expect("solarized light exists");
+        let theme_value = serde_json::to_value(light).expect("serialize solarized light");
+        let background = CUSTOM_THEME_CORE_FIELDS
+            .iter()
+            .find(|field| field.key == "background")
+            .expect("background field exists");
+
+        let inherited = custom_theme_inherited_field_value_from_theme_value(
+            &theme_value,
+            &CustomThemeModeConfig::default(),
+            background,
+        );
+
+        assert_eq!(inherited, "#FDF6E3");
     }
 }

@@ -323,10 +323,11 @@ impl AxShell {
                                                                         .on_mouse_down(
                                                                             MouseButton::Left,
                                                                             cx.listener(
-                                                                                move |this, _, _, cx| {
-                                                                                    this.connect_saved_session(
+                                                                                move |this, _, window, cx| {
+                                                                                    this.connect_saved_session_and_focus(
                                                                                         connect_id
                                                                                             .clone(),
+                                                                                        window,
                                                                                         cx,
                                                                                     )
                                                                                 },
@@ -506,7 +507,7 @@ impl AxShell {
             .hover(|this| this.bg(cx.theme().secondary))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, _, _, cx| this.open_local(cx)),
+                cx.listener(|this, _, window, cx| this.open_local_and_focus(window, cx)),
             )
             .tooltip(|window, cx| {
                 gpui_component::tooltip::Tooltip::new(t!("open_local_shell_tab").to_string())
@@ -580,7 +581,7 @@ impl AxShell {
             .hover(|this| this.bg(cx.theme().secondary))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, _, _, cx| this.open_local(cx)),
+                cx.listener(|this, _, window, cx| this.open_local_and_focus(window, cx)),
             )
             .tooltip(|window, cx| {
                 gpui_component::tooltip::Tooltip::new(t!("open_local_shell_tab").to_string())
@@ -791,9 +792,10 @@ impl AxShell {
                                                                 .on_mouse_down(
                                                                     MouseButton::Left,
                                                                     cx.listener(
-                                                                        move |this, _, _, cx| {
-                                                                            this.connect_saved_session(
+                                                                        move |this, _, window, cx| {
+                                                                            this.connect_saved_session_and_focus(
                                                                                 connect_id.clone(),
+                                                                                window,
                                                                                 cx,
                                                                             )
                                                                         },

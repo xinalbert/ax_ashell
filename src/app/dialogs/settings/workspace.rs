@@ -9,7 +9,6 @@ pub(super) fn settings_workspace_page(
 ) -> SettingPage {
     let lock_layout = shell.config.lock_layout();
     let color_inactive_tabs = shell.config.color_inactive_tabs();
-    let settings_close_shortcut_confirms = shell.config.settings_close_shortcut_confirms();
 
     SettingPage::new(t!("settings_workspace").to_string())
         .icon(IconName::LayoutDashboard)
@@ -55,26 +54,6 @@ pub(super) fn settings_workspace_page(
                         }),
                     )
                     .description(t!("color_inactive_tabs_hint").to_string()),
-                )
-                .item(
-                    SettingItem::new(
-                        t!("settings_close_shortcut_confirms").to_string(),
-                        SettingField::render({
-                            let view = view.clone();
-                            move |_, window, _cx| {
-                                Switch::new("settings-close-shortcut-confirms")
-                                    .small()
-                                    .checked(settings_close_shortcut_confirms)
-                                    .on_click(window.listener_for(&view, |this, checked, _, cx| {
-                                        this.config.set_settings_close_shortcut_confirms(*checked);
-                                        this.config.save_logged("set_settings_close_shortcut");
-                                        cx.notify();
-                                    }))
-                                    .into_any_element()
-                            }
-                        }),
-                    )
-                    .description(t!("settings_close_shortcut_confirms_hint").to_string()),
                 )
                 .item(
                     SettingItem::new(

@@ -65,7 +65,9 @@ impl AxShell {
                         Button::new("home-open-local")
                             .primary()
                             .label(t!("local_terminal").to_string())
-                            .on_click(cx.listener(|this, _, _, cx| this.open_local(cx))),
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_local_and_focus(window, cx)
+                            })),
                     )
                     .child(
                         Button::new("home-open-session")

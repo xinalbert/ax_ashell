@@ -27,6 +27,32 @@ pub(super) fn settings_page_shell(
                         return;
                     }
 
+                    if this.recording_action.is_none()
+                        && crate::app::keybinding_recorder::event_matches_action(
+                            &this.config,
+                            "OpenSession",
+                            ev,
+                        )
+                    {
+                        this.show_selector_dialog(window, cx);
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        return;
+                    }
+
+                    if this.recording_action.is_none()
+                        && crate::app::keybinding_recorder::event_matches_action(
+                            &this.config,
+                            "NewSsh",
+                            ev,
+                        )
+                    {
+                        this.open_new_ssh_dialog(window, cx);
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        return;
+                    }
+
                     if window.focused(cx) != Some(this.focus_handle.clone()) {
                         if this.recording_action.is_some() {
                             this.recording_action = None;

@@ -88,6 +88,7 @@ pub(crate) struct AxShell {
     pub(crate) sync_s3_secret_key_input: Entity<InputState>,
     pub(crate) sync_s3_session_token_input: Entity<InputState>,
     pub(crate) sync_encryption_password_input: Entity<InputState>,
+    pub(crate) custom_theme_save_path_input: Entity<InputState>,
     pub(crate) custom_theme_inputs: HashMap<String, Entity<InputState>>,
     pub(crate) sync_in_progress: bool,
     pub(crate) sync_status: SharedString,
@@ -156,6 +157,7 @@ pub(crate) struct AxShell {
     pub(crate) expanded_saved_groups: HashSet<String>,
     pub(crate) workspace_page: WorkspacePage,
     pub(crate) settings_page_open: bool,
+    pub(crate) settings_page_generation: u64,
     pub(crate) settings_close_remember_choice: bool,
     /// Error message when a recorded keybinding conflicts with another
     pub(crate) keybind_error: Option<(String, String)>, // (action_id, error_message)

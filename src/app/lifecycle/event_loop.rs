@@ -220,6 +220,19 @@ impl AxShell {
             .custom_theme_inputs
             .values()
             .any(|custom_input| input == custom_input)
+        {
+            match event {
+                InputEvent::Change => {
+                    self.preview_custom_theme_input(input, window, cx);
+                }
+                InputEvent::PressEnter { .. } => {
+                    self.save_custom_appearance(window, cx);
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+                _ => {}
+            }
+        } else if input == &self.custom_theme_save_path_input
             && matches!(event, InputEvent::PressEnter { .. })
         {
             self.save_custom_appearance(window, cx);

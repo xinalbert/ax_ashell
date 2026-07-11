@@ -4,13 +4,14 @@ use gpui::{
     prelude::FluentBuilder as _, px, rems,
 };
 use gpui_component::{
-    ActiveTheme as _, Disableable as _, IconName, Sizable as _, WindowExt as _,
+    ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants as _},
     checkbox::Checkbox,
     dialog::Dialog,
     h_flex,
     input::Input,
     menu::{DropdownMenu as _, PopupMenuItem},
+    popover::Popover,
     progress::Progress,
     scroll::{Scrollbar, ScrollbarShow},
     switch::Switch,

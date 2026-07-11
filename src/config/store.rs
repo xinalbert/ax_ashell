@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -96,7 +97,10 @@ impl ConfigStore {
             normalize_sftp_transfer_close_behavior(&cache.sftp_transfer_close_behavior);
         cache.deep_sleep_after_minutes =
             normalize_deep_sleep_after_minutes(cache.deep_sleep_after_minutes);
-        Ok(Self { path, cache })
+
+        let mut store = Self { path, cache };
+        store.normalize_theme_profiles();
+        Ok(store)
     }
 
     pub fn in_memory() -> Self {
@@ -104,10 +108,12 @@ impl ConfigStore {
             sync_device_id: Uuid::new_v4().to_string(),
             ..ConfigFile::default()
         };
-        Self {
+        let mut store = Self {
             path: PathBuf::new(),
             cache,
-        }
+        };
+        store.normalize_theme_profiles();
+        store
     }
 
     pub fn config_root_dir_path() -> Result<PathBuf> {
@@ -284,6 +290,291 @@ impl ConfigStore {
         &self.cache.dark_theme_name
     }
 
+    pub fn active_theme_profile_id(&self) -> &str {
+        &self.cache.active_theme_profile_id
+    }
+
+    pub fn theme_profiles(&self) -> &[ThemeProfileConfig] {
+        &self.cache.theme_profiles
+    }
+
+    pub fn active_theme_profile(&self) -> Option<&ThemeProfileConfig> {
+        let active_id = self.active_theme_profile_id();
+        self.cache
+            .theme_profiles
+            .iter()
+            .find(|profile| profile.id == active_id)
+    }
+
+    fn active_theme_profile_mut(&mut self) -> Option<&mut ThemeProfileConfig> {
+        let active_id = self.cache.active_theme_profile_id.clone();
+        self.cache
+            .theme_profiles
+            .iter_mut()
+            .find(|profile| profile.id == active_id)
+    }
+
+    pub fn set_active_theme_profile(&mut self, id: &str) -> Option<ThemeProfileConfig> {
+        let profile = self
+            .cache
+            .theme_profiles
+            .iter()
+            .find(|profile| profile.id == id)
+            .cloned()?;
+        self.cache.active_theme_profile_id = profile.id.clone();
+        self.cache.light_theme_name = profile.light_theme_name.clone();
+        self.cache.dark_theme_name = profile.dark_theme_name.clone();
+        if let Some(custom_theme) = &profile.custom_theme {
+            self.cache.custom_theme = custom_theme.clone();
+            self.cache.custom_theme_name = custom_theme.theme_name.clone();
+        }
+        Some(profile)
+    }
+
+    pub fn activate_imported_theme_profile(
+        &mut self,
+        name: String,
+        light_theme_name: String,
+        dark_theme_name: String,
+    ) -> ThemeProfileConfig {
+        let name = if name.trim().is_empty() {
+            "Imported Theme".to_string()
+        } else {
+            name.trim().to_string()
+        };
+        let base_id = format!("imported-{}", normalize_theme_profile_id("", &name));
+        let mut id = base_id.clone();
+        let mut suffix = 2;
+        while self
+            .cache
+            .theme_profiles
+            .iter()
+            .any(|profile| profile.id == id)
+        {
+            id = format!("{base_id}-{suffix}");
+            suffix += 1;
+        }
+
+        let profile = ThemeProfileConfig {
+            id,
+            name,
+            light_theme_name: light_theme_name.trim().to_string(),
+            dark_theme_name: dark_theme_name.trim().to_string(),
+            custom_theme: None,
+            custom_theme_save_path: String::new(),
+        };
+        self.cache.active_theme_profile_id = profile.id.clone();
+        self.cache.light_theme_name = profile.light_theme_name.clone();
+        self.cache.dark_theme_name = profile.dark_theme_name.clone();
+        self.cache.theme_profiles.push(profile.clone());
+        profile
+    }
+
+    pub fn custom_theme_save_path(&self) -> &str {
+        self.active_theme_profile()
+            .map(|profile| profile.custom_theme_save_path.trim())
+            .unwrap_or("")
+    }
+
+    pub fn set_custom_theme_save_path(&mut self, path: &str) {
+        if let Some(profile) = self.active_theme_profile_mut() {
+            profile.custom_theme_save_path = path.trim().to_string();
+        }
+    }
+
+    fn normalize_theme_profiles(&mut self) {
+        let had_profiles = !self.cache.theme_profiles.is_empty();
+        if self.cache.theme_profiles.is_empty() {
+            self.cache.theme_profiles = default_theme_profiles();
+        }
+
+        if !had_profiles && self.has_legacy_theme_profile_values() {
+            let legacy = self.legacy_theme_profile();
+            self.cache.active_theme_profile_id = legacy.id.clone();
+            self.cache.theme_profiles.insert(0, legacy);
+        }
+
+        let default_profiles = default_theme_profiles();
+        for default_profile in &default_profiles {
+            if let Some(profile) = self
+                .cache
+                .theme_profiles
+                .iter_mut()
+                .find(|profile| profile.id == default_profile.id)
+            {
+                if is_plain_builtin_theme_profile(profile) {
+                    profile.name = default_profile.name.clone();
+                    profile.light_theme_name = default_profile.light_theme_name.clone();
+                    profile.dark_theme_name = default_profile.dark_theme_name.clone();
+                }
+            } else {
+                self.cache.theme_profiles.push(default_profile.clone());
+            }
+        }
+
+        let mut used_ids = HashSet::new();
+        for index in 0..self.cache.theme_profiles.len() {
+            let profile = &mut self.cache.theme_profiles[index];
+            if profile.name.trim().is_empty() {
+                profile.name = format!("Theme {}", index + 1);
+            } else {
+                profile.name = profile.name.trim().to_string();
+            }
+
+            let base_id = normalize_theme_profile_id(&profile.id, &profile.name);
+            let mut candidate = base_id.clone();
+            let mut suffix = 2;
+            while used_ids.contains(&candidate) {
+                candidate = format!("{base_id}-{suffix}");
+                suffix += 1;
+            }
+            profile.id = candidate.clone();
+            used_ids.insert(candidate);
+            profile.light_theme_name = profile.light_theme_name.trim().to_string();
+            profile.dark_theme_name = profile.dark_theme_name.trim().to_string();
+            profile.custom_theme_save_path = profile.custom_theme_save_path.trim().to_string();
+        }
+
+        if let Some(replacement_id) =
+            deprecated_builtin_theme_profile_replacement(&self.cache.active_theme_profile_id)
+        {
+            self.cache.active_theme_profile_id = replacement_id.to_string();
+        }
+        self.cache.theme_profiles.retain(|profile| {
+            deprecated_builtin_theme_profile_replacement(&profile.id).is_none()
+                || !is_plain_builtin_theme_profile(profile)
+        });
+
+        if self.cache.active_theme_profile_id.trim().is_empty()
+            || !self
+                .cache
+                .theme_profiles
+                .iter()
+                .any(|profile| profile.id == self.cache.active_theme_profile_id)
+        {
+            self.cache.active_theme_profile_id = self
+                .cache
+                .theme_profiles
+                .first()
+                .map(|profile| profile.id.clone())
+                .unwrap_or_else(default_active_theme_profile_id);
+        }
+
+        if default_profiles
+            .iter()
+            .any(|profile| profile.id == self.cache.active_theme_profile_id)
+        {
+            if let Some(profile) = self.active_theme_profile().cloned() {
+                if is_plain_builtin_theme_profile(&profile) {
+                    self.cache.light_theme_name = profile.light_theme_name;
+                    self.cache.dark_theme_name = profile.dark_theme_name;
+                }
+            }
+        }
+    }
+
+    fn has_legacy_theme_profile_values(&self) -> bool {
+        !self.cache.light_theme_name.trim().is_empty()
+            || !self.cache.dark_theme_name.trim().is_empty()
+            || self.has_legacy_custom_theme_values()
+    }
+
+    fn has_legacy_custom_theme_values(&self) -> bool {
+        self.has_structured_custom_theme()
+            || !self.cache.custom_primary_color.trim().is_empty()
+            || !self.cache.custom_background_color.trim().is_empty()
+            || (self.cache.custom_font_brightness - default_custom_font_brightness()).abs()
+                > f32::EPSILON
+            || self.cache.custom_theme_name.trim() != default_custom_theme_name()
+    }
+
+    fn legacy_theme_profile(&self) -> ThemeProfileConfig {
+        let fallback = default_theme_profiles()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| ThemeProfileConfig {
+                id: default_active_theme_profile_id(),
+                name: "Balanced".to_string(),
+                light_theme_name: String::new(),
+                dark_theme_name: String::new(),
+                custom_theme: None,
+                custom_theme_save_path: String::new(),
+            });
+        let light_theme_name = if self.cache.light_theme_name.trim().is_empty() {
+            fallback.light_theme_name
+        } else {
+            self.cache.light_theme_name.trim().to_string()
+        };
+        let dark_theme_name = if self.cache.dark_theme_name.trim().is_empty() {
+            fallback.dark_theme_name
+        } else {
+            self.cache.dark_theme_name.trim().to_string()
+        };
+        let custom_theme = self
+            .has_legacy_custom_theme_values()
+            .then(|| self.legacy_custom_theme(&light_theme_name, &dark_theme_name));
+        ThemeProfileConfig {
+            id: "current".to_string(),
+            name: "Current".to_string(),
+            light_theme_name,
+            dark_theme_name,
+            custom_theme,
+            custom_theme_save_path: String::new(),
+        }
+    }
+
+    fn legacy_custom_theme(
+        &self,
+        light_theme_name: &str,
+        dark_theme_name: &str,
+    ) -> CustomThemeConfig {
+        let mut draft = if self.has_structured_custom_theme() {
+            self.cache.custom_theme.clone()
+        } else {
+            CustomThemeConfig::default()
+        };
+
+        if draft.theme_name.trim().is_empty() {
+            draft.theme_name = default_custom_theme_name();
+        }
+        if draft.theme_name == default_custom_theme_name()
+            && self.cache.custom_theme_name.trim() != default_custom_theme_name()
+        {
+            draft.theme_name = self.cache.custom_theme_name.trim().to_string();
+        }
+        if draft.light.base_theme_name.trim().is_empty() {
+            draft.light.base_theme_name = light_theme_name.to_string();
+        }
+        if draft.dark.base_theme_name.trim().is_empty() {
+            draft.dark.base_theme_name = dark_theme_name.to_string();
+        }
+
+        if !self.cache.custom_primary_color.trim().is_empty() {
+            for mode_cfg in [&mut draft.light, &mut draft.dark] {
+                mode_cfg.overrides.insert(
+                    "primary.background".to_string(),
+                    self.cache.custom_primary_color.trim().to_string(),
+                );
+            }
+        }
+        if !self.cache.custom_background_color.trim().is_empty() {
+            for mode_cfg in [&mut draft.light, &mut draft.dark] {
+                mode_cfg.overrides.insert(
+                    "background".to_string(),
+                    self.cache.custom_background_color.trim().to_string(),
+                );
+            }
+        }
+        if (self.cache.custom_font_brightness - default_custom_font_brightness()).abs()
+            > f32::EPSILON
+        {
+            let brightness = self.custom_font_brightness();
+            draft.light.font_brightness = brightness;
+            draft.dark.font_brightness = brightness;
+        }
+        draft
+    }
+
     pub fn locale(&self) -> &str {
         if self.cache.locale.is_empty() {
             "system"
@@ -346,6 +637,12 @@ impl ConfigStore {
         self.cache.theme_mode = theme_mode.into();
         self.cache.light_theme_name = light_theme_name.into();
         self.cache.dark_theme_name = dark_theme_name.into();
+        let light_theme_name = self.cache.light_theme_name.clone();
+        let dark_theme_name = self.cache.dark_theme_name.clone();
+        if let Some(profile) = self.active_theme_profile_mut() {
+            profile.light_theme_name = light_theme_name;
+            profile.dark_theme_name = dark_theme_name;
+        }
     }
 
     pub fn window_bounds(&self) -> Option<&SavedWindowBounds> {
@@ -414,15 +711,6 @@ impl ConfigStore {
         }
     }
 
-    pub fn set_custom_theme_name(&mut self, name: &str) {
-        let name = name.trim();
-        self.cache.custom_theme_name = if name.is_empty() {
-            default_custom_theme_name()
-        } else {
-            name.to_string()
-        };
-    }
-
     fn has_structured_custom_theme(&self) -> bool {
         let draft = &self.cache.custom_theme;
         draft.theme_name.trim() != default_custom_theme_name()
@@ -435,7 +723,29 @@ impl ConfigStore {
     }
 
     fn effective_custom_theme(&self) -> CustomThemeConfig {
-        let mut draft = if self.has_structured_custom_theme() {
+        let mut draft = if let Some(custom_theme) = self
+            .active_theme_profile()
+            .and_then(|profile| profile.custom_theme.clone())
+        {
+            custom_theme
+        } else if let Some(profile) = self.active_theme_profile() {
+            let profile_name = if profile.name.trim().is_empty() {
+                default_custom_theme_name()
+            } else {
+                format!("{} Custom", profile.name.trim())
+            };
+            CustomThemeConfig {
+                theme_name: profile_name,
+                light: CustomThemeModeConfig {
+                    base_theme_name: profile.light_theme_name.trim().to_string(),
+                    ..CustomThemeModeConfig::default()
+                },
+                dark: CustomThemeModeConfig {
+                    base_theme_name: profile.dark_theme_name.trim().to_string(),
+                    ..CustomThemeModeConfig::default()
+                },
+            }
+        } else if self.has_structured_custom_theme() {
             self.cache.custom_theme.clone()
         } else {
             CustomThemeConfig::default()
@@ -484,6 +794,28 @@ impl ConfigStore {
         draft
     }
 
+    fn set_effective_custom_theme(&mut self, draft: CustomThemeConfig) {
+        if let Some(profile) = self.active_theme_profile_mut() {
+            profile.custom_theme = Some(draft.clone());
+        }
+        self.cache.custom_theme = draft.clone();
+        self.cache.custom_theme_name = draft.theme_name;
+    }
+
+    pub fn promote_active_theme_profile_to_custom(
+        &mut self,
+        light_theme_name: String,
+        dark_theme_name: String,
+    ) {
+        let draft = self.effective_custom_theme();
+        if let Some(profile) = self.active_theme_profile_mut() {
+            profile.name = draft.theme_name.clone();
+            profile.light_theme_name = light_theme_name;
+            profile.dark_theme_name = dark_theme_name;
+            profile.custom_theme = Some(draft);
+        }
+    }
+
     fn custom_theme_mode_ref(draft: &CustomThemeConfig, mode: ThemeMode) -> &CustomThemeModeConfig {
         if mode.is_dark() {
             &draft.dark
@@ -515,8 +847,7 @@ impl ConfigStore {
         } else {
             name.to_string()
         };
-        self.cache.custom_theme = draft;
-        self.set_custom_theme_name(name);
+        self.set_effective_custom_theme(draft);
     }
 
     pub fn custom_theme_base_name(&self, mode: ThemeMode) -> String {
@@ -528,7 +859,7 @@ impl ConfigStore {
     pub fn set_custom_theme_base_name(&mut self, mode: ThemeMode, name: &str) {
         let mut draft = self.effective_custom_theme();
         Self::custom_theme_mode_mut(&mut draft, mode).base_theme_name = name.trim().to_string();
-        self.cache.custom_theme = draft;
+        self.set_effective_custom_theme(draft);
     }
 
     pub fn set_custom_theme_override(&mut self, mode: ThemeMode, key: &str, value: &str) {
@@ -540,7 +871,7 @@ impl ConfigStore {
         } else {
             overrides.insert(key.to_string(), value.to_string());
         }
-        self.cache.custom_theme = draft;
+        self.set_effective_custom_theme(draft);
     }
 
     pub fn custom_theme_font_brightness_for_mode(&self, mode: ThemeMode) -> f32 {
@@ -557,10 +888,14 @@ impl ConfigStore {
         let mut draft = self.effective_custom_theme();
         Self::custom_theme_mode_mut(&mut draft, mode).font_brightness =
             brightness.clamp(CUSTOM_FONT_BRIGHTNESS_MIN, CUSTOM_FONT_BRIGHTNESS_MAX);
-        self.cache.custom_theme = draft;
+        self.set_effective_custom_theme(draft);
     }
 
     pub fn reset_custom_theme_draft(&mut self) {
+        if let Some(profile) = self.active_theme_profile_mut() {
+            profile.custom_theme = None;
+            profile.custom_theme_save_path.clear();
+        }
         self.cache.custom_theme = CustomThemeConfig::default();
         self.cache.custom_primary_color.clear();
         self.cache.custom_background_color.clear();
@@ -864,6 +1199,226 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn is_plain_builtin_theme_profile(profile: &ThemeProfileConfig) -> bool {
+    profile.custom_theme.is_none() && profile.custom_theme_save_path.trim().is_empty()
+}
+
+fn deprecated_builtin_theme_profile_replacement(id: &str) -> Option<&'static str> {
+    match id.trim() {
+        "phyger" => Some("balanced"),
+        "soft-moon" => Some("tokyo-moon"),
+        "terminal-green" => Some("matrix"),
+        _ => None,
+    }
+}
+
+fn normalize_theme_profile_id(id: &str, name: &str) -> String {
+    let source = if id.trim().is_empty() { name } else { id };
+    let mut slug = String::new();
+    for ch in source.trim().chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+        } else if !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug = slug.trim_matches('-');
+    if slug.is_empty() {
+        default_active_theme_profile_id()
+    } else {
+        slug.to_string()
+    }
+}
+
+#[cfg(test)]
+mod theme_profile_tests {
+    use super::{ConfigFile, ConfigStore, ThemeProfileConfig, default_theme_profiles};
+
+    #[test]
+    fn in_memory_config_has_default_theme_profiles() {
+        let config = ConfigStore::in_memory();
+
+        assert_eq!(config.active_theme_profile_id(), "balanced");
+        assert!(config.theme_profiles().len() >= default_theme_profiles().len());
+        assert!(
+            config
+                .theme_profiles()
+                .iter()
+                .any(|profile| profile.name == "Solarized")
+        );
+        assert!(config.theme_profiles().len() >= default_theme_profiles().len());
+        assert!(
+            config
+                .theme_profiles()
+                .iter()
+                .any(|profile| profile.name == "Tokyo Storm")
+        );
+        assert!(
+            config
+                .theme_profiles()
+                .iter()
+                .any(|profile| profile.name == "Matrix")
+        );
+    }
+
+    #[test]
+    fn default_theme_profiles_use_distinct_actual_theme_pairs() {
+        let profiles = default_theme_profiles();
+        let mut pairs = std::collections::HashSet::new();
+
+        for profile in &profiles {
+            assert!(
+                pairs.insert((
+                    profile.light_theme_name.as_str(),
+                    profile.dark_theme_name.as_str()
+                )),
+                "duplicate theme pair in default profile {}",
+                profile.name
+            );
+        }
+
+        let tokyo_storm = profiles
+            .iter()
+            .find(|profile| profile.id == "tokyo-storm")
+            .expect("tokyo storm default profile exists");
+        assert_eq!(tokyo_storm.light_theme_name, "Tokyo Storm Light");
+        assert_eq!(tokyo_storm.dark_theme_name, "Tokyo Storm");
+
+        let matrix = profiles
+            .iter()
+            .find(|profile| profile.id == "matrix")
+            .expect("matrix default profile exists");
+        assert_eq!(matrix.light_theme_name, "Matrix Light");
+        assert_eq!(matrix.dark_theme_name, "Matrix");
+
+        assert!(
+            profiles
+                .iter()
+                .all(|profile| profile.id != "terminal-green")
+        );
+    }
+
+    #[test]
+    fn saved_builtin_theme_profiles_are_refreshed_to_current_defaults() {
+        let mut store = ConfigStore {
+            path: std::path::PathBuf::new(),
+            cache: ConfigFile {
+                active_theme_profile_id: "tokyo-storm".to_string(),
+                theme_profiles: vec![ThemeProfileConfig {
+                    id: "tokyo-storm".to_string(),
+                    name: "Tokyo Storm".to_string(),
+                    light_theme_name: "Phyger Light".to_string(),
+                    dark_theme_name: "Tokyo Storm".to_string(),
+                    custom_theme: None,
+                    custom_theme_save_path: String::new(),
+                }],
+                light_theme_name: "Phyger Light".to_string(),
+                dark_theme_name: "Tokyo Storm".to_string(),
+                ..ConfigFile::default()
+            },
+        };
+
+        store.normalize_theme_profiles();
+
+        let profile = store
+            .theme_profiles()
+            .iter()
+            .find(|profile| profile.id == "tokyo-storm")
+            .expect("tokyo storm profile exists");
+        assert_eq!(profile.light_theme_name, "Tokyo Storm Light");
+        assert_eq!(profile.dark_theme_name, "Tokyo Storm");
+        assert_eq!(store.light_theme_name(), "Tokyo Storm Light");
+        assert_eq!(store.dark_theme_name(), "Tokyo Storm");
+    }
+
+    #[test]
+    fn deprecated_duplicate_builtin_profiles_move_to_replacements() {
+        let mut store = ConfigStore {
+            path: std::path::PathBuf::new(),
+            cache: ConfigFile {
+                active_theme_profile_id: "terminal-green".to_string(),
+                theme_profiles: vec![ThemeProfileConfig {
+                    id: "terminal-green".to_string(),
+                    name: "Terminal Green".to_string(),
+                    light_theme_name: "Phyger Light".to_string(),
+                    dark_theme_name: "Matrix".to_string(),
+                    custom_theme: None,
+                    custom_theme_save_path: String::new(),
+                }],
+                light_theme_name: "Phyger Light".to_string(),
+                dark_theme_name: "Matrix".to_string(),
+                ..ConfigFile::default()
+            },
+        };
+
+        store.normalize_theme_profiles();
+
+        assert_eq!(store.active_theme_profile_id(), "matrix");
+        assert!(
+            store
+                .theme_profiles()
+                .iter()
+                .all(|profile| profile.id != "terminal-green")
+        );
+        assert_eq!(store.light_theme_name(), "Matrix Light");
+        assert_eq!(store.dark_theme_name(), "Matrix");
+    }
+
+    #[test]
+    fn legacy_theme_names_become_current_profile() {
+        let mut store = ConfigStore {
+            path: std::path::PathBuf::new(),
+            cache: ConfigFile {
+                active_theme_profile_id: String::new(),
+                theme_profiles: Vec::new(),
+                light_theme_name: "Gruvbox Light".to_string(),
+                dark_theme_name: "Gruvbox Dark".to_string(),
+                ..ConfigFile::default()
+            },
+        };
+
+        store.normalize_theme_profiles();
+
+        assert_eq!(store.active_theme_profile_id(), "current");
+        let active = store.active_theme_profile().expect("active profile exists");
+        assert_eq!(active.light_theme_name, "Gruvbox Light");
+        assert_eq!(active.dark_theme_name, "Gruvbox Dark");
+    }
+
+    #[test]
+    fn custom_theme_draft_uses_active_profile_as_base() {
+        let mut config = ConfigStore::in_memory();
+        config.set_active_theme_profile("solarized");
+
+        let draft = config.custom_theme_draft();
+
+        assert_eq!(draft.theme_name, "Solarized Custom");
+        assert_eq!(draft.light.base_theme_name, "Solarized Light");
+        assert_eq!(draft.dark.base_theme_name, "Solarized Dark");
+    }
+
+    #[test]
+    fn imported_theme_profile_is_unique_and_active() {
+        let mut config = ConfigStore::in_memory();
+
+        let first = config.activate_imported_theme_profile(
+            "Imported Theme".to_string(),
+            "Imported Light".to_string(),
+            "Imported Dark".to_string(),
+        );
+        let second = config.activate_imported_theme_profile(
+            "Imported Theme".to_string(),
+            "Imported Light 2".to_string(),
+            "Imported Dark 2".to_string(),
+        );
+
+        assert_ne!(first.id, second.id);
+        assert_eq!(config.active_theme_profile_id(), second.id);
+        assert_eq!(config.light_theme_name(), "Imported Light 2");
+        assert_eq!(config.dark_theme_name(), "Imported Dark 2");
+    }
 }
 
 #[cfg(test)]

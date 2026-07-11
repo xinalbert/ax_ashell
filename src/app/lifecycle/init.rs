@@ -181,6 +181,11 @@ impl AxShell {
                 .placeholder(t!("sync_encryption_password").to_string())
                 .masked(true)
         });
+        let custom_theme_save_path_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("themes/")
+                .default_value(config.custom_theme_save_path())
+        });
         let custom_theme_draft = config.custom_theme_draft();
         let custom_theme_draft_name = custom_theme_draft.theme_name.clone();
         let mut custom_theme_inputs = std::collections::HashMap::new();
@@ -267,6 +272,7 @@ impl AxShell {
                 window,
                 Self::on_input_event,
             ),
+            cx.subscribe_in(&custom_theme_save_path_input, window, Self::on_input_event),
             cx.subscribe_in(&saved_group_name_input, window, Self::on_input_event),
         ];
         _subscriptions.extend(
@@ -300,8 +306,13 @@ impl AxShell {
             &custom_theme_draft.theme_name,
             ThemeMode::Dark,
         );
+        let active_theme_profile = config.active_theme_profile().cloned();
         let light_theme_name = if config.light_theme_name().is_empty() {
-            default_light_theme_name
+            active_theme_profile
+                .as_ref()
+                .filter(|profile| !profile.light_theme_name.trim().is_empty())
+                .map(|profile| profile.light_theme_name.clone().into())
+                .unwrap_or(default_light_theme_name)
         } else if config.light_theme_name() == custom_theme_draft.theme_name
             || config.light_theme_name() == config.custom_theme_name()
         {
@@ -310,7 +321,11 @@ impl AxShell {
             config.light_theme_name().into()
         };
         let dark_theme_name = if config.dark_theme_name().is_empty() {
-            default_dark_theme_name
+            active_theme_profile
+                .as_ref()
+                .filter(|profile| !profile.dark_theme_name.trim().is_empty())
+                .map(|profile| profile.dark_theme_name.clone().into())
+                .unwrap_or(default_dark_theme_name)
         } else if config.dark_theme_name() == custom_theme_draft.theme_name
             || config.dark_theme_name() == config.custom_theme_name()
         {
@@ -373,6 +388,7 @@ impl AxShell {
             sync_s3_secret_key_input,
             sync_s3_session_token_input,
             sync_encryption_password_input,
+            custom_theme_save_path_input,
             custom_theme_inputs,
             sync_in_progress: false,
             sync_status: t!("sync_not_run").into(),
@@ -474,6 +490,7 @@ impl AxShell {
             expanded_saved_groups: HashSet::new(),
             workspace_page: crate::app::WorkspacePage::Terminal,
             settings_page_open: false,
+            settings_page_generation: 0,
             settings_close_remember_choice: false,
             keybind_error: None,
             keybinds_suspended: false,
@@ -517,6 +534,7 @@ impl AxShell {
             _subscriptions,
         };
 
+        this.sync_custom_theme_inputs_from_draft(window, cx);
         this.apply_theme_preferences(window, cx);
         this.start_event_pump(cx);
         this

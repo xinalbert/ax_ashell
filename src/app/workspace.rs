@@ -198,6 +198,9 @@ impl AxShell {
     }
 
     pub(crate) fn open_settings_page(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_page_open {
+            self.settings_page_generation = self.settings_page_generation.wrapping_add(1);
+        }
         self.settings_page_open = true;
         self.set_workspace_page(WorkspacePage::Settings, cx);
     }

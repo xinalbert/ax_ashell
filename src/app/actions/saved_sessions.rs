@@ -56,7 +56,7 @@ impl AxShell {
         self.active_dialog = None;
         match entry {
             SelectorEntry::Local => {
-                self.open_local(cx);
+                self.open_local_and_focus(window, cx);
                 window.close_dialog(cx);
             }
             SelectorEntry::NewSsh => {
@@ -64,7 +64,7 @@ impl AxShell {
                 self.open_new_ssh_dialog(window, cx);
             }
             SelectorEntry::Saved(session_id) => {
-                self.connect_saved_session(session_id, cx);
+                self.connect_saved_session_and_focus(session_id, window, cx);
                 window.close_dialog(cx);
             }
         }

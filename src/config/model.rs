@@ -12,6 +12,66 @@ pub(super) fn default_custom_theme_name() -> String {
     "Custom Theme".to_string()
 }
 
+pub(super) fn default_active_theme_profile_id() -> String {
+    "balanced".to_string()
+}
+
+fn theme_profile(
+    id: &str,
+    name: &str,
+    light_theme_name: &str,
+    dark_theme_name: &str,
+) -> ThemeProfileConfig {
+    ThemeProfileConfig {
+        id: id.to_string(),
+        name: name.to_string(),
+        light_theme_name: light_theme_name.to_string(),
+        dark_theme_name: dark_theme_name.to_string(),
+        custom_theme: None,
+        custom_theme_save_path: String::new(),
+    }
+}
+
+pub(super) fn default_theme_profiles() -> Vec<ThemeProfileConfig> {
+    vec![
+        theme_profile("balanced", "Balanced", "Phyger Light", "Phyger Dark"),
+        theme_profile(
+            "solarized",
+            "Solarized",
+            "Solarized Light",
+            "Solarized Dark",
+        ),
+        theme_profile("gruvbox", "Gruvbox", "Gruvbox Light", "Gruvbox Dark"),
+        theme_profile("tokyo", "Tokyo Night", "Tokyo Night Light", "Tokyo Night"),
+        theme_profile(
+            "tokyo-storm",
+            "Tokyo Storm",
+            "Tokyo Storm Light",
+            "Tokyo Storm",
+        ),
+        theme_profile("tokyo-moon", "Tokyo Moon", "Tokyo Moon Light", "Tokyo Moon"),
+        theme_profile("matrix", "Matrix", "Matrix Light", "Matrix"),
+        theme_profile(
+            "solarized-tokyo",
+            "Solarized + Tokyo",
+            "Solarized Light",
+            "Tokyo Night",
+        ),
+        theme_profile(
+            "gruvbox-storm",
+            "Gruvbox + Storm",
+            "Gruvbox Light",
+            "Tokyo Storm",
+        ),
+        theme_profile(
+            "warm-contrast",
+            "Gruvbox + Phyger",
+            "Gruvbox Light",
+            "Phyger Dark",
+        ),
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub(crate) enum SavedWindowBounds {
@@ -53,7 +113,7 @@ pub(crate) enum CursorStyle {
     BeamBlink,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct CustomThemeModeConfig {
     #[serde(default)]
     pub(crate) base_theme_name: String,
@@ -73,7 +133,7 @@ impl Default for CustomThemeModeConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct CustomThemeConfig {
     #[serde(default = "default_custom_theme_name")]
     pub(crate) theme_name: String,
@@ -93,12 +153,32 @@ impl Default for CustomThemeConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct ThemeProfileConfig {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) light_theme_name: String,
+    #[serde(default)]
+    pub(crate) dark_theme_name: String,
+    #[serde(default)]
+    pub(crate) custom_theme: Option<CustomThemeConfig>,
+    #[serde(default)]
+    pub(crate) custom_theme_save_path: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct ConfigFile {
     #[serde(default = "default_follow_system_theme")]
     pub(super) follow_system_theme: bool,
     #[serde(default)]
     pub(super) theme_mode: String,
+    #[serde(default = "default_active_theme_profile_id")]
+    pub(super) active_theme_profile_id: String,
+    #[serde(default)]
+    pub(super) theme_profiles: Vec<ThemeProfileConfig>,
     #[serde(default)]
     pub(super) light_theme_name: String,
     #[serde(default)]
@@ -351,6 +431,8 @@ impl Default for ConfigFile {
         Self {
             follow_system_theme: default_follow_system_theme(),
             theme_mode: String::new(),
+            active_theme_profile_id: default_active_theme_profile_id(),
+            theme_profiles: default_theme_profiles(),
             light_theme_name: String::new(),
             dark_theme_name: String::new(),
             locale: default_locale(),

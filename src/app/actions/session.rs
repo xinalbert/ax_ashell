@@ -77,6 +77,11 @@ impl AxShell {
         cx.notify();
     }
 
+    pub(crate) fn open_local_and_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_local(cx);
+        self.focus_terminal_workspace(window, cx);
+    }
+
     pub(crate) fn connect_ssh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         tracing::info!("[ui] user initiating new ssh connection from form");
         let session_name = self.session_name_input.read(cx).value().trim().to_string();
@@ -165,7 +170,7 @@ impl AxShell {
         self.open_ssh_session(session, cx);
         self.editing_session_id = None;
         self.active_dialog = None;
-        self.set_workspace_page(WorkspacePage::Terminal, cx);
+        self.focus_terminal_workspace(window, cx);
         window.close_dialog(cx);
         cx.notify();
     }
@@ -545,6 +550,22 @@ impl AxShell {
             return;
         };
         self.open_ssh_session(session, cx);
+        self.set_workspace_page(WorkspacePage::Terminal, cx);
+    }
+
+    pub(crate) fn connect_saved_session_and_focus(
+        &mut self,
+        session_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.connect_saved_session(session_id, cx);
+        self.focus_terminal_workspace(window, cx);
+    }
+
+    pub(crate) fn focus_terminal_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_workspace_page(WorkspacePage::Terminal, cx);
+        self.focus_handle.focus(window, cx);
     }
 
     pub(crate) fn open_ssh_session(&mut self, session: Session, cx: &mut Context<Self>) {
