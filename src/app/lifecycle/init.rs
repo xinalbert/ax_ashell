@@ -205,16 +205,11 @@ impl AxShell {
             };
             for section in crate::app::theme::CUSTOM_THEME_SECTION_SPECS {
                 for field in section.fields {
-                    let default_value =
-                        if field.domain == crate::app::theme::CustomThemeFieldDomain::Brightness {
-                            format!("{:.2}", mode_config.font_brightness)
-                        } else {
-                            mode_config
-                                .overrides
-                                .get(field.key)
-                                .cloned()
-                                .unwrap_or_default()
-                        };
+                    let default_value = mode_config
+                        .overrides
+                        .get(field.key)
+                        .cloned()
+                        .unwrap_or_default();
                     let input_key = crate::app::theme::custom_theme_input_key(mode, field.key);
                     let placeholder = field.placeholder.to_string();
                     custom_theme_inputs.insert(
@@ -403,6 +398,8 @@ impl AxShell {
                 dark_theme_name,
                 ui_font_size: config.ui_font_size(),
                 terminal_font_size: config.terminal_font_size(),
+                ui_font_brightness: config.ui_font_brightness(),
+                terminal_font_brightness: config.terminal_font_brightness(),
                 terminal_font_metrics: crate::app::TerminalFontMetrics::fallback(
                     config.terminal_font_size(),
                 ),

@@ -1,3 +1,11 @@
+## 2026-07-12 修正内置主题 registry reload 后回落默认暗色
+
+- 日期：2026-07-12 07:21 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮确认外部 `ThemeRegistry::watch_dir()` reload 会清掉 AxShell embedded themes，导致 Gruvbox/Matrix/Tokyo 等内置 profile 解析失败并 fallback 到 `Default Dark`。修复集中在主题注册/应用链路和 Custom draft/profile 持久化隔离。
+- 受影响文件：`src/app/theme.rs`，`src/config/store.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：`rustfmt --edition 2024 src/app/theme.rs src/config/store.rs` 通过；`cargo check` 通过；theme/profile 定向测试共 15 项通过；`cargo test --quiet` 113 项全部通过；`cargo build` 通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；GUI profile 连续切换仍需手工确认。
+
 ## 2026-07-11 Settings 交互与主题实时预览修正预检
 
 - 日期：2026-07-11 20:42 +0800
@@ -1780,3 +1788,18 @@
 - 受影响文件：`src/app/theme.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo；无新增运行或测试依赖。
 - 验证结果：相关 `rustfmt`、`cargo check`、`cargo test --quiet`（110 项）、`cargo build`、`git diff --check` 和 tracking docs validator 全部通过；真实 GUI 连续 profile 切换仍需手工确认。
+## 2026-07-12 初始化全局字体亮度拆分环境记录
+
+- 日期：2026-07-12 07:33 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮把 Custom 主题字体亮度迁移为 Theme 设置中的全局 UI / Terminal 亮度，Custom Theme Editor 不再负责亮度。
+- 受影响文件：`src/config/model.rs`，`src/config/store.rs`，`src/app/state/appearance.rs`，`src/app/lifecycle/init.rs`，`src/app/theme.rs`，`src/app/actions/session.rs`，`src/app/dialogs/settings/appearance.rs`，`src/app/dialogs/settings/font_page.rs`，`src/app/dialogs/settings/custom.rs`，`src/terminal/element.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：确认本轮验证命令收敛为相关 `rustfmt --edition 2024`、配置/theme 聚焦测试、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking docs validator；GUI 视觉亮度仍需手工确认。
+
+## 2026-07-12 完成全局字体亮度拆分环境验证
+
+- 日期：2026-07-12 07:58 +0800
+- 变化摘要：全局 `ui_font_brightness` / `terminal_font_brightness` 配置、旧 custom 亮度迁移、Settings 控件、UI 前景色亮度后处理和 terminal 全局亮度读取已完成；运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/config/model.rs`，`src/config/store.rs`，`src/app/state/appearance.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/theme.rs`，`src/app/actions/session.rs`，`src/app/dialogs/settings/appearance.rs`，`src/app/dialogs/settings/custom.rs`，`src/terminal/element.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：相关 `rustfmt` 通过；theme/profile 聚焦测试 12 项通过；font brightness 设置测试 2 项通过；import theme 测试 5 项通过；`cargo check` 通过；`cargo test --quiet` 117 项全部通过；`git diff --check` 和 tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；GUI 亮度视觉效果仍需手工确认。

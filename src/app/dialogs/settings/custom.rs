@@ -166,22 +166,13 @@ pub(super) fn settings_custom_page(
                 .expect("custom theme input missing")
                 .clone();
             let inherited_value = shell.custom_theme_inherited_field_value(editing_mode, field, cx);
-            let width = if field.domain == crate::app::theme::CustomThemeFieldDomain::Brightness {
-                px(96.)
-            } else {
-                px(180.)
-            };
-            let description =
-                if field.domain == crate::app::theme::CustomThemeFieldDomain::Brightness {
-                    format!("{} key: {}", t!("custom_font_brightness_hint"), field.key)
-                } else {
-                    format!(
-                        "{} {}; key: {}",
-                        t!("custom_theme_inherited_hint"),
-                        inherited_value,
-                        field.key,
-                    )
-                };
+            let width = px(180.);
+            let description = format!(
+                "{} {}; key: {}",
+                t!("custom_theme_inherited_hint"),
+                inherited_value,
+                field.key,
+            );
 
             group = group.item(
                 SettingItem::new(

@@ -479,6 +479,45 @@ impl AxShell {
         cx.notify();
     }
 
+    pub(crate) fn change_ui_font_brightness(
+        &mut self,
+        delta: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.config
+            .set_ui_font_brightness(self.appearance.ui_font_brightness + delta);
+        self.appearance.ui_font_brightness = self.config.ui_font_brightness();
+        self.config.save_logged("set_ui_font_brightness");
+        self.apply_theme_preferences(window, cx);
+        self.status = format!(
+            "UI font brightness: {:.2}",
+            self.appearance.ui_font_brightness
+        )
+        .into();
+        window.refresh();
+        cx.notify();
+    }
+
+    pub(crate) fn change_terminal_font_brightness(
+        &mut self,
+        delta: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.config
+            .set_terminal_font_brightness(self.appearance.terminal_font_brightness + delta);
+        self.appearance.terminal_font_brightness = self.config.terminal_font_brightness();
+        self.config.save_logged("set_terminal_font_brightness");
+        self.status = format!(
+            "terminal font brightness: {:.2}",
+            self.appearance.terminal_font_brightness
+        )
+        .into();
+        window.refresh();
+        cx.notify();
+    }
+
     pub(crate) fn change_ui_font_family(
         &mut self,
         family: &str,

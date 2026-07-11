@@ -706,7 +706,7 @@ impl AxShell {
             && self.appearance.last_theme_sync.elapsed() >= Duration::from_secs(1)
         {
             self.appearance.last_theme_sync = std::time::Instant::now();
-            gpui_component::Theme::sync_system_appearance(None, cx);
+            self.apply_theme_preferences_for_system(cx);
             cx.refresh_windows();
         }
     }

@@ -100,6 +100,8 @@ impl ConfigStore {
 
         let mut store = Self { path, cache };
         store.normalize_theme_profiles();
+        store.migrate_global_font_brightness_from_legacy();
+        store.sync_custom_theme_draft_to_active_profile();
         Ok(store)
     }
 
@@ -113,6 +115,8 @@ impl ConfigStore {
             cache,
         };
         store.normalize_theme_profiles();
+        store.migrate_global_font_brightness_from_legacy();
+        store.sync_custom_theme_draft_to_active_profile();
         store
     }
 
@@ -324,10 +328,7 @@ impl ConfigStore {
         self.cache.active_theme_profile_id = profile.id.clone();
         self.cache.light_theme_name = profile.light_theme_name.clone();
         self.cache.dark_theme_name = profile.dark_theme_name.clone();
-        if let Some(custom_theme) = &profile.custom_theme {
-            self.cache.custom_theme = custom_theme.clone();
-            self.cache.custom_theme_name = custom_theme.theme_name.clone();
-        }
+        self.sync_custom_theme_draft_from_profile(&profile);
         Some(profile)
     }
 
@@ -473,6 +474,43 @@ impl ConfigStore {
         }
     }
 
+    fn migrate_global_font_brightness_from_legacy(&mut self) {
+        self.cache.ui_font_brightness = normalize_font_brightness(self.cache.ui_font_brightness);
+        let mut terminal_brightness =
+            normalize_font_brightness(self.cache.terminal_font_brightness);
+
+        if is_default_normalized_font_brightness(terminal_brightness) {
+            if !is_default_normalized_font_brightness(self.cache.custom_font_brightness) {
+                terminal_brightness = normalize_font_brightness(self.cache.custom_font_brightness);
+            } else if let Some(legacy_brightness) = self.legacy_custom_theme_font_brightness() {
+                terminal_brightness = legacy_brightness;
+            }
+        }
+
+        self.cache.terminal_font_brightness = terminal_brightness;
+        self.cache.custom_font_brightness = default_font_brightness();
+        reset_custom_theme_font_brightness(&mut self.cache.custom_theme);
+        for profile in &mut self.cache.theme_profiles {
+            if let Some(custom_theme) = profile.custom_theme.as_mut() {
+                reset_custom_theme_font_brightness(custom_theme);
+            }
+        }
+    }
+
+    fn legacy_custom_theme_font_brightness(&self) -> Option<f32> {
+        self.active_theme_profile()
+            .and_then(|profile| profile.custom_theme.as_ref())
+            .and_then(|custom_theme| {
+                custom_theme_legacy_font_brightness(custom_theme, self.cache.theme_mode.as_str())
+            })
+            .or_else(|| {
+                custom_theme_legacy_font_brightness(
+                    &self.cache.custom_theme,
+                    self.cache.theme_mode.as_str(),
+                )
+            })
+    }
+
     fn has_legacy_theme_profile_values(&self) -> bool {
         !self.cache.light_theme_name.trim().is_empty()
             || !self.cache.dark_theme_name.trim().is_empty()
@@ -483,8 +521,6 @@ impl ConfigStore {
         self.has_structured_custom_theme()
             || !self.cache.custom_primary_color.trim().is_empty()
             || !self.cache.custom_background_color.trim().is_empty()
-            || (self.cache.custom_font_brightness - default_custom_font_brightness()).abs()
-                > f32::EPSILON
             || self.cache.custom_theme_name.trim() != default_custom_theme_name()
     }
 
@@ -565,13 +601,6 @@ impl ConfigStore {
                 );
             }
         }
-        if (self.cache.custom_font_brightness - default_custom_font_brightness()).abs()
-            > f32::EPSILON
-        {
-            let brightness = self.custom_font_brightness();
-            draft.light.font_brightness = brightness;
-            draft.dark.font_brightness = brightness;
-        }
         draft
     }
 
@@ -637,12 +666,6 @@ impl ConfigStore {
         self.cache.theme_mode = theme_mode.into();
         self.cache.light_theme_name = light_theme_name.into();
         self.cache.dark_theme_name = dark_theme_name.into();
-        let light_theme_name = self.cache.light_theme_name.clone();
-        let dark_theme_name = self.cache.dark_theme_name.clone();
-        if let Some(profile) = self.active_theme_profile_mut() {
-            profile.light_theme_name = light_theme_name;
-            profile.dark_theme_name = dark_theme_name;
-        }
     }
 
     pub fn window_bounds(&self) -> Option<&SavedWindowBounds> {
@@ -694,13 +717,20 @@ impl ConfigStore {
         self.cache.ui_font_size = ui_font_size.max(8.0);
     }
 
-    pub fn custom_font_brightness(&self) -> f32 {
-        let value = self.cache.custom_font_brightness;
-        if value <= 0.0 {
-            default_custom_font_brightness()
-        } else {
-            value.clamp(CUSTOM_FONT_BRIGHTNESS_MIN, CUSTOM_FONT_BRIGHTNESS_MAX)
-        }
+    pub fn ui_font_brightness(&self) -> f32 {
+        normalize_font_brightness(self.cache.ui_font_brightness)
+    }
+
+    pub fn set_ui_font_brightness(&mut self, brightness: f32) {
+        self.cache.ui_font_brightness = normalize_font_brightness(brightness);
+    }
+
+    pub fn terminal_font_brightness(&self) -> f32 {
+        normalize_font_brightness(self.cache.terminal_font_brightness)
+    }
+
+    pub fn set_terminal_font_brightness(&mut self, brightness: f32) {
+        self.cache.terminal_font_brightness = normalize_font_brightness(brightness);
     }
 
     pub fn custom_theme_name(&self) -> &str {
@@ -718,43 +748,58 @@ impl ConfigStore {
             || !draft.dark.base_theme_name.trim().is_empty()
             || !draft.light.overrides.is_empty()
             || !draft.dark.overrides.is_empty()
-            || (draft.light.font_brightness - default_custom_font_brightness()).abs() > f32::EPSILON
-            || (draft.dark.font_brightness - default_custom_font_brightness()).abs() > f32::EPSILON
+    }
+
+    fn draft_from_theme_profile(profile: &ThemeProfileConfig) -> CustomThemeConfig {
+        let profile_name = if profile.name.trim().is_empty() {
+            default_custom_theme_name()
+        } else {
+            format!("{} Custom", profile.name.trim())
+        };
+        CustomThemeConfig {
+            theme_name: profile_name,
+            light: CustomThemeModeConfig {
+                base_theme_name: profile.light_theme_name.trim().to_string(),
+                ..CustomThemeModeConfig::default()
+            },
+            dark: CustomThemeModeConfig {
+                base_theme_name: profile.dark_theme_name.trim().to_string(),
+                ..CustomThemeModeConfig::default()
+            },
+        }
+    }
+
+    fn sync_custom_theme_draft_from_profile(&mut self, profile: &ThemeProfileConfig) {
+        let draft = profile
+            .custom_theme
+            .clone()
+            .unwrap_or_else(|| Self::draft_from_theme_profile(profile));
+        self.cache.custom_theme = draft.clone();
+        self.cache.custom_theme_name = draft.theme_name;
+    }
+
+    fn sync_custom_theme_draft_to_active_profile(&mut self) {
+        if let Some(profile) = self.active_theme_profile().cloned() {
+            self.sync_custom_theme_draft_from_profile(&profile);
+        }
     }
 
     fn effective_custom_theme(&self) -> CustomThemeConfig {
-        let mut draft = if let Some(custom_theme) = self
+        let mut draft = if self.has_structured_custom_theme() {
+            self.cache.custom_theme.clone()
+        } else if let Some(custom_theme) = self
             .active_theme_profile()
             .and_then(|profile| profile.custom_theme.clone())
         {
             custom_theme
         } else if let Some(profile) = self.active_theme_profile() {
-            let profile_name = if profile.name.trim().is_empty() {
-                default_custom_theme_name()
-            } else {
-                format!("{} Custom", profile.name.trim())
-            };
-            CustomThemeConfig {
-                theme_name: profile_name,
-                light: CustomThemeModeConfig {
-                    base_theme_name: profile.light_theme_name.trim().to_string(),
-                    ..CustomThemeModeConfig::default()
-                },
-                dark: CustomThemeModeConfig {
-                    base_theme_name: profile.dark_theme_name.trim().to_string(),
-                    ..CustomThemeModeConfig::default()
-                },
-            }
-        } else if self.has_structured_custom_theme() {
-            self.cache.custom_theme.clone()
+            Self::draft_from_theme_profile(profile)
         } else {
             CustomThemeConfig::default()
         };
 
         let legacy_has_values = !self.cache.custom_primary_color.trim().is_empty()
             || !self.cache.custom_background_color.trim().is_empty()
-            || (self.cache.custom_font_brightness - default_custom_font_brightness()).abs()
-                > f32::EPSILON
             || self.cache.custom_theme_name.trim() != default_custom_theme_name();
 
         if !self.has_structured_custom_theme() && legacy_has_values {
@@ -777,7 +822,6 @@ impl ConfigStore {
                         self.cache.custom_background_color.trim().to_string(),
                     );
                 }
-                mode_cfg.font_brightness = self.custom_font_brightness();
             }
         }
 
@@ -785,19 +829,16 @@ impl ConfigStore {
             draft.theme_name = default_custom_theme_name();
         }
         if draft.light.font_brightness <= 0.0 {
-            draft.light.font_brightness = default_custom_font_brightness();
+            draft.light.font_brightness = default_font_brightness();
         }
         if draft.dark.font_brightness <= 0.0 {
-            draft.dark.font_brightness = default_custom_font_brightness();
+            draft.dark.font_brightness = default_font_brightness();
         }
 
         draft
     }
 
     fn set_effective_custom_theme(&mut self, draft: CustomThemeConfig) {
-        if let Some(profile) = self.active_theme_profile_mut() {
-            profile.custom_theme = Some(draft.clone());
-        }
         self.cache.custom_theme = draft.clone();
         self.cache.custom_theme_name = draft.theme_name;
     }
@@ -874,33 +915,32 @@ impl ConfigStore {
         self.set_effective_custom_theme(draft);
     }
 
-    pub fn custom_theme_font_brightness_for_mode(&self, mode: ThemeMode) -> f32 {
-        let draft = self.effective_custom_theme();
-        let value = Self::custom_theme_mode_ref(&draft, mode).font_brightness;
-        if value <= 0.0 {
-            default_custom_font_brightness()
-        } else {
-            value.clamp(CUSTOM_FONT_BRIGHTNESS_MIN, CUSTOM_FONT_BRIGHTNESS_MAX)
-        }
-    }
-
-    pub fn set_custom_theme_font_brightness_for_mode(&mut self, mode: ThemeMode, brightness: f32) {
-        let mut draft = self.effective_custom_theme();
-        Self::custom_theme_mode_mut(&mut draft, mode).font_brightness =
-            brightness.clamp(CUSTOM_FONT_BRIGHTNESS_MIN, CUSTOM_FONT_BRIGHTNESS_MAX);
-        self.set_effective_custom_theme(draft);
-    }
-
     pub fn reset_custom_theme_draft(&mut self) {
-        if let Some(profile) = self.active_theme_profile_mut() {
-            profile.custom_theme = None;
-            profile.custom_theme_save_path.clear();
-        }
-        self.cache.custom_theme = CustomThemeConfig::default();
+        let draft = if let Some(custom_theme) = self
+            .active_theme_profile()
+            .and_then(|profile| profile.custom_theme.clone())
+        {
+            CustomThemeConfig {
+                theme_name: custom_theme.theme_name,
+                light: CustomThemeModeConfig {
+                    base_theme_name: custom_theme.light.base_theme_name,
+                    ..CustomThemeModeConfig::default()
+                },
+                dark: CustomThemeModeConfig {
+                    base_theme_name: custom_theme.dark.base_theme_name,
+                    ..CustomThemeModeConfig::default()
+                },
+            }
+        } else if let Some(profile) = self.active_theme_profile() {
+            Self::draft_from_theme_profile(profile)
+        } else {
+            CustomThemeConfig::default()
+        };
+        self.cache.custom_theme = draft.clone();
         self.cache.custom_primary_color.clear();
         self.cache.custom_background_color.clear();
-        self.cache.custom_font_brightness = default_custom_font_brightness();
-        self.cache.custom_theme_name = default_custom_theme_name();
+        self.cache.custom_font_brightness = default_font_brightness();
+        self.cache.custom_theme_name = draft.theme_name;
     }
 
     pub fn theme_dir(&self) -> Option<PathBuf> {
@@ -1214,6 +1254,33 @@ fn deprecated_builtin_theme_profile_replacement(id: &str) -> Option<&'static str
     }
 }
 
+fn legacy_mode_font_brightness(mode: &CustomThemeModeConfig) -> Option<f32> {
+    (!is_default_normalized_font_brightness(mode.font_brightness))
+        .then(|| normalize_font_brightness(mode.font_brightness))
+}
+
+fn custom_theme_legacy_font_brightness(
+    custom_theme: &CustomThemeConfig,
+    theme_mode: &str,
+) -> Option<f32> {
+    let light = legacy_mode_font_brightness(&custom_theme.light);
+    let dark = legacy_mode_font_brightness(&custom_theme.dark);
+
+    match (light, dark) {
+        (Some(light), Some(dark)) if (light - dark).abs() <= f32::EPSILON => Some(light),
+        (Some(_light), Some(dark)) if theme_mode == "dark" => Some(dark),
+        (Some(light), Some(_dark)) => Some(light),
+        (Some(light), None) => Some(light),
+        (None, Some(dark)) => Some(dark),
+        (None, None) => None,
+    }
+}
+
+fn reset_custom_theme_font_brightness(custom_theme: &mut CustomThemeConfig) {
+    custom_theme.light.font_brightness = default_font_brightness();
+    custom_theme.dark.font_brightness = default_font_brightness();
+}
+
 fn normalize_theme_profile_id(id: &str, name: &str) -> String {
     let source = if id.trim().is_empty() { name } else { id };
     let mut slug = String::new();
@@ -1234,7 +1301,11 @@ fn normalize_theme_profile_id(id: &str, name: &str) -> String {
 
 #[cfg(test)]
 mod theme_profile_tests {
-    use super::{ConfigFile, ConfigStore, ThemeProfileConfig, default_theme_profiles};
+    use super::{
+        ConfigFile, ConfigStore, CustomThemeConfig, CustomThemeModeConfig, ThemeProfileConfig,
+        default_font_brightness, default_theme_profiles,
+    };
+    use gpui_component::ThemeMode;
 
     #[test]
     fn in_memory_config_has_default_theme_profiles() {
@@ -1400,6 +1471,131 @@ mod theme_profile_tests {
     }
 
     #[test]
+    fn saving_theme_preferences_does_not_mutate_builtin_profile() {
+        let mut config = ConfigStore::in_memory();
+        config.set_active_theme_profile("matrix");
+
+        config.set_theme_preferences(
+            true,
+            "dark",
+            "Matrix Custom [Custom Light]",
+            "Matrix Custom [Custom Dark]",
+        );
+
+        let matrix = config
+            .theme_profiles()
+            .iter()
+            .find(|profile| profile.id == "matrix")
+            .expect("matrix profile exists");
+        assert_eq!(matrix.light_theme_name, "Matrix Light");
+        assert_eq!(matrix.dark_theme_name, "Matrix");
+        assert!(matrix.custom_theme.is_none());
+        assert_eq!(config.light_theme_name(), "Matrix Custom [Custom Light]");
+        assert_eq!(config.dark_theme_name(), "Matrix Custom [Custom Dark]");
+    }
+
+    #[test]
+    fn custom_theme_draft_edits_do_not_promote_builtin_profile() {
+        let mut config = ConfigStore::in_memory();
+        config.set_active_theme_profile("solarized");
+
+        config.set_custom_theme_override(ThemeMode::Dark, "background", "#101820");
+
+        let draft = config.custom_theme_draft();
+        assert_eq!(
+            draft.dark.overrides.get("background").map(String::as_str),
+            Some("#101820")
+        );
+
+        let solarized = config
+            .theme_profiles()
+            .iter()
+            .find(|profile| profile.id == "solarized")
+            .expect("solarized profile exists");
+        assert_eq!(solarized.light_theme_name, "Solarized Light");
+        assert_eq!(solarized.dark_theme_name, "Solarized Dark");
+        assert!(solarized.custom_theme.is_none());
+    }
+
+    #[test]
+    fn switching_builtin_profiles_resets_custom_theme_draft_base() {
+        let mut config = ConfigStore::in_memory();
+        config.set_active_theme_profile("solarized");
+        config.set_custom_theme_override(ThemeMode::Dark, "background", "#101820");
+
+        config.set_active_theme_profile("matrix");
+
+        let draft = config.custom_theme_draft();
+        assert_eq!(draft.theme_name, "Matrix Custom");
+        assert_eq!(draft.light.base_theme_name, "Matrix Light");
+        assert_eq!(draft.dark.base_theme_name, "Matrix");
+        assert!(!draft.dark.overrides.contains_key("background"));
+    }
+
+    #[test]
+    fn legacy_custom_font_brightness_becomes_global_terminal_brightness() {
+        let mut config = ConfigStore {
+            path: std::path::PathBuf::new(),
+            cache: ConfigFile {
+                theme_profiles: Vec::new(),
+                custom_font_brightness: 1.15,
+                ..ConfigFile::default()
+            },
+        };
+
+        config.normalize_theme_profiles();
+        config.migrate_global_font_brightness_from_legacy();
+        config.sync_custom_theme_draft_to_active_profile();
+
+        assert_eq!(config.active_theme_profile_id(), "balanced");
+        assert_eq!(config.terminal_font_brightness(), 1.15);
+        assert_eq!(
+            config.cache.custom_font_brightness,
+            default_font_brightness()
+        );
+        assert!(
+            config
+                .active_theme_profile()
+                .expect("active profile exists")
+                .custom_theme
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn legacy_custom_theme_brightness_only_does_not_make_custom_profile() {
+        let mut config = ConfigStore {
+            path: std::path::PathBuf::new(),
+            cache: ConfigFile {
+                theme_mode: "dark".to_string(),
+                theme_profiles: Vec::new(),
+                custom_theme: CustomThemeConfig {
+                    light: CustomThemeModeConfig {
+                        font_brightness: 1.05,
+                        ..CustomThemeModeConfig::default()
+                    },
+                    dark: CustomThemeModeConfig {
+                        font_brightness: 1.18,
+                        ..CustomThemeModeConfig::default()
+                    },
+                    ..CustomThemeConfig::default()
+                },
+                ..ConfigFile::default()
+            },
+        };
+
+        config.normalize_theme_profiles();
+        config.migrate_global_font_brightness_from_legacy();
+        config.sync_custom_theme_draft_to_active_profile();
+
+        assert_eq!(config.active_theme_profile_id(), "balanced");
+        assert_eq!(config.terminal_font_brightness(), 1.18);
+        let draft = config.custom_theme_draft();
+        assert_eq!(draft.light.font_brightness, default_font_brightness());
+        assert_eq!(draft.dark.font_brightness, default_font_brightness());
+    }
+
+    #[test]
     fn imported_theme_profile_is_unique_and_active() {
         let mut config = ConfigStore::in_memory();
 
@@ -1418,6 +1614,30 @@ mod theme_profile_tests {
         assert_eq!(config.active_theme_profile_id(), second.id);
         assert_eq!(config.light_theme_name(), "Imported Light 2");
         assert_eq!(config.dark_theme_name(), "Imported Dark 2");
+    }
+}
+
+#[cfg(test)]
+mod font_brightness_settings_tests {
+    use super::{ConfigFile, ConfigStore, default_font_brightness};
+
+    #[test]
+    fn font_brightness_defaults_for_existing_configs() {
+        let config: ConfigFile = serde_json::from_str("{}").expect("config should deserialize");
+
+        assert_eq!(config.ui_font_brightness, default_font_brightness());
+        assert_eq!(config.terminal_font_brightness, default_font_brightness());
+    }
+
+    #[test]
+    fn font_brightness_settings_are_clamped() {
+        let mut config = ConfigStore::in_memory();
+
+        config.set_ui_font_brightness(9.0);
+        config.set_terminal_font_brightness(0.1);
+
+        assert_eq!(config.ui_font_brightness(), 1.2);
+        assert_eq!(config.terminal_font_brightness(), 0.6);
     }
 }
 

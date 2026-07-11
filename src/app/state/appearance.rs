@@ -12,6 +12,8 @@ pub(crate) struct AppearanceState {
     pub(crate) dark_theme_name: SharedString,
     pub(crate) ui_font_size: f32,
     pub(crate) terminal_font_size: f32,
+    pub(crate) ui_font_brightness: f32,
+    pub(crate) terminal_font_brightness: f32,
     pub(crate) terminal_font_metrics: TerminalFontMetrics,
     pub(crate) terminal_zoom_accumulator: f32,
     pub(crate) ui_font_family: SharedString,

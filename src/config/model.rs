@@ -4,8 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{platform::x_server, session::Session, sftp::Transfer};
 
-pub(super) fn default_custom_font_brightness() -> f32 {
+pub(super) fn default_font_brightness() -> f32 {
     1.0
+}
+
+fn is_default_font_brightness(value: &f32) -> bool {
+    (*value - default_font_brightness()).abs() <= f32::EPSILON
 }
 
 pub(super) fn default_custom_theme_name() -> String {
@@ -119,7 +123,10 @@ pub(crate) struct CustomThemeModeConfig {
     pub(crate) base_theme_name: String,
     #[serde(default)]
     pub(crate) overrides: BTreeMap<String, String>,
-    #[serde(default = "default_custom_font_brightness")]
+    #[serde(
+        default = "default_font_brightness",
+        skip_serializing_if = "is_default_font_brightness"
+    )]
     pub(crate) font_brightness: f32,
 }
 
@@ -128,7 +135,7 @@ impl Default for CustomThemeModeConfig {
         Self {
             base_theme_name: String::new(),
             overrides: BTreeMap::new(),
-            font_brightness: default_custom_font_brightness(),
+            font_brightness: default_font_brightness(),
         }
     }
 }
@@ -189,11 +196,18 @@ pub(super) struct ConfigFile {
     pub(super) terminal_font_size: f32,
     #[serde(default = "default_ui_font_size")]
     pub(super) ui_font_size: f32,
+    #[serde(default = "default_font_brightness")]
+    pub(super) ui_font_brightness: f32,
+    #[serde(default = "default_font_brightness")]
+    pub(super) terminal_font_brightness: f32,
     #[serde(default)]
     pub(super) custom_primary_color: String,
     #[serde(default)]
     pub(super) custom_background_color: String,
-    #[serde(default = "default_custom_font_brightness")]
+    #[serde(
+        default = "default_font_brightness",
+        skip_serializing_if = "is_default_font_brightness"
+    )]
     pub(super) custom_font_brightness: f32,
     #[serde(default = "default_custom_theme_name")]
     pub(super) custom_theme_name: String,
@@ -289,8 +303,20 @@ pub(super) struct ConfigFile {
     pub(super) xquartz_app_path: String,
 }
 
-pub(super) const CUSTOM_FONT_BRIGHTNESS_MIN: f32 = 0.6;
-pub(super) const CUSTOM_FONT_BRIGHTNESS_MAX: f32 = 1.2;
+pub(super) const FONT_BRIGHTNESS_MIN: f32 = 0.6;
+pub(super) const FONT_BRIGHTNESS_MAX: f32 = 1.2;
+
+pub(super) fn normalize_font_brightness(value: f32) -> f32 {
+    if value <= 0.0 {
+        default_font_brightness()
+    } else {
+        value.clamp(FONT_BRIGHTNESS_MIN, FONT_BRIGHTNESS_MAX)
+    }
+}
+
+pub(super) fn is_default_normalized_font_brightness(value: f32) -> bool {
+    (normalize_font_brightness(value) - default_font_brightness()).abs() <= f32::EPSILON
+}
 
 pub(super) fn normalize_local_x_server_app_path(value: &str) -> String {
     let value = value.trim();
@@ -438,9 +464,11 @@ impl Default for ConfigFile {
             locale: default_locale(),
             terminal_font_size: default_terminal_font_size(),
             ui_font_size: default_ui_font_size(),
+            ui_font_brightness: default_font_brightness(),
+            terminal_font_brightness: default_font_brightness(),
             custom_primary_color: String::new(),
             custom_background_color: String::new(),
-            custom_font_brightness: default_custom_font_brightness(),
+            custom_font_brightness: default_font_brightness(),
             custom_theme_name: default_custom_theme_name(),
             custom_theme: CustomThemeConfig::default(),
             right_click_copy_paste: false,

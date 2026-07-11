@@ -16,6 +16,8 @@ pub(super) fn settings_appearance_page(
         .map(|profile| profile.name.clone())
         .unwrap_or_else(|| t!("theme_profile_custom").to_string());
     let theme_profiles = shell.config.theme_profiles().to_vec();
+    let ui_font_brightness = shell.appearance.ui_font_brightness;
+    let terminal_font_brightness = shell.appearance.terminal_font_brightness;
     let title_bar_style = shell.config.effective_title_bar_style();
 
     SettingPage::new(t!("settings_appearance").to_string())
@@ -127,6 +129,98 @@ pub(super) fn settings_appearance_page(
                         }),
                     )
                     .description(t!("theme_profile_hint").to_string()),
+                )
+                .item(
+                    SettingItem::new(
+                        t!("ui_font_brightness").to_string(),
+                        SettingField::render({
+                            let view = view.clone();
+                            move |_, window, _cx| {
+                                h_flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .child(
+                                        Button::new("ui-font-brightness-down")
+                                            .small()
+                                            .label("-")
+                                            .on_click(window.listener_for(
+                                                &view,
+                                                |this, _, window, cx| {
+                                                    this.change_ui_font_brightness(
+                                                        -0.05, window, cx,
+                                                    )
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        div()
+                                            .min_w(px(64.))
+                                            .text_center()
+                                            .child(format!("{ui_font_brightness:.2}")),
+                                    )
+                                    .child(
+                                        Button::new("ui-font-brightness-up")
+                                            .small()
+                                            .label("+")
+                                            .on_click(window.listener_for(
+                                                &view,
+                                                |this, _, window, cx| {
+                                                    this.change_ui_font_brightness(0.05, window, cx)
+                                                },
+                                            )),
+                                    )
+                                    .into_any_element()
+                            }
+                        }),
+                    )
+                    .description(t!("font_brightness_hint").to_string()),
+                )
+                .item(
+                    SettingItem::new(
+                        t!("terminal_font_brightness").to_string(),
+                        SettingField::render({
+                            let view = view.clone();
+                            move |_, window, _cx| {
+                                h_flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .child(
+                                        Button::new("terminal-font-brightness-down")
+                                            .small()
+                                            .label("-")
+                                            .on_click(window.listener_for(
+                                                &view,
+                                                |this, _, window, cx| {
+                                                    this.change_terminal_font_brightness(
+                                                        -0.05, window, cx,
+                                                    )
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        div()
+                                            .min_w(px(64.))
+                                            .text_center()
+                                            .child(format!("{terminal_font_brightness:.2}")),
+                                    )
+                                    .child(
+                                        Button::new("terminal-font-brightness-up")
+                                            .small()
+                                            .label("+")
+                                            .on_click(window.listener_for(
+                                                &view,
+                                                |this, _, window, cx| {
+                                                    this.change_terminal_font_brightness(
+                                                        0.05, window, cx,
+                                                    )
+                                                },
+                                            )),
+                                    )
+                                    .into_any_element()
+                            }
+                        }),
+                    )
+                    .description(t!("font_brightness_hint").to_string()),
                 )
                 .item(SettingItem::new(
                     format!("{}{}", t!("title_bar_style"), t!("restart_hint")),

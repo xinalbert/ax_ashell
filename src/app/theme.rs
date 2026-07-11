@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result, anyhow};
-use gpui::{App, Context, Entity, SharedString, Window, px};
+use gpui::{App, Context, Entity, Hsla, SharedString, Window, px};
 use gpui_component::{
     ActiveTheme as _, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet, input::InputState,
     try_parse_color,
@@ -39,7 +39,6 @@ const CUSTOM_DARK_SUFFIX: &str = "[Custom Dark]";
 pub(crate) enum CustomThemeFieldDomain {
     ThemeColor,
     HighlightColor,
-    Brightness,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -122,12 +121,6 @@ pub(crate) const CUSTOM_THEME_CORE_FIELDS: &[CustomThemeFieldSpec] = &[
         label: "Focus Ring",
         placeholder: "#60A5FA",
         domain: CustomThemeFieldDomain::ThemeColor,
-    },
-    CustomThemeFieldSpec {
-        key: "font_brightness",
-        label: "Font Brightness",
-        placeholder: "1.00",
-        domain: CustomThemeFieldDomain::Brightness,
     },
 ];
 
@@ -464,14 +457,10 @@ pub(crate) fn load_user_themes(cx: &mut App) {
         }
     }
 
-    if let Err(err) = ThemeRegistry::watch_dir(themes_dir, cx, |_| {}) {
-        tracing::warn!(
-            component = "theme",
-            operation = "watch_user_theme_dir",
-            error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
-            "Failed to watch user theme directory"
-        );
-    }
+    // gpui-component's directory watcher reloads only default themes plus files
+    // from this directory. AxShell's built-in themes are embedded resources, so
+    // the watcher would drop them from the registry and profile selection would
+    // fall back to Default Dark/Light.
 }
 
 pub(crate) fn set_theme_font_names(theme: &mut Theme, ui_font_family: &str) {
@@ -705,7 +694,6 @@ fn build_custom_theme_config(
             continue;
         }
         match find_custom_theme_field(key).map(|field| field.domain) {
-            Some(CustomThemeFieldDomain::Brightness) => {}
             Some(CustomThemeFieldDomain::ThemeColor) | None => {
                 colors.insert(key.clone(), JsonValue::String(value.to_string()));
             }
@@ -727,13 +715,8 @@ fn build_custom_theme_config(
 
 fn custom_theme_inherited_field_value_from_theme_value(
     theme_value: &JsonValue,
-    mode_config: &CustomThemeModeConfig,
     field: &CustomThemeFieldSpec,
 ) -> String {
-    if field.domain == CustomThemeFieldDomain::Brightness {
-        return format!("{:.2}", mode_config.font_brightness);
-    }
-
     let inherited = match field.domain {
         CustomThemeFieldDomain::ThemeColor => theme_value
             .get("colors")
@@ -756,7 +739,6 @@ fn custom_theme_inherited_field_value_from_theme_value(
                 }
             })
         }
-        CustomThemeFieldDomain::Brightness => None,
     };
 
     inherited
@@ -766,11 +748,21 @@ fn custom_theme_inherited_field_value_from_theme_value(
 
 fn custom_theme_inherited_field_value(
     base_theme: &ThemeConfig,
-    mode_config: &CustomThemeModeConfig,
     field: &CustomThemeFieldSpec,
 ) -> String {
     let theme_value = serde_json::to_value(base_theme).unwrap_or(JsonValue::Null);
-    custom_theme_inherited_field_value_from_theme_value(&theme_value, mode_config, field)
+    custom_theme_inherited_field_value_from_theme_value(&theme_value, field)
+}
+
+fn ensure_embedded_themes_registered(cx: &mut App) {
+    if ThemeRegistry::global(cx)
+        .themes()
+        .contains_key(&SharedString::from("Gruvbox Dark"))
+    {
+        return;
+    }
+
+    load_embedded_themes(cx);
 }
 
 fn resolve_base_theme(config: &ConfigStore, mode: ThemeMode, cx: &App) -> Rc<ThemeConfig> {
@@ -843,6 +835,57 @@ fn write_custom_theme_file(config: &ConfigStore, theme_set: &ThemeSet) -> Result
     Ok(path)
 }
 
+fn adjust_font_brightness(color: Hsla, factor: f32) -> Hsla {
+    if (factor - 1.0).abs() <= f32::EPSILON {
+        return color;
+    }
+
+    Hsla {
+        l: (color.l * factor).clamp(0.02, 0.98),
+        ..color
+    }
+}
+
+fn apply_ui_font_brightness(theme: &mut Theme, factor: f32) {
+    if (factor - 1.0).abs() <= f32::EPSILON {
+        return;
+    }
+
+    macro_rules! adjust {
+        ($($field:ident),+ $(,)?) => {
+            $(
+                theme.$field = adjust_font_brightness(theme.$field, factor);
+            )+
+        };
+    }
+
+    adjust!(
+        accent_foreground,
+        button_primary_foreground,
+        danger_foreground,
+        description_list_label_foreground,
+        foreground,
+        group_box_foreground,
+        info_foreground,
+        link,
+        link_active,
+        link_hover,
+        muted_foreground,
+        popover_foreground,
+        primary_foreground,
+        secondary_foreground,
+        sidebar_accent_foreground,
+        sidebar_foreground,
+        sidebar_primary_foreground,
+        success_foreground,
+        tab_active_foreground,
+        tab_foreground,
+        table_head_foreground,
+        table_foot_foreground,
+        warning_foreground,
+    );
+}
+
 impl AxShell {
     fn current_custom_theme_draft_name(&self) -> String {
         self.config.custom_theme_draft().theme_name
@@ -867,14 +910,8 @@ impl AxShell {
         field: &CustomThemeFieldSpec,
         cx: &App,
     ) -> String {
-        let draft = self.config.custom_theme_draft();
-        let mode_config = if mode.is_dark() {
-            &draft.dark
-        } else {
-            &draft.light
-        };
         let base_theme = resolve_base_theme(&self.config, mode, cx);
-        custom_theme_inherited_field_value(&base_theme, mode_config, field)
+        custom_theme_inherited_field_value(&base_theme, field)
     }
 
     fn set_input_placeholder(
@@ -911,35 +948,17 @@ impl AxShell {
             let base_theme = resolve_base_theme(&self.config, mode, cx);
             for field in custom_theme_field_specs() {
                 let input_key = custom_theme_input_key(mode, field.key);
-                let value = if field.domain == CustomThemeFieldDomain::Brightness {
-                    format!("{:.2}", mode_config.font_brightness)
-                } else {
-                    mode_config
-                        .overrides
-                        .get(field.key)
-                        .cloned()
-                        .unwrap_or_default()
-                };
+                let value = mode_config
+                    .overrides
+                    .get(field.key)
+                    .cloned()
+                    .unwrap_or_default();
                 if let Some(input) = self.custom_theme_inputs.get(&input_key) {
-                    let placeholder =
-                        custom_theme_inherited_field_value(&base_theme, mode_config, field);
+                    let placeholder = custom_theme_inherited_field_value(&base_theme, field);
                     Self::set_input_placeholder(input, placeholder, window, cx);
                     Self::set_input_value(input, value, window, cx);
                 }
             }
-        }
-    }
-
-    pub(crate) fn active_custom_font_brightness(&self, mode: ThemeMode) -> f32 {
-        let current_name = if mode.is_dark() {
-            &self.appearance.dark_theme_name
-        } else {
-            &self.appearance.light_theme_name
-        };
-        if self.is_current_custom_theme_name(current_name, mode) {
-            self.config.custom_theme_font_brightness_for_mode(mode)
-        } else {
-            1.0
         }
     }
 
@@ -995,6 +1014,7 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        ensure_embedded_themes_registered(cx);
         let Some(profile) = self.config.set_active_theme_profile(&id) else {
             self.status = format!("theme profile not found: {id}").into();
             cx.notify();
@@ -1122,19 +1142,6 @@ impl AxShell {
 
                 let value = field_input.read(cx).value().trim().to_string();
                 match field.domain {
-                    CustomThemeFieldDomain::Brightness => {
-                        if value.is_empty() {
-                            return Some(false);
-                        }
-                        let Ok(brightness) = value.parse::<f32>() else {
-                            return Some(false);
-                        };
-                        if !(0.6..=1.2).contains(&brightness) {
-                            return Some(false);
-                        }
-                        self.config
-                            .set_custom_theme_font_brightness_for_mode(mode, brightness);
-                    }
                     CustomThemeFieldDomain::ThemeColor | CustomThemeFieldDomain::HighlightColor => {
                         if !value.is_empty() && try_parse_color(&value).is_err() {
                             return Some(false);
@@ -1367,12 +1374,24 @@ impl AxShell {
     }
 
     pub(crate) fn apply_theme_preferences(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        ensure_embedded_themes_registered(cx);
         let light_theme =
             self.resolve_selected_theme(&self.appearance.light_theme_name, ThemeMode::Light, cx);
         let dark_theme =
             self.resolve_selected_theme(&self.appearance.dark_theme_name, ThemeMode::Dark, cx);
 
         self.apply_theme_configs(light_theme, dark_theme, window, cx);
+    }
+
+    pub(crate) fn apply_theme_preferences_for_system(&mut self, cx: &mut Context<Self>) {
+        ensure_embedded_themes_registered(cx);
+        let light_theme =
+            self.resolve_selected_theme(&self.appearance.light_theme_name, ThemeMode::Light, cx);
+        let dark_theme =
+            self.resolve_selected_theme(&self.appearance.dark_theme_name, ThemeMode::Dark, cx);
+        let active_mode = cx.window_appearance().into();
+
+        self.apply_theme_configs_for_mode(light_theme, dark_theme, active_mode, cx);
     }
 
     fn apply_theme_configs(
@@ -1382,17 +1401,35 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let active_mode = if self.appearance.follow_system_theme {
+            window.appearance().into()
+        } else {
+            self.appearance.theme_mode
+        };
+        self.apply_theme_configs_for_mode(light_theme, dark_theme, active_mode, cx);
+        window.refresh();
+    }
+
+    fn apply_theme_configs_for_mode(
+        &self,
+        light_theme: Rc<ThemeConfig>,
+        dark_theme: Rc<ThemeConfig>,
+        active_mode: ThemeMode,
+        cx: &mut Context<Self>,
+    ) {
+        let active_theme = if active_mode.is_dark() {
+            dark_theme.clone()
+        } else {
+            light_theme.clone()
+        };
+
         let theme = Theme::global_mut(cx);
         theme.light_theme = light_theme;
         theme.dark_theme = dark_theme;
+        theme.apply_config(&active_theme);
+        apply_ui_font_brightness(theme, self.appearance.ui_font_brightness);
         theme.font_size = px(self.appearance.ui_font_size);
         set_theme_font_names(theme, &self.appearance.ui_font_family);
-
-        if self.appearance.follow_system_theme {
-            Theme::sync_system_appearance(Some(window), cx);
-        } else {
-            Theme::change(self.appearance.theme_mode, Some(window), cx);
-        }
     }
 
     pub(crate) fn save_custom_appearance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1427,22 +1464,6 @@ impl AxShell {
                     .to_string();
 
                 match field.domain {
-                    CustomThemeFieldDomain::Brightness => {
-                        let brightness = match value.parse::<f32>() {
-                            Ok(value) if (0.6..=1.2).contains(&value) => value,
-                            _ => {
-                                self.status = format!(
-                                    "invalid {} value, use 0.60-1.20",
-                                    field.label.to_lowercase()
-                                )
-                                .into();
-                                cx.notify();
-                                return;
-                            }
-                        };
-                        self.config
-                            .set_custom_theme_font_brightness_for_mode(mode, brightness);
-                    }
                     CustomThemeFieldDomain::ThemeColor | CustomThemeFieldDomain::HighlightColor => {
                         if !value.is_empty() && try_parse_color(&value).is_err() {
                             self.status = format!(
@@ -1583,9 +1604,8 @@ impl AxShell {
 #[cfg(test)]
 mod import_theme_tests {
     use super::{
-        CUSTOM_THEME_CORE_FIELDS, CustomThemeModeConfig,
-        custom_theme_inherited_field_value_from_theme_value, imported_theme_names,
-        unique_imported_theme_file_path,
+        CUSTOM_THEME_CORE_FIELDS, custom_theme_inherited_field_value_from_theme_value,
+        imported_theme_names, unique_imported_theme_file_path,
     };
     use gpui_component::{ThemeMode, ThemeSet};
     use std::{
@@ -1700,11 +1720,8 @@ mod import_theme_tests {
             .find(|field| field.key == "background")
             .expect("background field exists");
 
-        let inherited = custom_theme_inherited_field_value_from_theme_value(
-            &theme_value,
-            &CustomThemeModeConfig::default(),
-            background,
-        );
+        let inherited =
+            custom_theme_inherited_field_value_from_theme_value(&theme_value, background);
 
         assert_eq!(inherited, "#FDF6E3");
     }
