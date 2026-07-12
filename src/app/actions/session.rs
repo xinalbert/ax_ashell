@@ -307,7 +307,16 @@ impl AxShell {
 
     pub(crate) fn pick_xquartz_app_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let start_dir = if cfg!(target_os = "macos") {
-            std::path::PathBuf::from("/Applications/Utilities")
+            let configured = self
+                .xquartz_app_path_input
+                .read(cx)
+                .value()
+                .trim()
+                .to_string();
+            std::path::Path::new(&configured)
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_else(|| std::path::PathBuf::from("/Applications"))
         } else if cfg!(target_os = "windows") {
             std::env::var("ProgramFiles")
                 .map(std::path::PathBuf::from)

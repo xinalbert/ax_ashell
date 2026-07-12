@@ -22,6 +22,22 @@
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
 - 验证结果：受影响 Rust 文件 `rustfmt --edition 2024` 通过；`cargo check` 通过；`cargo test --quiet saved_sessions -- --nocapture` 4 项通过；fast hover/context 静态审计通过；完整 `cargo test --quiet` 128 项通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；真实 GUI sidebar 文件选择和导出结果仍需手工确认。
 
+## 2026-07-12 MacXServer 本地 X server 支持预检
+
+- 日期：2026-07-12 13:07 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮让 macOS X11 本地 server 同时识别 XQuartz 和 `/Applications/MacXServer.app`，并为 MacXServer 固定使用 TCP display `127.0.0.1:0`，避免误用 XQuartz launchd `DISPLAY`。
+- 受影响文件：`src/platform/x_server.rs`，`src/app/lifecycle/startup.rs`，`src/app/actions/session.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`；联网证据来自 MacXServer 官方 README / plan 文档。
+- 验证结果：计划执行 `rustfmt --edition 2024`、macOS X server helper 聚焦测试、`cargo check`、`git diff --check` 和 tracking validator；真实 MacXServer GUI 与远端 X11 程序联机仍需手工确认。
+
+## 2026-07-12 完成 MacXServer 本地 X server 支持环境验证
+
+- 日期：2026-07-12 13:15 +0800
+- 变化摘要：macOS 本地 X server 配置现可识别 `/Applications/MacXServer.app`；配置为 MacXServer 时固定使用 `127.0.0.1:0`，让现有 X11 relay 连接本机 TCP 6000，避免误用 XQuartz launchd `DISPLAY`。运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/platform/x_server.rs`，`src/app/lifecycle/startup.rs`，`src/app/actions/session.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖；真实 MacXServer / XQuartz GUI 联机仍需手工确认。
+- 验证结果：`rustfmt --edition 2024 src/platform/x_server.rs src/app/lifecycle/startup.rs src/app/actions/session.rs` 通过；`cargo test --quiet macxserver` 2 项通过；`cargo check` 通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning。
+
 ## 2026-07-12 新增内置主题预设预检
 
 - 日期：2026-07-12 09:54 +0800

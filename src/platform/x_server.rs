@@ -1,7 +1,7 @@
 pub(crate) fn default_app_path() -> String {
     #[cfg(target_os = "macos")]
     {
-        return "/Applications/Utilities/XQuartz.app".to_string();
+        return macos_default_app_path();
     }
     #[cfg(target_os = "windows")]
     {
@@ -43,6 +43,30 @@ pub(crate) fn default_app_path() -> String {
     }
 }
 
+#[cfg(target_os = "macos")]
+const MACOS_MACXSERVER_APP_PATH: &str = "/Applications/MacXServer.app";
+#[cfg(target_os = "macos")]
+const MACOS_XQUARTZ_APP_PATH: &str = "/Applications/Utilities/XQuartz.app";
+const MACXSERVER_APP_NAME: &str = "macxserver.app";
+const MACXSERVER_DISPLAY: &str = "127.0.0.1:0";
+
+#[cfg(target_os = "macos")]
+fn macos_default_app_path() -> String {
+    for candidate in [MACOS_MACXSERVER_APP_PATH, MACOS_XQUARTZ_APP_PATH] {
+        if std::path::Path::new(candidate).exists() {
+            return candidate.to_string();
+        }
+    }
+    MACOS_XQUARTZ_APP_PATH.to_string()
+}
+
+pub(crate) fn is_macxserver_app_path(path: &str) -> bool {
+    std::path::Path::new(path.trim())
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case(MACXSERVER_APP_NAME))
+}
+
 pub(crate) fn default_display() -> String {
     display_from_env().unwrap_or_else(default_display_fallback)
 }
@@ -63,6 +87,13 @@ fn default_display_fallback() -> String {
 }
 
 pub(crate) fn resolve_display(_path: &str, _launch_local_x_server: bool) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        if is_macxserver_app_path(_path) {
+            return MACXSERVER_DISPLAY.to_string();
+        }
+    }
+
     let display = default_display();
 
     #[cfg(target_os = "windows")]
@@ -198,6 +229,34 @@ mod tests {
                 "-clipboard".to_string(),
                 "-ac".to_string(),
             ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod shared_tests {
+    use super::is_macxserver_app_path;
+
+    #[test]
+    fn macxserver_app_path_is_detected_by_bundle_name() {
+        assert!(is_macxserver_app_path("/Applications/MacXServer.app"));
+        assert!(is_macxserver_app_path("/Applications/macxserver.app"));
+        assert!(!is_macxserver_app_path(
+            "/Applications/Utilities/XQuartz.app"
+        ));
+        assert!(!is_macxserver_app_path("/Applications/MacXCapture.app"));
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_tests {
+    use super::{MACXSERVER_DISPLAY, resolve_display};
+
+    #[test]
+    fn macxserver_path_forces_tcp_display_zero() {
+        assert_eq!(
+            resolve_display("/Applications/MacXServer.app", true),
+            MACXSERVER_DISPLAY
         );
     }
 }

@@ -20,6 +20,16 @@
 - 对实施计划的影响：新增 `src/app/hover.rs` 的 `FastHoverState`；SFTP 远端/本地文件行移除旧 `.hover()`，改为状态驱动 hover；表头、侧边栏、selector、splitter、搜索按钮和普通菜单保留 `.hover()`。
 - 未解决问题：真实 GUI 鼠标快速扫过时的手感仍需手工确认；若后续出现新的虚拟列表，应复用 `FastHoverState` 而不是直接复制 SFTP 逻辑。
 
+## 2026-07-12 MacXServer display 兼容性
+
+- 时间：2026-07-12 13:07 +0800
+- 检索问题：macOS MacXServer 的本地 X server 是否使用标准 X11 display / port，能否被当前 SSH X11 relay 作为本地目标
+- 检索原因：用户询问 AxShell 当前 X11 能否同时支持 XQuartz 和 MacXServer，并给出本机安装路径 `/Applications/MacXServer.app`；display/port 行为会影响实现计划
+- 来源列表：MacXServer README <https://github.com/toddvernon/MacXServer/blob/main/README.md>；MacXServer product plan <https://github.com/toddvernon/MacXServer/blob/main/PRODUCT_2_SERVER.md>
+- 关键结论：MacXServer 是 macOS 上的 X11 server；其 quick start 说明 server 运行后 port 6000 映射到 display `:0`，X client 可使用 `<mac-ip>:0`；产品计划也记录 server listens on `:6000`。
+- 对实施计划的影响：AxShell 在配置路径为 `MacXServer.app` 时应固定本地 relay display 为 `127.0.0.1:0`，让 `local_x11_endpoints()` 直接走 TCP 6000，而不是优先采用可能来自 XQuartz 的 launchd `DISPLAY` socket。
+- 未解决问题：MacXServer 的 Xauthority / no-auth 行为和远端具体 X11 程序兼容性仍需真实 GUI + SSH X11 forwarding 联机验证。
+
 ## 2026-07-10 终端系统文本导航快捷键
 
 - 时间：2026-07-10 07:54 +0800

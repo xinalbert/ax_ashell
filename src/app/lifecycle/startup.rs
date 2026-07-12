@@ -526,7 +526,7 @@ pub(crate) fn launch_local_x_server_app(path: &str) -> Result<String> {
         .arg(app_path)
         .spawn()
         .with_context(|| format!("launch local X server at {}", app_path.display()))?;
-    Ok(crate::platform::x_server::default_display())
+    Ok(crate::platform::x_server::resolve_display(path, true))
 }
 
 #[cfg(target_os = "windows")]
