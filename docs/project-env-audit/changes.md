@@ -1,3 +1,19 @@
+## 2026-07-12 终端 URL 中文标点边界识别预检
+
+- 日期：2026-07-12 16:28 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮修复终端 URL 识别在 URL 后紧跟中文逗号等中文标点时，会把标点和后续中文文本一起纳入链接的问题。
+- 受影响文件：`src/terminal/highlight.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`。
+- 验证结果：计划执行 `rustfmt --edition 2024 src/terminal/highlight.rs`、聚焦 URL 长度测试、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking docs validator；真实终端 hover/open 仍需手工确认。
+
+## 2026-07-12 完成终端 URL 中文标点边界识别环境验证
+
+- 日期：2026-07-12 16:34 +0800
+- 变化摘要：终端 URL token 扫描现在会在中文逗号等中文句读标点处停止，避免把 `https://github.com/abbodi1406/vcredist，可以...` 中的逗号和后续中文文本纳入链接；运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/terminal/highlight.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：`rustfmt --edition 2024 src/terminal/highlight.rs` 通过；`cargo test --quiet find_url_len_stops_at_cjk_sentence_punctuation` 1 项通过；`cargo check` 通过；完整 `cargo test --quiet` 131 项通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；真实终端 hover/open 仍需手工确认。
+
 ## 2026-07-12 saved SSH 无密钥导入导出预检
 
 - 日期：2026-07-12 11:40 +0800
@@ -2010,3 +2026,83 @@
 - 受影响文件：`src/app.rs`，`src/app/session_ui.rs`，`src/app/actions/session.rs`，`src/app/actions/terminal.rs`，`src/app/workspace.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/lifecycle/init.rs`，`src/terminal/backend.rs`，跟踪文档。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖；终端密码为当前 tab 临时值，不保存到配置。
 - 验证结果：`rustfmt`、`cargo check`、新增聚焦测试 4 项、完整 `cargo test --quiet`（124 项）、`git diff --check` 和 tracking validator 均通过；真实 GUI 终端密码输入仍需手工确认。
+
+## 2026-07-12 Rocky/Linux 主窗口拖动修复预检
+
+- 日期：2026-07-12 14:43 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮修复 Rocky/Linux 编译产物主窗口顶部区域无法拖动的问题。
+- 受影响文件：`src/app/lifecycle/startup.rs`，`src/app/views/layout.rs`，`src/app/views/tab_bar.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改 SSH/X11 relay 或本地 X server 配置。
+- 验证结果：计划执行 `rustfmt --edition 2024 src/app/lifecycle/startup.rs src/app/views/layout.rs src/app/views/tab_bar.rs`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator；真实 Rocky/Linux GUI 拖动仍需手工确认。
+
+## 2026-07-12 完成 Rocky/Linux 主窗口拖动环境验证
+
+- 日期：2026-07-12 14:50 +0800
+- 变化摘要：Linux 集成标题栏路径不再关闭 `is_movable`；Linux Native 顶部 tab bar 容器和右侧 spacer 复用 `bind_titlebar_drag()` 提供应用内窗口拖动区域；运行时架构、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/app/lifecycle/startup.rs`，`src/app/views/layout.rs`，`src/app/views/tab_bar.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：`rustfmt`、`cargo check`、完整 `cargo test --quiet`（130 项）、`git diff --check` 和 tracking validator 均通过；真实 Rocky/Linux GUI 拖动仍需手工确认。
+
+## 2026-07-12 SSH 弹窗 Enter 提交行为修复预检
+
+- 日期：2026-07-12 15:58 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮修复新建/编辑 SSH 连接弹窗中 Enter 默认关闭弹窗并丢失表单内容的问题。
+- 受影响文件：`src/app/dialogs/ssh.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改 SSH 协议、认证或配置 schema。
+- 验证结果：计划执行 `rustfmt --edition 2024 src/app/dialogs/ssh.rs`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator；真实 GUI 中不同输入框焦点下的 Enter 行为仍需手工确认。
+
+## 2026-07-12 完成 SSH 弹窗 Enter 提交行为环境验证
+
+- 日期：2026-07-12 16:02 +0800
+- 变化摘要：SSH 新建/编辑弹窗显式覆盖 Dialog `on_ok`，Enter 改为调用 `connect_ssh()`；校验失败不走 Dialog 默认关闭路径，保留表单内容；运行时架构、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/app/dialogs/ssh.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：`rustfmt`、`cargo check`、完整 `cargo test --quiet`（130 项）、`git diff --check` 和 tracking validator 均通过；真实 GUI 中不同输入框焦点下的 Enter 行为仍需手工确认。
+
+## 2026-07-12 Ubuntu 图标 app_id 匹配修复预检
+
+- 日期：2026-07-12 16:17 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮修复 Ubuntu 下窗口 / Dock 图标无法匹配应用的问题。
+- 受影响文件：`src/app/lifecycle/startup.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改图标资源或 Debian 包资产列表。
+- 验证结果：计划执行 `rustfmt --edition 2024 src/app/lifecycle/startup.rs`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator；Ubuntu Dock / App Grid 真实图标显示仍需手工确认。
+
+## 2026-07-12 完成 Ubuntu 图标 app_id 匹配环境验证
+
+- 日期：2026-07-12 16:23 +0800
+- 变化摘要：Linux/FreeBSD 普通启动默认设置 `app_id = ax_shell`，与 `ax_shell.desktop`、`Icon=ax_shell` 和安装到 hicolor 的 `ax_shell.png` 对齐；开发重载仍可通过 `AX_SHELL_APP_ID` 覆盖；运行时架构、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/app/lifecycle/startup.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：`rustfmt`、`cargo check`、完整 `cargo test --quiet`（130 项）、`git diff --check` 和 tracking validator 均通过；Ubuntu Dock / App Grid 真实图标显示仍需手工确认。
+
+## 2026-07-12 完成 Ubuntu X11 运行库缺失文档环境验证
+
+- 日期：2026-07-12 16:11 +0800
+- 变化摘要：Proxy/X11 用户文档新增 Ubuntu 缺少 `libxkbcommon-x11.so.0` 的排查说明和 `libxkbcommon-x11-0` 安装命令；运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`docs/features/proxy-x11.md`，`docs/features/proxy-x11.zh.md`，跟踪文档。
+- 更新后的命令或环境：无；文档-only，不新增运行或测试依赖。
+- 验证结果：`git diff --check` 通过；tracking docs validator 通过；未运行 Rust 编译测试。
+
+## 2026-07-12 完成 Windows Visual C++ 运行库缺失文档环境验证
+
+- 日期：2026-07-12 16:29 +0800
+- 变化摘要：Proxy/X11 用户文档新增 Windows 缺少 Visual C++ runtime DLL 的排查说明，提供 Microsoft VC++ Redistributable 和 `abbodi1406/vcredist` AIO 工具作为解决办法；运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`docs/features/proxy-x11.md`，`docs/features/proxy-x11.zh.md`，跟踪文档。
+- 更新后的命令或环境：无；文档-only，不新增运行或测试依赖。
+- 验证结果：`git diff --check` 通过；tracking docs validator 通过；未运行 Rust 编译测试。
+
+## 2026-07-12 Ubuntu client-side 窗口控制修复预检
+
+- 日期：2026-07-12 16:17 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮修复 Ubuntu/GNOME Wayland 下 GPUI 回退到 client-side decoration 时 AxShell 缺少关闭、最小化和拖动区域的问题。
+- 受影响文件：`src/app/views.rs`，`src/app/views/layout.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，复用现有 `gpui_component::TitleBar`。
+- 验证结果：计划执行受影响 Rust 文件 `rustfmt --edition 2024`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator；真实 Ubuntu/GNOME Wayland GUI 控件仍需手工确认。
+
+## 2026-07-12 完成 Ubuntu client-side 窗口控制修复环境验证
+
+- 日期：2026-07-12 16:23 +0800
+- 变化摘要：Linux Native 标题栏样式在 GPUI 实际回退为 `Decorations::Client` 时渲染 `gpui_component::TitleBar`，补齐最小化、最大化/还原、关闭和拖动区域；支持 server-side decorations 的 Linux 桌面仍保留系统标题栏。
+- 受影响文件：`src/app/views.rs`，`src/app/views/layout.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖；未修改 `Cargo.toml` / `Cargo.lock`。
+- 验证结果：`rustfmt`、`cargo check`、完整 `cargo test --quiet`（130 项）、`git diff --check` 和 tracking validator 均通过；`cargo check` 保留既有 `block v0.1.6` future-incompat warning；真实 Ubuntu/GNOME Wayland GUI 控件仍需手工确认。
