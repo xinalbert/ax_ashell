@@ -250,6 +250,7 @@ impl Render for AxShell {
                 this.child(
                     div()
                         .id("title-bar")
+                        .relative()
                         .flex()
                         .items_center()
                         .h(px(34.))
@@ -280,9 +281,28 @@ impl Render for AxShell {
                                         #[cfg(not(target_os = "macos"))]
                                         window.zoom_window();
                                     })
-                                    .child(self.render_tab_bar(cx)),
+                                    .child(self.render_tab_bar(cx))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .left_0()
+                                            .right_0()
+                                            .bottom_0()
+                                            .h(px(1.))
+                                            .bg(cx.theme().tab_bar),
+                                    ),
                                 cx,
                             ),
+                        )
+                        .child(
+                            div()
+                                .id("title-bar-bottom-border")
+                                .absolute()
+                                .left_0()
+                                .right_0()
+                                .bottom_0()
+                                .h(px(1.))
+                                .bg(cx.theme().border),
                         ),
                 )
             })
