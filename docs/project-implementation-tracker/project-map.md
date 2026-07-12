@@ -27,7 +27,7 @@
 | `src/app/actions/` | 应用动作层实现，集中承载直接操作 `AxShell` 的会话、pane、SFTP UI、本地文件浏览和终端输入动作 | 改 `open_local`、`connect_ssh`、pane split/focus、saved session 分组/重命名、SFTP UI 操作、terminal key/mouse/IME/scroll 行为时 | 入口为 `src/app/actions.rs` |
 | `src/app/theme.rs` | app 视觉系统、主题注册、theme profile、custom theme 导入/保存和字体加载 | 改内置主题资源、用户主题加载、theme profile 应用、custom theme 导入/保存/应用/保存路径、Maple Mono 内置字体加载或 ThemeRegistry 接线时 | 直接暴露为 `crate::app::theme`，资源 include 路径按当前文件使用 `../../assets/...` |
 | `src/app/hover.rs` | app 内下拉、菜单行和长列表快速 hover 共享接口 | 改 `.fast_hover(cx)` 默认 token、`FastHoverOptions` 参数、预计算 hover tokens 或长列表 hover 语义时 | 新增列表/菜单 hover 时优先复用该接口；不要在 feature 模块重复手写 hover token |
-| `src/app/input/` | 原生菜单和快捷键录制/绑定 | 改 App menu、Quit shutdown、workspace keybindings、设置页按键录制、冲突检测或 keybinding 展示时 | 父模块入口为 `src/app/input.rs` |
+| `src/app/input/` | 原生菜单和快捷键录制/绑定 | 改 App menu、saved SSH 导入/导出菜单、Quit shutdown、workspace keybindings、设置页按键录制、冲突检测或 keybinding 展示时 | 父模块入口为 `src/app/input.rs` |
 | `src/app/lifecycle/` | 启动、窗口打开、日志/crash hook、`AxShell::new` 和事件泵 | 改启动顺序、日志目录、主窗口 options、runtime event pump、输入事件或初始化状态时 | 父模块入口为 `src/app/lifecycle.rs`；`startup` 由 app 兼容导出给 main |
 | `src/app/state/` | `AxShell` 子状态聚合 | 改 appearance、monitoring、runtime/event channel 或窗口生命周期状态时 | search 状态已并入 `src/app/search.rs` |
 | `src/config/` | 配置文件模型、默认值、规范化规则和 `ConfigStore` | 改配置 schema/serde 默认、窗口/光标/theme profile、旧目录迁移、sync 默认对象名或 custom theme draft/save path 时 | `model.rs` 承载 `ConfigFile` 和值类型，`store.rs` 只做持久化、迁移、归一化和访问器 |
@@ -67,15 +67,15 @@
 | `src/app/state/` | `AxShell` 子状态模块 | `AppearanceState`，`LifecycleState`，`MonitoringState`，`RuntimeState` | 改应用外观、窗口生命周期、系统监控或 Tokio backend event channel 状态分组时 |
 | `src/app/actions/session.rs` | 会话连接、SSH 表单、tab 生命周期和 active session 查询 action | `open_local`，`connect_ssh`，`open_ssh_session`，`shutdown_all_backends`，`clear_tab_ui_state`，`handle_tab_close`，`active_snapshot` | 改本地/SSH tab 创建、SSH 表单加载/重置、当前 workspace tab 可见性、tab UI 状态回收、断线重试、关闭 tab/group、窗口退出或 active session 查询时 |
 | `src/app/actions/pane.rs` | pane tree 操作和 group activation action | `split_current_pane`，`focus_adjacent_pane`，`activate_group_page`，`focus_pane_with_id`，`sync_system_tab_to_active_group` | 改 split pane、pane focus、splitter drag、active group + 页面联动切换、当前 workspace tab 自动可见或监控 tab 跟随 group 时 |
-| `src/app/actions/saved_sessions.rs` | session selector、saved group 和 saved session 菜单 action | `selector_entries`，`on_selector_key_down`，`saved_session_groups`，`open_saved_session_context_menu`，`commit_saved_group_rename` | 改选择器键盘行为、saved session 分组、组名展示、右键菜单或重命名时 |
+| `src/app/actions/saved_sessions.rs` | session selector、saved group、saved session 菜单和 share 导入/导出 action | `selector_entries`，`on_selector_key_down`，`saved_session_groups`，`export_saved_sessions_share_file`，`export_saved_group_share_file`，`export_saved_session_share_file`，`import_saved_sessions_share_file`，`open_saved_session_context_menu`，`commit_saved_group_rename` | 改选择器键盘行为、saved session 分组、无凭据导入/导出、组名展示、右键菜单或重命名时 |
 | `src/app/actions/sftp.rs` | UI 侧 SFTP 与本地文件浏览 action | `ensure_sftp_handle_for_group`，`release_sftp_handle_for_group`，`load_more_sftp_entries`，`sweep_idle_sftp_connections` | 改按需建连、分页加载操作、pin-aware group worker 回收、深睡断连、远端目录点击或传输入口时 |
 | `src/app/actions/terminal.rs` | terminal 键盘、鼠标、滚动和 IME action | `on_terminal_key_down`，`terminal_grid_point_and_side`，`on_terminal_scroll`，IME helpers | 鼠标命中、选择、滚动行高、快捷键、粘贴或 IME 候选框位置与终端网格不一致时 |
 | `src/app/theme.rs` | 主题、内置字体注册、当前 theme profile 和 custom theme 逻辑 | `EMBEDDED_FONT_FAMILIES`，`BUILT_IN_FONT_FAMILIES`，`load_fonts`，`load_embedded_themes`，`apply_theme_profile` | app 视觉系统入口；增删字体需同步 `assets/fonts/README.md` 与 Settings 字体排序 |
 | `assets/fonts/README.md` | 内置字体 family、版本、样式和用途清单 | Bundled Fonts 表、排除范围、授权入口 | 判断字体包中哪些文件需要编译进应用或核对内部 family 名时 |
 | `src/app/lifecycle/startup.rs` | 启动辅助、日志 writer/轮转、crash hook 和窗口打开 | `init_logging`，`runtime_log_dir`，`crash_report_dir`，`open_main_window`，window close callback | 日志 writer 必须报告初始化/写入失败并保留进程期 guard；窗口关闭先发起 backend shutdown，再保存布局 |
 | `assets/icons/terminal_icon_all_formats/terminal_icon_256.png` | 非 macOS runtime 窗口图标和 Linux/Debian 256px 图标资源 | PNG 资源文件 | 改 `include_bytes!`、Debian asset 或 Linux release icon 路径时确认存在性 |
-| `src/app/input/app_menu.rs` | GPUI 原生应用菜单注册 | `install`，`app_menus`，`Quit` | `Quit` 会先关闭全部 backend；原 `src/app/app_menu.rs` 迁入；通过 `crate::app::app_menu` 兼容导出 |
-| `src/app.rs` | 全局 UI 状态结构和 app 子模块出口 | `AxShell` fields，type re-exports | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel 或 Settings generation 时 |
+| `src/app/input/app_menu.rs` | GPUI 原生应用菜单注册 | `install`，`app_menus`，`Quit`，saved SSH import/export menu items | `Quit` 会先关闭全部 backend；File 菜单承载 saved SSH 导入/导出 action；原 `src/app/app_menu.rs` 迁入；通过 `crate::app::app_menu` 兼容导出 |
+| `src/app.rs` | 全局 UI 状态结构和 app 子模块出口 | `AxShell` fields，type re-exports，saved session/group context menu state | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel、Settings generation 或 saved sidebar 右键菜单状态时 |
 | `src/app/lifecycle/init.rs` | `AxShell` 初始化和默认状态装配 | `AxShell::new`，`backend_event_channel` | 使用 `src/events.rs` 构造 256 条 Tokio backend event queue；新增输入框、默认配置读取、初始 theme/font/system 状态、订阅或 event pump 启动时 |
 | `src/app/lifecycle/event_loop.rs` | 输入事件、后台事件分发、系统采样和主题同步 | `on_input_event`，`start_event_pump`，`drain_backend_events`，`sample_system_if_due` | 原 `src/app/event_loop.rs` 迁入；单次 drain 上限与 queue 容量一致，改 backend event 处理、SFTP event 更新、connection progress、system monitor sampling 或 follow-system theme 同步时 |
 | `src/app/constants.rs` | app 尺寸、快捷键 context、仓库 URL 和版本展示 | layout constants，`TERMINAL_KEY_CONTEXT`，`public_version_label` | 改 UI 固定尺寸、入口链接或公开版本文案时 |
@@ -103,11 +103,11 @@
 | `src/app/dialogs/settings/shell.rs` | 设置页外层交互壳 | `settings_page_shell` | 改设置页内 keybinding 录制、关闭确认、OpenSession/NewSsh/Prev/NextTab 捕获或失焦取消录制时 |
 | `src/app/views/` | 主工作区视图目录模块，按渲染区域拆分 SFTP、监控、侧栏、顶部标签、终端 pane 和整体布局 | `helpers.rs`，`layout.rs`，`monitoring.rs`，`sftp_panel.rs`，`sidebar.rs`，`tab_bar.rs`，`terminal_panel.rs` | 增加固定 Local Terminal 入口、调整 SFTP 双列面板、saved session 分组、侧栏折叠态、顶部标签、监控面板或主布局时 |
 | `src/app/views.rs` | views 目录模块入口和共享 imports | 子模块声明，`crate::app::views` 路由 | 改 views 模块可见性、共享 imports 或新增 views 子文件时 |
-| `src/app/views/layout.rs` | `Render for AxShell` 和顶层菜单/workspace/body 布局 | `render`，platform menu row，workspace page route，resizable panels，overlays | 改 Windows/Linux 全宽菜单、主布局、集成标题栏、workspace/body split、SFTP 页面接线、自绘 SFTP/saved session 右键菜单或全局 overlays 时 |
+| `src/app/views/layout.rs` | `Render for AxShell` 和顶层菜单/workspace/body 布局 | `render`，platform menu row，workspace page route，resizable panels，overlays | 改 Windows/Linux 全宽菜单、主布局、集成标题栏、workspace/body split、SFTP 页面接线、自绘 SFTP/saved session/saved group 右键菜单或全局 overlays 时 |
 | `src/app/views/sftp_panel.rs` | SFTP 双列页面主体 | `render_sftp_panel`，远端加载更多页脚 | 改远端/本地文件列表、分页加载按钮、表头、上传下载按钮、隐藏文件开关、SFTP 右键菜单或双栏布局时 |
 | `src/app/views/sftp_panel/sort.rs` | SFTP 远端/本地列表排序 helper | `sort_sftp_entries`，`SftpSortableEntry` | 改名称/大小/修改时间排序规则、目录优先或本地/远端排序一致性时 |
 | `src/app/views/sftp_panel/transfer_panel.rs` | SFTP 页面传输标签和传输行渲染 | `render_sftp_transfer_panel`，`render_sftp_transfer_row`，`sftp_transfer_status_text` | 改传输列表分组、进度条、暂停/恢复/取消/移除按钮或传输状态文案时 |
-| `src/app/views/sidebar.rs` | 展开/收起侧栏和 saved session entry 渲染 | `sidebar`，`render_collapsed_sidebar`，saved sidebar row renderers | 改 SAVED 列表、`uniform_list` 可见行、分组展开/重命名、折叠态入口或本地终端固定入口时 |
+| `src/app/views/sidebar.rs` | 展开/收起侧栏和 saved session entry 渲染 | `sidebar`，`render_collapsed_sidebar`，saved sidebar row renderers | 改 SAVED 列表、`uniform_list` 可见行、分组展开/重命名、分组/单条 SSH 右键入口、折叠态入口或本地终端固定入口时 |
 | `src/app/views/monitoring.rs` | 底部/侧栏监控面板 | `render_monitoring_panel`，`render_sidebar_monitoring_panel` | 改 CPU/MEM/NET/DISK 展示、sparkline、监控位置或滚动条时 |
 | `src/app/views/tab_bar.rs` | 顶部 tab bar 和 split/search 操作按钮 | `render_tab_bar`，`tabs_scroll_handle` | 改编号 terminal/SFTP 标签、当前 tab 自动可见、SFTP 标签关闭、tab 选择/关闭、settings tab、split pane 按钮或 tab bar 搜索按钮时 |
 | `src/app/views/terminal_panel.rs` | 终端工作区、SFTP 页面、settings 页面承载和 pane tree 渲染 | `render_terminal_panel`，`render_pane_tree`，terminal scrollbar gutter | 改终端 focus/key/mouse、右侧滚动槽、pane splitter、disconnect overlay、SFTP 页面挂载或 settings 页面承载时 |
@@ -177,4 +177,4 @@
 
 ## 最后更新时间
 
-- 2026-07-12 10:18 +0800
+- 2026-07-12 12:02 +0800

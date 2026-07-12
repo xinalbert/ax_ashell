@@ -1,3 +1,27 @@
+## 2026-07-12 saved SSH 无密钥导入导出预检
+
+- 日期：2026-07-12 11:40 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮新增 saved SSH 会话与分组的无密码、无私钥 share JSON 导出和导入，并在原生菜单栏添加入口。
+- 受影响文件：`src/app/input/app_menu.rs`，`src/app/views/layout.rs`，`src/app/actions/saved_sessions.rs`，`src/config/store.rs`，`src/main.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：计划执行受影响 Rust 文件格式化、聚焦测试、`cargo check`、必要的完整测试、`git diff --check` 和 tracking docs validator；真实 GUI 菜单栏文件选择仍需手工确认。
+
+## 2026-07-12 完成 saved SSH 无密钥导入导出环境验证
+
+- 日期：2026-07-12 11:53 +0800
+- 变化摘要：saved SSH 会话与分组的 share JSON 导入/导出已实现；导出条目不包含密码、私钥路径、内联私钥、passphrase 或代理密码；File 菜单已添加导入/导出入口；运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/app/actions/saved_sessions.rs`，`src/app/input/keybinding_recorder.rs`，`src/main.rs`，`src/app/input/app_menu.rs`，`src/app/views/layout.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-implementation-tracker/project-map.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：受影响 Rust 文件 `rustfmt --edition 2024` 通过；`cargo test --quiet saved_sessions_share -- --nocapture` 3 项通过；`cargo check` 通过；fast hover/context 静态审计通过；完整 `cargo test --quiet` 127 项通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；真实 GUI 菜单栏文件选择和导入后列表刷新仍需手工确认。
+
+## 2026-07-12 完成 sidebar saved SSH 右键范围导出环境验证
+
+- 日期：2026-07-12 12:02 +0800
+- 变化摘要：sidebar saved session 右键菜单新增单条 SSH 导出；sidebar saved group 展开态和折叠态右键菜单新增分组导出；导出继续复用不含密码、私钥路径、内联私钥、passphrase 或代理密码的 share JSON。运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/actions/saved_sessions.rs`，`src/app/actions/sftp.rs`，`src/app/views/layout.rs`，`src/app/views/sidebar.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-implementation-tracker/project-map.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：受影响 Rust 文件 `rustfmt --edition 2024` 通过；`cargo check` 通过；`cargo test --quiet saved_sessions -- --nocapture` 4 项通过；fast hover/context 静态审计通过；完整 `cargo test --quiet` 128 项通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；真实 GUI sidebar 文件选择和导出结果仍需手工确认。
+
 ## 2026-07-12 新增内置主题预设预检
 
 - 日期：2026-07-12 09:54 +0800

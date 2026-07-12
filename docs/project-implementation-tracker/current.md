@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：在 SSH 会话既无密码也无私钥时，不先用空密码尝试连接，而是直接打开终端 tab 输入密码并用该密码连接。
-- 交付物：打开 SSH tab 前判断密码和私钥是否都为空；满足条件时使用 inactive backend 创建未连接 tab 并显示 `Password: `；终端输入期间本地截获密码、回显掩码并回车连接；私钥认证或已填写密码失败时保留现有连接失败 overlay。
+- 目标：为已保存 SSH 会话和分组提供不携带密码、私钥、passphrase 或代理密码的导出/导入，并在原生菜单栏与 sidebar 右键菜单中添加入口。
+- 交付物：安全 share JSON payload；导出全部 saved sessions；从文件导入并默认合并到本地 sessions；菜单栏 File 入口；sidebar group/session 右键导出入口；action 接线；中英文文案；聚焦测试与常规验证。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app.rs`，`src/app/session_ui.rs`，`src/app/actions/session.rs`，`src/app/actions/terminal.rs`，`src/app/workspace.rs`，`src/app/lifecycle/event_loop.rs`，`src/terminal/backend.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
-- 不在本轮范围内：修改 `russh` 认证协议、交互式 keyboard-interactive 认证、多轮服务器 challenge、保存用户临时输入的密码到配置、修改配置 schema、修改 `Cargo.toml` / `Cargo.lock`、真实 GUI 交互验收。
+- 当前范围：`src/app/input/app_menu.rs`，`src/app/input/keybinding_recorder.rs`，`src/app/views/layout.rs`，`src/app/views/sidebar.rs`，`src/app/actions/saved_sessions.rs`，`src/app/actions/sftp.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/main.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 不在本轮范围内：系统 keychain、加密备份、导出密码或私钥、独立空分组持久化、远端同步语义调整、修改 SSH backend、修改 `Cargo.toml` / `Cargo.lock`、真实 GUI 验收。
 
 ## 当前状态
 
@@ -22,37 +22,41 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 复核 SSH 认证、连接进度 overlay、tab 创建和终端输入路径 | 读取 `connection.rs`、`event_loop.rs`、`workspace.rs`、`session.rs`、`terminal.rs` | 确认可以在 open tab 前用 inactive backend 承载本地密码提示 |
-| P2 | completed | 新增无密码无私钥时的终端内密码提示和临时密码连接 | `rustfmt --edition 2024`，`cargo check`，聚焦测试 | 打开 tab 前直接提示；输入密码后再启动 SSH backend；临时密码不写入配置 |
-| P3 | completed | 补齐完整测试和 tracking docs 校验 | 完整 `cargo test --quiet`，`git diff --check`，tracking validator | GUI 实际密码输入体验仍需手工确认 |
+| P1 | completed | 复核 saved session/group 存储、菜单栏 action 和文件选择现有模式 | 读取 `session.rs`、`config/store.rs`、`saved_sessions.rs`、`app_menu.rs`、`layout.rs` | 分组来自 `Session.group_name`；菜单栏由 GPUI actions 接线 |
+| P2 | completed | 实现无密钥 share payload、导出文件、导入合并和菜单栏 action | `rustfmt --edition 2024`、聚焦测试、`cargo check` | 导出不包含 secret 字段；导入默认生成缺失/冲突 id |
+| P3 | completed | 完成文案、跟踪记录和验证收口 | `cargo test --quiet`，`git diff --check`，tracking validator | GUI 文件选择仍需手工确认 |
+| P4 | completed | 在 sidebar group/session 右键菜单加入对应范围导出 | `rustfmt --edition 2024`、聚焦测试、`cargo check`、`cargo test --quiet` | 复用同一个无凭据 share JSON |
 
 ## 已完成
 
-- 已读取 `AGENTS.md`、环境记录、当前实施记录和项目地图。
-- 已确认 SSH 密码认证当前由 `src/backend/ssh/connection.rs` 调用 `authenticate_password`，失败时只返回错误，不会打开 shell 或产生可直接输入的远端 password prompt。
-- 已确认连接失败事件在 `src/app/lifecycle/event_loop.rs` 中把 `connection_progress` 标记为 failed，`src/app/views/layout.rs` 显示 Retry / Cancel overlay。
-- 已确认终端输入统一经过 `src/app/actions/terminal.rs`，可以在 app 层对指定 tab 临时截获输入。
-- 已按用户约束收窄触发条件：`AuthMethod::Password`、`session.password` 为空、`private_key_path` 和 `private_key_inline` 都为空；私钥认证或已填密码失败时保留现有 overlay。
-- 已新增 inactive backend，用于创建尚未发起网络连接的 SSH tab；用户在终端输入密码并回车后才替换为真实 SSH backend。
-- 已新增终端密码提示状态，输入期间截获普通字符、Backspace、粘贴、IME commit、Enter 和 Ctrl-C；只回显掩码，不把密码发到旧 backend。
-- 已实现终端输入密码后的临时重连；临时密码只写入当前 tab 的 `Session` 副本，不保存到配置。
-- 已保留“终端输入的密码被服务器拒绝后再次提示”的路径；非认证失败仍进入现有连接失败 overlay。
-- 已确认项目地图覆盖本轮相关文件，不需要刷新 `project-map.md`。
+- 已读取 `AGENTS.md`、项目本地 fast hover skill、环境记录、当前实施记录和项目地图。
+- 已确认 `Session` 包含 `group_name`、连接参数、密码、私钥、passphrase 和代理密码字段；本轮导出必须使用专用 share payload 或显式清理 secret 字段。
+- 已确认本地配置的 `sessions` 是唯一保存会话集合，分组在 UI 中由 `group_name` 聚合生成，不存在独立空分组持久化模型。
+- 已确认原生菜单栏位于 `src/app/input/app_menu.rs`，菜单 action 在 `src/app/views/layout.rs` 绑定到 `AxShell`。
+- 已新增 `ax-shell-saved-sessions` share JSON，条目只包含 id、name、group_name、host、port、user、auth 和非敏感 proxy 参数，不包含 password、private_key_path、private_key_inline、passphrase 或 proxy_password。
+- 已实现导出全部 saved SSH 到 JSON 文件；已实现从 JSON 文件导入、按连接资料去重、id 冲突时生成新 id、导入后保存配置并展开导入的非空分组。
+- 已在 File 菜单加入 `Import Saved SSH...` 和 `Export Saved SSH...`，并在 root render 绑定对应 action。
+- 已同步中英文状态文案。
+- 已刷新项目地图中 `src/app/input/`、`src/app/input/app_menu.rs` 和 `src/app/actions/saved_sessions.rs` 的导入/导出路由说明。
+- 已在 saved session 右键菜单加入 `Export SSH`，导出当前单条 SSH。
+- 已在 sidebar saved group 行的展开态和折叠态右键菜单加入 `Export Group`，导出对应分组下的 SSH；复用同一个无凭据 share JSON。
+- 已补充 group 过滤测试，确认按归一化 group 名称筛选。
 
 ## 验证
 
-- 已完成：相关源码路径复核；确认不需要联网、不使用多 agent、不新增依赖、不修改配置 schema；终端密码提示实现；`rustfmt --edition 2024`；`cargo check`；新增聚焦测试；完整 `cargo test --quiet`；`git diff --check`；tracking validator。
-- 未完成：真实 GUI 终端密码输入手工确认。
+- 已完成：相关源码路径复核；确认不需要联网、不使用多 agent、不新增依赖、不修改配置 schema；受影响 Rust 文件 `rustfmt --edition 2024`；`cargo test --quiet saved_sessions -- --nocapture`；`cargo check`；fast hover/context 静态审计；完整 `cargo test --quiet`；`git diff --check`；tracking validator。
+- 未完成：真实 GUI 菜单栏和 sidebar 文件选择手工确认。
 
 ## 风险与阻塞
 
-- 风险：这是 app 层本地密码提示，不是 SSH keyboard-interactive 协议实现；适合“无密码、无私钥”的普通 password auth 首次输入。真实焦点、掩码回显和连接中 overlay 仍需 GUI 手工确认。
+- 风险：导入/导出文件选择属于真实 GUI 交互，自动化只能覆盖 payload 清理、解析与合并策略。
+- 风险：本轮不保存也不导出 secret，导入到其他机器后需要用户重新输入密码或配置密钥路径。
 - 无阻塞。
 
 ## 下一步
 
-- 按 git hygiene 准备提交；随后在真实 GUI 中确认无密码无私钥 SSH 会话打开 tab 后直接显示 `Password: `，输入错误密码可再次提示，输入正确密码可连接。
+- 在真实 GUI 中确认 File 菜单导入/导出、sidebar 单条 SSH 导出、sidebar 分组导出和导入后列表刷新。
 
 ## 最后更新时间
 
-- 2026-07-12 11:32 +0800
+- 2026-07-12 12:02 +0800
