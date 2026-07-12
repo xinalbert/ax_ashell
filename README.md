@@ -6,7 +6,7 @@
 
 AxShell is a Rust and GPUI desktop terminal workspace for local shells, SSH sessions, SFTP file management, and repeatable remote operations.
 
-Forked from <https://github.com/rust-kotlin/ashell.git>. The current project is maintained at <https://github.com/xinalbert/ax_shell>.
+Forked from <https://github.com/rust-kotlin/ashell.git>. The current project is maintained at <https://github.com/xinalbert/axshell>.
 
 ## Highlights
 
@@ -36,6 +36,7 @@ cargo dev-reload
 - [Documentation index](docs/README.md)
 - [Getting started](docs/getting-started.md)
 - [Feature guides](docs/README.md#feature-guides)
+- [Bundled fonts](docs/features/bundled-fonts.md)
 - [Development and packaging](docs/development.en.md)
 
 ## Project Notes
@@ -46,7 +47,7 @@ cargo dev-reload
 
 ## Contributing And Support
 
-Use [GitHub Issues](https://github.com/xinalbert/ax_shell/issues) for bugs and feature requests. See [Development and Packaging](docs/development.en.md) before preparing code or release changes.
+Use [GitHub Issues](https://github.com/xinalbert/axshell/issues) for bugs and feature requests. See [Development and Packaging](docs/development.en.md) before preparing code or release changes.
 
 ## License
 

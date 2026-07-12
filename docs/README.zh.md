@@ -18,6 +18,7 @@
 | 标签、Pane、搜索和快捷键 | [工作区](features/workspace.zh.md) |
 | 远程文件和传输 | [SFTP](features/sftp.zh.md) |
 | 主题、字体、标签颜色和设置行为 | [外观与设置](features/appearance-settings.zh.md) |
+| 内置字体家族和上游仓库 | [内置字体](features/bundled-fonts.zh.md) |
 | WebDAV/S3 加密会话同步 | [配置同步](features/configuration-sync.zh.md) |
 | SOCKS5/HTTP 代理和 X11 转发 | [代理与 X11](features/proxy-x11.zh.md) |
 | 监控、后台状态和深度休眠 | [监控与生命周期](features/monitoring-lifecycle.zh.md) |

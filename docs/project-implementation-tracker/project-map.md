@@ -44,12 +44,12 @@
 | `.github/workflows/` | CI / Release 构建和打包元数据 | 改二进制名、artifact 名、macOS bundle Info.plist 或发布路径时 | `release.yml` 手工组装 `.app`，需要与 Cargo 包名一致 |
 | `scripts/` | 本地开发/打包脚本与发布辅助脚本 | 改 macOS `.app` 名称、bundle id、图标文件名、签名逻辑、tag/version 映射或发布前 manifest 同步时 | `package-macos-app.sh` 会运行 `cargo build --release` 并组装 bundle；本轮将新增共享版本脚本 |
 | `assets/themes/` | 内置 GPUI 主题 JSON 资源 | 改内置主题变体、默认 preset 可引用的 theme 名称、light/dark companion 或主题色调时 | `src/app/theme.rs` 通过 `include_str!("../../assets/themes/*.json")` 注册；`popular.json` 承载 Catppuccin、Dracula/Alucard、Nord、Rose Pine；新增/改名主题需同步 `src/config/model.rs` 默认 profile 和配置归一化测试 |
-| `assets/fonts/` | 内置字体二进制、授权与精简清单 | 增删内置 UI/Terminal 字体、字重、变量字体或授权信息时 | `README.md` 记录 family/version/选取范围；`src/app/theme.rs` 通过统一 embedded font family 表注册 |
+| `assets/fonts/` | 内置字体二进制、授权与精简清单 | 增删内置 UI/Terminal 字体、字重、变量字体或授权信息时 | `README.md` 记录 family/version/选取范围；`docs/features/bundled-fonts*.md` 记录面向用户的上游仓库和授权入口；`src/app/theme.rs` 通过统一 embedded font family 表注册 |
 | `assets/*.desktop` | Linux desktop entry | 改应用显示名、Exec、Icon、StartupWMClass 或 Debian metadata 时 | 当前 desktop 文件为 `assets/ax_shell.desktop` |
 | `assets/icons/terminal_icon_all_formats/` | 应用图标资源目录 | 改 `build.rs` Windows icon、macOS bundle icon、Linux desktop/deb icon、非 macOS runtime window icon 或 release 打包图标路径时 | 批量图标不逐项索引；`terminal_icon_256.png` 是 `startup.rs` 非 macOS runtime window icon 的编译期资源 |
 | `README.md` / `README.zh.md` | 英文默认项目入口与中文入口 | 改项目定位、快速开始、文档入口、贡献或支持信息时 | 保持简短并在顶部互链；详细功能放入 `docs/` |
 | `docs/README.md` / `docs/README.zh.md` | 英文默认文档导航与中文文档导航 | 新增、删除、移动用户/开发/设计文档时 | 用户功能页位于 `docs/features/`，两种语言结构对齐 |
-| `docs/features/` | 按功能拆分的双语用户文档 | 改终端/SSH、工作区、SFTP、设置、同步、代理/X11、监控或本地数据行为时 | 默认英文 `.md`，中文 `.zh.md`；截图建议路径记录在各页和 `docs/images/README.md` |
+| `docs/features/` | 按功能拆分的双语用户文档 | 改终端/SSH、工作区、SFTP、设置、内置字体、同步、代理/X11、监控或本地数据行为时 | 默认英文 `.md`，中文 `.zh.md`；`bundled-fonts*.md` 记录内置字体上游仓库、版本、样式和授权；截图建议路径记录在各页和 `docs/images/README.md` |
 | `docs/` | 用户/开发文档、资源生命周期设计、环境审计和实施跟踪 | 改项目名称、配置目录、同步文件名、休眠策略、打包命令或验证边界时 | 根导航为 `docs/README*.md`；`resource-lifecycle*.md` 记录深睡分期与资源边界 |
 
 ## 关键文件

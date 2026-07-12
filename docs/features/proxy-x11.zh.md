@@ -22,6 +22,18 @@ X11 转发可以让远端 SSH 主机启动的兼容图形程序通过本地 X se
 - Windows：VcXsrv 或 Xming
 - Linux/Wayland：本地 `DISPLAY` 或 Xwayland
 
+## 本地 X Server 下载地址
+
+AxShell 不内置本地 X server。使用 SSH X11 转发前，需要先安装并启动一个本地 X server；也可以打开 AxShell 的本地 X server 启动选项，并把路径指向已安装的应用。
+
+| 平台 | X server | 获取地址 | 说明 |
+| --- | --- | --- | --- |
+| macOS | XQuartz | [xquartz.org](https://www.xquartz.org/) | macOS 上的稳定默认选择，通常安装为 `/Applications/Utilities/XQuartz.app`。 |
+| macOS | MacXServer | [macxserver.com/download](https://macxserver.com/download/) 或 [GitHub releases](https://github.com/toddvernon/MacXServer/releases) | 较新的 macOS rootless X server。AxShell 会把 `MacXServer.app` 视为 display `127.0.0.1:0`，对应端口 `6000` / display `:0`。 |
+| Windows | VcXsrv | [GitHub releases](https://github.com/marchaesen/vcxsrv/releases) 或 [SourceForge](https://sourceforge.net/projects/vcxsrv/) | 当前更常用的开源 Windows 选项。AxShell 会识别常见的 `VcXsrv` 安装路径。 |
+| Windows | Xming | [SourceForge archive](https://sourceforge.net/projects/xming/) 或 [Straight Running](https://www.straightrunning.com/XmingNotes/) | Windows 上的旧牌替代方案；较新的下载可能需要按 Straight Running 的授权/下载流程获取。 |
+| Linux / Wayland | X.Org / Xwayland | 通过发行版包管理器安装；项目背景可见 [X.Org](https://xorg.freedesktop.org/wiki/) 和 [Wayland](https://wayland.freedesktop.org/)。 | 优先安装发行版提供的 `xwayland` 或 X.Org server 包，不建议随意下载独立二进制。 |
+
 连接前需要确认本地 X server 已运行、远端 `sshd` 允许 `X11Forwarding yes`，并且远端程序支持 X11。
 
 Windows 内置启动辅助会优先使用 display `:0`，对应端口被占用时继续尝试后续 display。

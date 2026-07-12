@@ -10,6 +10,10 @@
 - Select terminal cursor and title-bar styles.
 - Create custom themes with color, background, font brightness, and name settings.
 
+## Fonts
+
+AxShell includes a small built-in font set for terminal defaults and Settings font ordering. See [Bundled Fonts](bundled-fonts.md) for source repositories, included styles, and licenses.
+
 ## Terminal And Workspace Preferences
 
 - Right-click copy and paste behavior.

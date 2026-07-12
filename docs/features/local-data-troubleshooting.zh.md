@@ -36,7 +36,7 @@
 2. 记录平台、AxShell 版本，以及问题发生在本地终端还是 SSH 会话。
 3. 存在崩溃报告时一并提供。
 4. 附上最近的相关运行日志，并先移除主机、用户名、路径和凭据信息。
-5. 在 <https://github.com/xinalbert/ax_shell/issues> 创建 issue。
+5. 在 <https://github.com/xinalbert/axshell/issues> 创建 issue。
 
 构建失败还应提供执行命令和编译器输出。开发日志说明见[开发与打包](../development.md)。
 

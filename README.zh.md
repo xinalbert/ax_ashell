@@ -6,7 +6,7 @@
 
 AxShell 是一个基于 Rust 和 GPUI 的桌面终端工作区，用于统一管理本地 Shell、SSH 会话、SFTP 文件与日常远程运维操作。
 
-项目 Fork 自 <https://github.com/rust-kotlin/ashell.git>，当前仓库为 <https://github.com/xinalbert/ax_shell>。
+项目 Fork 自 <https://github.com/rust-kotlin/ashell.git>，当前仓库为 <https://github.com/xinalbert/axshell>。
 
 ## 主要能力
 
@@ -36,6 +36,7 @@ cargo dev-reload
 - [文档导航](docs/README.zh.md)
 - [快速入门](docs/getting-started.zh.md)
 - [功能指南](docs/README.zh.md#功能指南)
+- [内置字体](docs/features/bundled-fonts.zh.md)
 - [开发与打包](docs/development.md)
 
 ## 项目说明
@@ -46,7 +47,7 @@ cargo dev-reload
 
 ## 参与和反馈
 
-请通过 [GitHub Issues](https://github.com/xinalbert/ax_shell/issues) 提交问题和功能建议。准备代码或发布改动前，请先阅读[开发与打包](docs/development.md)。
+请通过 [GitHub Issues](https://github.com/xinalbert/axshell/issues) 提交问题和功能建议。准备代码或发布改动前，请先阅读[开发与打包](docs/development.md)。
 
 ## 许可证
 

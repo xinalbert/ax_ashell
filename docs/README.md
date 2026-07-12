@@ -18,6 +18,7 @@ This directory contains task-focused user guides, development notes, and design 
 | Tabs, panes, search, and keybindings | [Workspace](features/workspace.md) |
 | Remote files and transfers | [SFTP](features/sftp.md) |
 | Themes, fonts, tab colors, and settings behavior | [Appearance And Settings](features/appearance-settings.md) |
+| Built-in font families and upstream repositories | [Bundled Fonts](features/bundled-fonts.md) |
 | Encrypted WebDAV/S3 session sync | [Configuration Sync](features/configuration-sync.md) |
 | SOCKS5/HTTP proxy and X11 forwarding | [Proxy And X11](features/proxy-x11.md) |
 | Monitoring, background state, and deep sleep | [Monitoring And Lifecycle](features/monitoring-lifecycle.md) |

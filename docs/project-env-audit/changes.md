@@ -38,6 +38,14 @@
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖；真实 MacXServer / XQuartz GUI 联机仍需手工确认。
 - 验证结果：`rustfmt --edition 2024 src/platform/x_server.rs src/app/lifecycle/startup.rs src/app/actions/session.rs` 通过；`cargo test --quiet macxserver` 2 项通过；`cargo check` 通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning。
 
+## 2026-07-12 完成 macOS X server Browse 选择器修正环境验证
+
+- 日期：2026-07-12 13:27 +0800
+- 变化摘要：macOS X11 本地 X server app Browse 从只允许选择目录改为允许选择文件或目录，以便选择 XQuartz.app / MacXServer.app 这类 `.app` 应用包。运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/app/actions/session.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖；真实 macOS 文件对话框选择 `.app` 仍需手工确认。
+- 验证结果：`rustfmt --edition 2024 src/app/actions/session.rs` 通过；`cargo check` 通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning。
+
 ## 2026-07-12 新增内置主题预设预检
 
 - 日期：2026-07-12 09:54 +0800
