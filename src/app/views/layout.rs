@@ -48,6 +48,12 @@ impl Render for AxShell {
 
         let body_panel = v_flex()
             .size_full()
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .child(self.render_terminal_panel(window, cx)),
+            )
             .when(show_bottom_monitoring, |this| {
                 this.child(
                     div()
@@ -55,12 +61,6 @@ impl Render for AxShell {
                         .child(self.render_monitoring_panel(window.viewport_size().width, cx)),
                 )
             })
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.render_terminal_panel(window, cx)),
-            )
             .into_any_element();
 
         let workspace = if self.sidebar_collapsed {
