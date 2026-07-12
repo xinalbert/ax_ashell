@@ -1,5 +1,15 @@
 # 外部检索记录
 
+## 2026-07-12 主流主题 palette 来源
+
+- 时间：2026-07-12 09:54 +0800
+- 检索问题：AxShell 新增哪些内置主题预设更符合主流终端/编辑器用户预期，并且有可追溯 palette 来源。
+- 检索原因：用户明确允许联网检索；新增主题不应只凭印象命名或拍脑袋配色。
+- 来源列表：Catppuccin palette JSON <https://raw.githubusercontent.com/catppuccin/palette/main/palette.json>；Dracula README palette <https://github.com/dracula/dracula-theme#color-palette-oss>；Nord colors and palettes <https://www.nordtheme.com/docs/colors-and-palettes>；Rosé Pine palette JSON <https://raw.githubusercontent.com/rose-pine/palette/main/palette.json>。
+- 关键结论：Catppuccin 提供 Latte/Mocha 等官方 light/dark palette；Dracula 提供 Dracula dark 和 Alucard light palette；Nord 官方文档明确 16 色 palette 及 terminal-friendly 命名；Rosé Pine 提供 Dawn/Main/Moon palette。它们覆盖暖色、冷色、柔和 pastel 和高对比暗色，适合作为内置预设补充。
+- 对实施计划的影响：新增 `assets/themes/popular.json`，包含 Catppuccin Latte/Mocha、Dracula Alucard/Dracula、Nord Light/Nord、Rosé Pine Dawn/Main/Moon；默认 profile 增加纯主题和少量跨主题组合。
+- 未解决问题：真实 GUI 中的 Settings 表单、SFTP 列表、终端正文和 hover 对比度仍需手工确认；部分 palette 需要按 AxShell ThemeConfig token 做工程映射，不能逐字段等同于原项目所有 UI token。
+
 ## 2026-07-11 GPUI hover 响应路径
 
 - 时间：2026-07-11 20:28 +0800

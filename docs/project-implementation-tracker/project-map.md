@@ -43,7 +43,8 @@
 | `locales/` | 中英文界面文案 | 新增 custom theme 分组、提示、保存说明、日志入口和错误消息时 | 需要同步 `en.yml` 和 `zh-CN.yml` |
 | `.github/workflows/` | CI / Release 构建和打包元数据 | 改二进制名、artifact 名、macOS bundle Info.plist 或发布路径时 | `release.yml` 手工组装 `.app`，需要与 Cargo 包名一致 |
 | `scripts/` | 本地开发/打包脚本与发布辅助脚本 | 改 macOS `.app` 名称、bundle id、图标文件名、签名逻辑、tag/version 映射或发布前 manifest 同步时 | `package-macos-app.sh` 会运行 `cargo build --release` 并组装 bundle；本轮将新增共享版本脚本 |
-| `assets/themes/` | 内置 GPUI 主题 JSON 资源 | 改内置主题变体、默认 preset 可引用的 theme 名称、light/dark companion 或主题色调时 | `src/app/theme.rs` 通过 `include_str!("../../assets/themes/*.json")` 注册；新增/改名主题需同步 `src/config/model.rs` 默认 profile 和配置归一化测试 |
+| `assets/themes/` | 内置 GPUI 主题 JSON 资源 | 改内置主题变体、默认 preset 可引用的 theme 名称、light/dark companion 或主题色调时 | `src/app/theme.rs` 通过 `include_str!("../../assets/themes/*.json")` 注册；`popular.json` 承载 Catppuccin、Dracula/Alucard、Nord、Rose Pine；新增/改名主题需同步 `src/config/model.rs` 默认 profile 和配置归一化测试 |
+| `assets/fonts/` | 内置字体二进制、授权与精简清单 | 增删内置 UI/Terminal 字体、字重、变量字体或授权信息时 | `README.md` 记录 family/version/选取范围；`src/app/theme.rs` 通过统一 embedded font family 表注册 |
 | `assets/*.desktop` | Linux desktop entry | 改应用显示名、Exec、Icon、StartupWMClass 或 Debian metadata 时 | 当前 desktop 文件为 `assets/ax_shell.desktop` |
 | `assets/icons/terminal_icon_all_formats/` | 应用图标资源目录 | 改 `build.rs` Windows icon、macOS bundle icon、Linux desktop/deb icon、非 macOS runtime window icon 或 release 打包图标路径时 | 批量图标不逐项索引；`terminal_icon_256.png` 是 `startup.rs` 非 macOS runtime window icon 的编译期资源 |
 | `README.md` / `README.zh.md` | 英文默认项目入口与中文入口 | 改项目定位、快速开始、文档入口、贡献或支持信息时 | 保持简短并在顶部互链；详细功能放入 `docs/` |
@@ -59,7 +60,7 @@
 | `.agents/skills/ax-ashell-fast-hover/SKILL.md` | 项目本地 AxShell 快速 hover skill | `FastHoverExt` / `FastHoverOptions` 使用规则，Settings `fast_menu`，`uniform_list`，禁用旧 hover 路径，验证清单 | 后续修改 hover_list、Settings 下拉、UI/Terminal Font 菜单、SFTP/sidebar/selector 长列表或自绘 context menu hover 时 |
 | `docs/resource-lifecycle.md` | 中文资源生命周期与深度休眠设计 | 状态机、阶段路线、资源策略、验证边界 | 实现或评审后台降载、SFTP pin、backend shutdown 与系统睡眠恢复时 |
 | `docs/resource-lifecycle.en.md` | English resource lifecycle and deep-sleep design | State machine, phases, resource policy, verification | Keep English documentation aligned with the Chinese lifecycle design |
-| `src/config/model.rs` | 配置文件与值模型、默认值和规范化规则 | `ConfigFile`，`ThemeProfileConfig`，`CustomThemeConfig`，`SavedWindowBounds`，`TitleBarStyle`，`CursorStyle` | 改配置 serde、默认值、theme profile、Settings 二次快捷键动作、窗口/标题栏/光标或 custom theme 模型时 |
+| `src/config/model.rs` | 配置文件与值模型、默认值和规范化规则 | `ConfigFile`，`ThemeProfileConfig`，`CustomThemeConfig`，`default_theme_profiles`，`SavedWindowBounds`，`TitleBarStyle`，`CursorStyle` | 改配置 serde、默认值、theme profile、Settings 二次快捷键动作、窗口/标题栏/光标或 custom theme 模型时 |
 | `src/config/store.rs` | 本地配置路径、迁移、getter/setter 和 `ConfigStore` | `ConfigStore::load/save`，`normalize_theme_profiles`，`theme profile` helpers，config path helpers | 改配置目录、旧目录迁移、Settings 二次快捷键动作、sync 默认对象名、theme profile、custom theme draft 或 registry file 路径时 |
 | `src/backend/proxy.rs` | SSH/SFTP transport proxy | `ProxyStream`，`ENV_PROXY`，`connect`，`active` | 改 SOCKS5/HTTP/direct 连接、环境代理或 session/global proxy 优先级时 |
 | `src/platform/x_server.rs` | 本地 X Server 平台 helper | `default_app_path`，`default_display`，`resolve_display`，`launch_args` | 改 macOS XQuartz、Windows VcXsrv/Xming、DISPLAY 或空闲 display 选择时 |
@@ -69,7 +70,8 @@
 | `src/app/actions/saved_sessions.rs` | session selector、saved group 和 saved session 菜单 action | `selector_entries`，`on_selector_key_down`，`saved_session_groups`，`open_saved_session_context_menu`，`commit_saved_group_rename` | 改选择器键盘行为、saved session 分组、组名展示、右键菜单或重命名时 |
 | `src/app/actions/sftp.rs` | UI 侧 SFTP 与本地文件浏览 action | `ensure_sftp_handle_for_group`，`release_sftp_handle_for_group`，`load_more_sftp_entries`，`sweep_idle_sftp_connections` | 改按需建连、分页加载操作、pin-aware group worker 回收、深睡断连、远端目录点击或传输入口时 |
 | `src/app/actions/terminal.rs` | terminal 键盘、鼠标、滚动和 IME action | `on_terminal_key_down`，`terminal_grid_point_and_side`，`on_terminal_scroll`，IME helpers | 鼠标命中、选择、滚动行高、快捷键、粘贴或 IME 候选框位置与终端网格不一致时 |
-| `src/app/theme.rs` | 主题注册、当前主题应用、theme profile 和 custom theme 逻辑 | `load_embedded_themes`，`load_user_themes`，`apply_theme_preferences`，`apply_theme_profile`，`save_custom_appearance` | app 视觉系统入口；通过 `crate::app::theme` 暴露 |
+| `src/app/theme.rs` | 主题、内置字体注册、当前 theme profile 和 custom theme 逻辑 | `EMBEDDED_FONT_FAMILIES`，`BUILT_IN_FONT_FAMILIES`，`load_fonts`，`load_embedded_themes`，`apply_theme_profile` | app 视觉系统入口；增删字体需同步 `assets/fonts/README.md` 与 Settings 字体排序 |
+| `assets/fonts/README.md` | 内置字体 family、版本、样式和用途清单 | Bundled Fonts 表、排除范围、授权入口 | 判断字体包中哪些文件需要编译进应用或核对内部 family 名时 |
 | `src/app/lifecycle/startup.rs` | 启动辅助、日志 writer/轮转、crash hook 和窗口打开 | `init_logging`，`runtime_log_dir`，`crash_report_dir`，`open_main_window`，window close callback | 日志 writer 必须报告初始化/写入失败并保留进程期 guard；窗口关闭先发起 backend shutdown，再保存布局 |
 | `assets/icons/terminal_icon_all_formats/terminal_icon_256.png` | 非 macOS runtime 窗口图标和 Linux/Debian 256px 图标资源 | PNG 资源文件 | 改 `include_bytes!`、Debian asset 或 Linux release icon 路径时确认存在性 |
 | `src/app/input/app_menu.rs` | GPUI 原生应用菜单注册 | `install`，`app_menus`，`Quit` | `Quit` 会先关闭全部 backend；原 `src/app/app_menu.rs` 迁入；通过 `crate::app::app_menu` 兼容导出 |
@@ -89,7 +91,7 @@
 | `src/app/dialogs/settings/` | 设置页子页面目录 | `general.rs`，`appearance.rs`，`font_page.rs`，`custom.rs`，`fast_menu.rs`，`terminal.rs`，`workspace.rs`，`monitoring.rs`，`sync.rs`，`proxy.rs`，`keybindings.rs`，`shell.rs`，`about.rs`，`help.rs` | 入口为 `src/app/dialogs/settings.rs`；侧栏按 General、Appearance & Theme、Theme Editor、Terminal、Workspace、Monitor & Resources、Connections、Sync、Shortcuts、Help、About 装配；Settings 下拉统一走本地 fast menu |
 | `src/app/dialogs/settings/general.rs` | Settings 通用页 | `settings_general_page` | 改显示语言或 Settings 页面自身行为，例如第二次 Settings 快捷键动作时 |
 | `src/app/dialogs/settings/appearance.rs` | Settings 外观与主题页 | `settings_appearance_page` | 改主题模式、主题套装选择、标题栏样式、字体/光标分组挂载或外观页命名时 |
-| `src/app/dialogs/settings/font_page.rs` | Settings 字体与光标分组 helper | `settings_font_group` | 改 UI/terminal 字体大小、字体族、monospace 过滤、Maple Mono 内置字体展示或光标样式时；该分组挂在 Appearance 页内，字体候选列表需保持 lazy 构建，避免打开 Theme 页时扫描系统字体 |
+| `src/app/dialogs/settings/font_page.rs` | Settings 字体与光标分组 helper | `settings_font_group`，`take_built_in_font_names` | 改 UI/terminal 字体、monospace 过滤、内置字体优先顺序或标签时；候选列表需保持 lazy/cache，避免 hover 时扫描系统字体 |
 | `src/app/dialogs/settings/fast_menu.rs` | Settings 专用轻量下拉菜单 helper | `FastMenuItem`，`fast_settings_menu`，`fast_settings_menu_lazy`，`fast_settings_menu_disabled` | 改 Settings 内下拉 hover 反馈、避免 `PopupMenu` hover selected-state 重绘、延迟构建昂贵菜单候选或新增简单 Settings 菜单时 |
 | `src/app/dialogs/settings/terminal.rs` | Settings 终端行为页 | `settings_terminal_page` | 改右键复制/粘贴或关键词高亮等终端交互设置时 |
 | `src/app/dialogs/sftp_close_confirm.rs` | 活跃 SFTP 传输的页面关闭确认弹窗 | `show_sftp_transfer_close_dialog` | 改首次确认、group 绑定、二次快捷键、保持页面、后台继续、取消断开或记住动作时 |
@@ -166,13 +168,13 @@
 
 ## 忽略与未索引
 
-- `assets/icons/` 批量图标、`assets/fonts/`、`target/` 未逐项索引：仅记录当前构建/打包会直接引用的关键图标入口，字体资源和构建产物不逐项展开
+- `assets/icons/` 批量图标、`assets/fonts/*.ttf`、`target/` 未逐项索引：字体二进制由 `assets/fonts/README.md` 汇总，构建产物不展开
 
 ## 刷新规则
 
-- 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、启动初始化、日志/crash hook、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、设置页字段分组、Settings 子页面新增/删除/改名、Settings 快速菜单、Settings 重开 keyed state、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、workspace page / tab 模型、terminal tab UI 状态回收、terminal backend shutdown controller、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 列表排序/传输标签面板、SFTP 目录导航失败恢复、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`AGENTS.md`，`.agents/skills/ax-ashell-fast-hover/SKILL.md`，`Cargo.toml`，`Cargo.lock`，`src/app/hover.rs`，`src/app/dialogs/settings/fast_menu.rs`，`docs/project-env-audit/current.md`
+- 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、启动初始化、日志/crash hook、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、内置字体 family/字重/授权/排序、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、内置 theme JSON、设置页字段分组、Settings 子页面新增/删除/改名、Settings 快速菜单、Settings 重开 keyed state、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、workspace page / tab 模型、terminal tab UI 状态回收、terminal backend shutdown controller、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 列表排序/传输标签面板、SFTP 目录导航失败恢复、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
+- 最近依据：`AGENTS.md`，`Cargo.toml`，`Cargo.lock`，`assets/fonts/README.md`，`assets/themes/popular.json`，`src/app/theme.rs`，`src/app/dialogs/settings/font_page.rs`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-12 09:27 +0800
+- 2026-07-12 10:18 +0800
