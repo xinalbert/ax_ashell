@@ -11,6 +11,8 @@ use crate::config::ConfigStore;
 const INSTANCE_KIND_ENV: &str = "AX_SHELL_INSTANCE_KIND";
 const INSTANCE_APP_ID_ENV: &str = "AX_SHELL_APP_ID";
 const DEV_RELOAD_INSTANCE_KIND: &str = "dev-reload";
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+const DEFAULT_LINUX_APP_ID: &str = "ax_shell";
 const LOG_FILES_TO_KEEP: usize = 24 * 7;
 static CRASH_HOOK: Once = Once::new();
 
@@ -33,10 +35,22 @@ fn current_window_title() -> &'static str {
 }
 
 fn current_window_app_id() -> Option<String> {
-    std::env::var(INSTANCE_APP_ID_ENV)
+    let app_id = std::env::var(INSTANCE_APP_ID_ENV)
         .ok()
         .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.is_empty());
+    if app_id.is_some() {
+        return app_id;
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    {
+        Some(DEFAULT_LINUX_APP_ID.to_string())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+    {
+        None
+    }
 }
 
 fn should_force_app_activation() -> bool {
@@ -606,7 +620,7 @@ pub(crate) fn open_main_window(cx: &mut App) {
             appears_transparent: true,
             traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
         });
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[cfg(target_os = "macos")]
         {
             // Use app-controlled drag zones so tab content inside the integrated titlebar
             // does not fall back to platform-native window dragging.

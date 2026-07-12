@@ -1,13 +1,13 @@
 use crate::app::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui::{
-    AnyElement, Context, ElementId, Focusable as _, FontWeight, Hsla, InteractiveElement as _,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement as _, PathBuilder, Pixels, Render,
-    StatefulInteractiveElement as _, Styled as _, Window, canvas, div, point,
-    prelude::FluentBuilder as _, px, rems, uniform_list,
+    AnyElement, Context, Decorations, ElementId, Focusable as _, FontWeight, Hsla,
+    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _,
+    PathBuilder, Pixels, Render, StatefulInteractiveElement as _, Styled as _, Window, canvas, div,
+    point, prelude::FluentBuilder as _, px, rems, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Disableable as _, ElementExt, Icon, IconName, InteractiveElementExt as _, Root,
-    Selectable as _, Sizable as _, Size,
+    Selectable as _, Sizable as _, Size, TitleBar,
     button::{Button, ButtonVariants as _},
     checkbox::Checkbox,
     h_flex,

@@ -44,6 +44,9 @@ impl Render for AxShell {
             && self.config.monitoring_position() == "Bottom";
         let show_platform_menu_bar = cfg!(any(target_os = "windows", target_os = "linux"))
             && self.active_title_bar_style == crate::config::TitleBarStyle::Native;
+        let show_linux_client_title_bar = cfg!(target_os = "linux")
+            && self.active_title_bar_style == crate::config::TitleBarStyle::Native
+            && matches!(window.window_decorations(), Decorations::Client { .. });
         let sftp_context_remote_ready = self.active_sftp().is_some();
 
         let body_panel = v_flex()
@@ -84,13 +87,17 @@ impl Render for AxShell {
                                 |this| {
                                     this.child(
                                         div()
+                                            .id("native-tab-bar-drag-collapsed")
                                             .flex_none()
                                             .h(px(32.))
                                             .w_full()
                                             .bg(cx.theme().tab_bar)
                                             .border_b_1()
                                             .border_color(cx.theme().border)
-                                            .child(self.render_tab_bar(cx)),
+                                            .child(self.render_tab_bar(cx))
+                                            .when(cfg!(target_os = "linux"), |this| {
+                                                Self::bind_titlebar_drag(this, cx)
+                                            }),
                                     )
                                 },
                             )
@@ -119,13 +126,17 @@ impl Render for AxShell {
                         |this| {
                             this.child(
                                 div()
+                                    .id("native-tab-bar-drag-main")
                                     .flex_none()
                                     .h(px(32.))
                                     .w_full()
                                     .bg(cx.theme().tab_bar)
                                     .border_b_1()
                                     .border_color(cx.theme().border)
-                                    .child(self.render_tab_bar(cx)),
+                                    .child(self.render_tab_bar(cx))
+                                    .when(cfg!(target_os = "linux"), |this| {
+                                        Self::bind_titlebar_drag(this, cx)
+                                    }),
                             )
                         },
                     )
@@ -311,6 +322,19 @@ impl Render for AxShell {
                                 .bg(cx.theme().border),
                         ),
                 )
+            })
+            .when(show_linux_client_title_bar, |this| {
+                this.child(TitleBar::new().child(
+                    div()
+                        .id("linux-client-title")
+                        .min_w(px(0.))
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap()
+                        .text_size(rems(0.875))
+                        .text_color(cx.theme().muted_foreground)
+                        .child("AxShell"),
+                ))
             })
             .when(show_platform_menu_bar, |this| {
                 this.child(
