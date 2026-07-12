@@ -1332,6 +1332,30 @@ mod theme_profile_tests {
                 .iter()
                 .any(|profile| profile.name == "Matrix")
         );
+        assert!(
+            config
+                .theme_profiles()
+                .iter()
+                .any(|profile| profile.name == "Catppuccin")
+        );
+        assert!(
+            config
+                .theme_profiles()
+                .iter()
+                .any(|profile| profile.name == "Dracula")
+        );
+        assert!(
+            config
+                .theme_profiles()
+                .iter()
+                .any(|profile| profile.name == "Nord")
+        );
+        assert!(
+            config
+                .theme_profiles()
+                .iter()
+                .any(|profile| profile.name == "Rose Pine")
+        );
     }
 
     #[test]
@@ -1363,6 +1387,27 @@ mod theme_profile_tests {
             .expect("matrix default profile exists");
         assert_eq!(matrix.light_theme_name, "Matrix Light");
         assert_eq!(matrix.dark_theme_name, "Matrix");
+
+        let catppuccin = profiles
+            .iter()
+            .find(|profile| profile.id == "catppuccin")
+            .expect("catppuccin default profile exists");
+        assert_eq!(catppuccin.light_theme_name, "Catppuccin Latte");
+        assert_eq!(catppuccin.dark_theme_name, "Catppuccin Mocha");
+
+        let dracula = profiles
+            .iter()
+            .find(|profile| profile.id == "dracula")
+            .expect("dracula default profile exists");
+        assert_eq!(dracula.light_theme_name, "Dracula Alucard");
+        assert_eq!(dracula.dark_theme_name, "Dracula");
+
+        let rose_pine_moon = profiles
+            .iter()
+            .find(|profile| profile.id == "rose-pine-moon")
+            .expect("rose pine moon default profile exists");
+        assert_eq!(rose_pine_moon.light_theme_name, "Rose Pine Dawn");
+        assert_eq!(rose_pine_moon.dark_theme_name, "Rose Pine Moon");
 
         assert!(
             profiles

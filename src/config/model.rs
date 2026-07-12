@@ -56,6 +56,21 @@ pub(super) fn default_theme_profiles() -> Vec<ThemeProfileConfig> {
         theme_profile("tokyo-moon", "Tokyo Moon", "Tokyo Moon Light", "Tokyo Moon"),
         theme_profile("matrix", "Matrix", "Matrix Light", "Matrix"),
         theme_profile(
+            "catppuccin",
+            "Catppuccin",
+            "Catppuccin Latte",
+            "Catppuccin Mocha",
+        ),
+        theme_profile("dracula", "Dracula", "Dracula Alucard", "Dracula"),
+        theme_profile("nord", "Nord", "Nord Light", "Nord"),
+        theme_profile("rose-pine", "Rose Pine", "Rose Pine Dawn", "Rose Pine"),
+        theme_profile(
+            "rose-pine-moon",
+            "Rose Pine Moon",
+            "Rose Pine Dawn",
+            "Rose Pine Moon",
+        ),
+        theme_profile(
             "solarized-tokyo",
             "Solarized + Tokyo",
             "Solarized Light",
@@ -72,6 +87,24 @@ pub(super) fn default_theme_profiles() -> Vec<ThemeProfileConfig> {
             "Gruvbox + Phyger",
             "Gruvbox Light",
             "Phyger Dark",
+        ),
+        theme_profile(
+            "latte-dracula",
+            "Latte + Dracula",
+            "Catppuccin Latte",
+            "Dracula",
+        ),
+        theme_profile(
+            "nord-mocha",
+            "Nord + Mocha",
+            "Nord Light",
+            "Catppuccin Mocha",
+        ),
+        theme_profile(
+            "dawn-mocha",
+            "Dawn + Mocha",
+            "Rose Pine Dawn",
+            "Catppuccin Mocha",
         ),
     ]
 }

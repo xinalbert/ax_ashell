@@ -54,6 +54,26 @@ fn terminal_font_names(window: &mut Window, cx: &mut gpui::App, font_size: f32) 
     names
 }
 
+fn font_family_label(family: &str) -> String {
+    if crate::app::theme::BUILT_IN_FONT_FAMILIES.contains(&family) {
+        format!("{} ({})", family, t!("software_builtin"))
+    } else {
+        family.to_string()
+    }
+}
+
+fn take_built_in_font_names(names: &mut Vec<String>) -> Vec<String> {
+    crate::app::theme::BUILT_IN_FONT_FAMILIES
+        .iter()
+        .filter_map(|family| {
+            names
+                .iter()
+                .position(|name| name == family)
+                .map(|index| names.remove(index))
+        })
+        .collect()
+}
+
 pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell) -> SettingGroup {
     let ui_font_size = shell.appearance.ui_font_size;
     let terminal_font_size = shell.appearance.terminal_font_size;
@@ -134,14 +154,10 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                 let view = view.clone();
                 let current = ui_font_family.clone();
                 move |_, _window, _cx| {
-                    let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE
-                        .load(std::sync::atomic::Ordering::Relaxed);
                     let label = if current == *".SystemUIFont" || current.is_empty() {
                         t!("system_default").to_string()
-                    } else if !using_system_maple && current == "Maple Mono NF CN" {
-                        format!("Maple Mono NF CN ({})", t!("software_builtin"))
                     } else {
-                        current.clone()
+                        font_family_label(&current)
                     };
                     super::fast_menu::fast_settings_menu_lazy(
                         "ui-font-dropdown",
@@ -153,8 +169,6 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                             let current = current.clone();
                             move |_window, cx| {
                                 let mut names = settings_font_names(cx);
-                                let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE
-                                    .load(std::sync::atomic::Ordering::Relaxed);
                                 let mut items = vec![super::fast_menu::FastMenuItem::new(
                                     t!("system_default").to_string(),
                                     current == *".SystemUIFont" || current.is_empty(),
@@ -162,18 +176,13 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                                         this.change_ui_font_family(".SystemUIFont", window, cx);
                                     },
                                 )];
-                                let maple_font = "Maple Mono NF CN".to_string();
-                                if !using_system_maple && names.contains(&maple_font) {
-                                    names.retain(|name| name != &maple_font);
+                                for family in take_built_in_font_names(&mut names) {
+                                    let checked = current == family;
                                     items.push(super::fast_menu::FastMenuItem::new(
-                                        format!("{} ({})", maple_font, t!("software_builtin")),
-                                        current == maple_font,
-                                        |this, window, cx| {
-                                            this.change_ui_font_family(
-                                                "Maple Mono NF CN",
-                                                window,
-                                                cx,
-                                            );
+                                        font_family_label(&family),
+                                        checked,
+                                        move |this, window, cx| {
+                                            this.change_ui_font_family(&family, window, cx);
                                         },
                                     ));
                                 }
@@ -202,13 +211,7 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                 let view = view.clone();
                 let current = terminal_font_family.clone();
                 move |_, _window, _cx| {
-                    let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE
-                        .load(std::sync::atomic::Ordering::Relaxed);
-                    let label = if !using_system_maple && current == "Maple Mono NF CN" {
-                        format!("Maple Mono NF CN ({})", t!("software_builtin"))
-                    } else {
-                        current.clone()
-                    };
+                    let label = font_family_label(&current);
                     super::fast_menu::fast_settings_menu_lazy(
                         "terminal-font-dropdown",
                         label,
@@ -220,19 +223,13 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                             move |window, cx| {
                                 let mut names = terminal_font_names(window, cx, terminal_font_size);
                                 let mut items = Vec::new();
-                                let maple_font = "Maple Mono NF CN".to_string();
-                                let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE
-                                    .load(std::sync::atomic::Ordering::Relaxed);
-                                if !using_system_maple && names.contains(&maple_font) {
-                                    names.retain(|name| name != &maple_font);
+                                for family in take_built_in_font_names(&mut names) {
+                                    let checked = current == family;
                                     items.push(super::fast_menu::FastMenuItem::new(
-                                        format!("{} ({})", maple_font, t!("software_builtin")),
-                                        current == maple_font,
-                                        |this, _window, cx| {
-                                            this.change_terminal_font_family(
-                                                "Maple Mono NF CN",
-                                                cx,
-                                            );
+                                        font_family_label(&family),
+                                        checked,
+                                        move |this, _window, cx| {
+                                            this.change_terminal_font_family(&family, cx);
                                         },
                                     ));
                                 }
@@ -303,4 +300,31 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                 }
             }),
         ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::take_built_in_font_names;
+
+    #[test]
+    fn built_in_fonts_are_taken_in_product_order() {
+        let mut names = vec![
+            "System Mono".to_string(),
+            "JetBrains Mono".to_string(),
+            "Iosevka Term".to_string(),
+            "Maple Mono NF CN".to_string(),
+            "Monaspace Neon Var".to_string(),
+        ];
+
+        assert_eq!(
+            take_built_in_font_names(&mut names),
+            vec![
+                "Maple Mono NF CN",
+                "Iosevka Term",
+                "JetBrains Mono",
+                "Monaspace Neon Var",
+            ]
+        );
+        assert_eq!(names, vec!["System Mono"]);
+    }
 }

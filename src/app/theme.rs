@@ -17,6 +17,7 @@ pub(crate) const EMBEDDED_THEME_JSONS: &[&str] = &[
     include_str!("../../assets/themes/gruvbox.json"),
     include_str!("../../assets/themes/solarized.json"),
     include_str!("../../assets/themes/phygerr.json"),
+    include_str!("../../assets/themes/popular.json"),
 ];
 
 use std::{
@@ -24,10 +25,51 @@ use std::{
     fs,
     path::{Path, PathBuf},
     rc::Rc,
-    sync::atomic::{AtomicBool, Ordering},
 };
 
-pub(crate) static USING_SYSTEM_MAPLE: AtomicBool = AtomicBool::new(false);
+pub(crate) const BUILT_IN_FONT_FAMILIES: &[&str] = &[
+    "Maple Mono NF CN",
+    "Iosevka Term",
+    "JetBrains Mono",
+    "Monaspace Neon Var",
+];
+
+struct EmbeddedFontFamily {
+    name: &'static str,
+    fonts: &'static [&'static [u8]],
+}
+
+const EMBEDDED_FONT_FAMILIES: &[EmbeddedFontFamily] = &[
+    EmbeddedFontFamily {
+        name: "Maple Mono NF CN",
+        fonts: &[
+            include_bytes!("../../assets/fonts/MapleMono-NF-CN-Regular.ttf").as_slice(),
+            include_bytes!("../../assets/fonts/MapleMono-NF-CN-Bold.ttf").as_slice(),
+        ],
+    },
+    EmbeddedFontFamily {
+        name: "Iosevka Term",
+        fonts: &[
+            include_bytes!("../../assets/fonts/IosevkaTerm-Regular.ttf").as_slice(),
+            include_bytes!("../../assets/fonts/IosevkaTerm-Bold.ttf").as_slice(),
+            include_bytes!("../../assets/fonts/IosevkaTerm-Italic.ttf").as_slice(),
+            include_bytes!("../../assets/fonts/IosevkaTerm-BoldItalic.ttf").as_slice(),
+        ],
+    },
+    EmbeddedFontFamily {
+        name: "JetBrains Mono",
+        fonts: &[
+            include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf").as_slice(),
+            include_bytes!("../../assets/fonts/JetBrainsMono-Bold.ttf").as_slice(),
+            include_bytes!("../../assets/fonts/JetBrainsMono-Italic.ttf").as_slice(),
+            include_bytes!("../../assets/fonts/JetBrainsMono-BoldItalic.ttf").as_slice(),
+        ],
+    },
+    EmbeddedFontFamily {
+        name: "Monaspace Neon Var",
+        fonts: &[include_bytes!("../../assets/fonts/MonaspaceNeon-Variable.ttf").as_slice()],
+    },
+];
 
 const CUSTOM_THEME_NAME_INPUT_KEY: &str = "custom_theme.theme_name";
 const CUSTOM_THEME_FILE_PREFIX: &str = "custom-";
@@ -370,21 +412,20 @@ pub(crate) fn custom_theme_registry_name(theme_name: &str, mode: ThemeMode) -> S
 }
 
 pub(crate) fn load_fonts(cx: &mut App) -> Result<()> {
-    let has_system_maple = cx
-        .text_system()
-        .all_font_names()
-        .contains(&"Maple Mono NF CN".to_string());
-    if has_system_maple {
-        USING_SYSTEM_MAPLE.store(true, Ordering::Relaxed);
-    } else {
-        let regular = Cow::Borrowed(
-            include_bytes!("../../assets/fonts/MapleMono-NF-CN-Regular.ttf").as_slice(),
-        );
-        let bold =
-            Cow::Borrowed(include_bytes!("../../assets/fonts/MapleMono-NF-CN-Bold.ttf").as_slice());
+    let available_fonts = cx.text_system().all_font_names();
+    for family in EMBEDDED_FONT_FAMILIES {
+        if available_fonts.iter().any(|name| name == family.name) {
+            continue;
+        }
+
+        let fonts = family
+            .fonts
+            .iter()
+            .map(|font| Cow::Borrowed(*font))
+            .collect();
         cx.text_system()
-            .add_fonts(vec![regular, bold])
-            .context("load Maple Mono NF CN fonts")?;
+            .add_fonts(fonts)
+            .with_context(|| format!("load {} fonts", family.name))?;
     }
     set_theme_font_names(cx.global_mut::<Theme>(), ".SystemUIFont");
     Ok(())
@@ -1657,6 +1698,9 @@ mod import_theme_tests {
         let matrix: ThemeSet =
             serde_json::from_str(include_str!("../../assets/themes/matrix.json"))
                 .expect("matrix theme parses");
+        let popular: ThemeSet =
+            serde_json::from_str(include_str!("../../assets/themes/popular.json"))
+                .expect("popular theme parses");
 
         for name in ["Tokyo Night Light", "Tokyo Storm Light", "Tokyo Moon Light"] {
             assert!(
@@ -1672,6 +1716,28 @@ mod import_theme_tests {
                 |theme| theme.name.as_ref() == "Matrix Light" && theme.mode == ThemeMode::Light
             )
         );
+
+        for (light_name, dark_name) in [
+            ("Catppuccin Latte", "Catppuccin Mocha"),
+            ("Dracula Alucard", "Dracula"),
+            ("Nord Light", "Nord"),
+            ("Rose Pine Dawn", "Rose Pine"),
+            ("Rose Pine Dawn", "Rose Pine Moon"),
+        ] {
+            assert!(
+                popular.themes.iter().any(
+                    |theme| theme.name.as_ref() == light_name && theme.mode == ThemeMode::Light
+                ),
+                "{light_name} light companion exists"
+            );
+            assert!(
+                popular
+                    .themes
+                    .iter()
+                    .any(|theme| theme.name.as_ref() == dark_name && theme.mode == ThemeMode::Dark),
+                "{dark_name} dark companion exists"
+            );
+        }
     }
 
     #[test]
@@ -1724,5 +1790,42 @@ mod import_theme_tests {
             custom_theme_inherited_field_value_from_theme_value(&theme_value, background);
 
         assert_eq!(inherited, "#FDF6E3");
+    }
+}
+
+#[cfg(test)]
+mod embedded_font_tests {
+    use super::{BUILT_IN_FONT_FAMILIES, EMBEDDED_FONT_FAMILIES};
+
+    #[test]
+    fn embedded_font_families_match_product_order() {
+        let embedded_names = EMBEDDED_FONT_FAMILIES
+            .iter()
+            .map(|family| family.name)
+            .collect::<Vec<_>>();
+
+        assert_eq!(embedded_names, BUILT_IN_FONT_FAMILIES);
+        assert_eq!(
+            EMBEDDED_FONT_FAMILIES
+                .iter()
+                .map(|family| family.fonts.len())
+                .collect::<Vec<_>>(),
+            vec![2, 4, 4, 1]
+        );
+    }
+
+    #[test]
+    fn embedded_font_assets_are_nonempty_true_type_files() {
+        for family in EMBEDDED_FONT_FAMILIES {
+            for font in family.fonts {
+                assert!(font.len() > 4, "{} font asset is nonempty", family.name);
+                assert_eq!(
+                    &font[..4],
+                    &[0x00, 0x01, 0x00, 0x00],
+                    "{} font asset is TrueType",
+                    family.name
+                );
+            }
+        }
     }
 }
