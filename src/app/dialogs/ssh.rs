@@ -28,6 +28,15 @@ impl AxShell {
                 .title(t!("new_ssh_connection"))
                 .w(px(520.))
                 .overlay_closable(false)
+                .on_ok({
+                    let view = view.clone();
+                    move |_, window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.connect_ssh(window, cx);
+                        });
+                        false
+                    }
+                })
                 .on_close({
                     let view = view.clone();
                     move |_, _, cx| {
