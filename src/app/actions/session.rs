@@ -326,7 +326,7 @@ impl AxShell {
         };
         let dialog = rfd::AsyncFileDialog::new().set_directory(start_dir);
         #[cfg(target_os = "macos")]
-        let file_dialog = dialog.pick_folder();
+        let file_dialog = dialog.pick_file_or_folder();
         #[cfg(not(target_os = "macos"))]
         let file_dialog = dialog.pick_file();
 
