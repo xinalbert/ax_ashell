@@ -929,6 +929,7 @@ fn trim_wrapped_terminal_token_len(text: &str) -> usize {
             '}' if candidate.matches('{').count() < candidate.matches('}').count() => {
                 len - last_char.len_utf8()
             }
+            c if is_cjk_sentence_punctuation(c) => len - last_char.len_utf8(),
             '.' | ',' | ';' | ':' | '!' | '?' => len - last_char.len_utf8(),
             _ => break,
         };
@@ -939,10 +940,16 @@ fn trim_wrapped_terminal_token_len(text: &str) -> usize {
     len
 }
 
+fn is_cjk_sentence_punctuation(c: char) -> bool {
+    matches!(c, '，' | '。' | '、' | '；' | '：' | '！' | '？' | '…')
+}
+
+fn is_url_token_boundary(c: char) -> bool {
+    c.is_ascii_whitespace() || is_cjk_sentence_punctuation(c)
+}
+
 fn find_url_len(text: &str) -> usize {
-    let len = text
-        .find(|c: char| c.is_ascii_whitespace())
-        .unwrap_or(text.len());
+    let len = text.find(is_url_token_boundary).unwrap_or(text.len());
     trim_wrapped_terminal_token_len(&text[..len])
 }
 
@@ -1304,6 +1311,22 @@ mod tests {
 
         assert_eq!(find_url_len(markdown), "https://example.com/docs".len());
         assert_eq!(find_url_len(chinese), "https://example.com/path?q=1".len());
+    }
+
+    #[test]
+    fn find_url_len_stops_at_cjk_sentence_punctuation() {
+        let url = "https://github.com/abbodi1406/vcredist";
+
+        for text in [
+            "https://github.com/abbodi1406/vcredist，可以用这个工具",
+            "https://github.com/abbodi1406/vcredist。下一句",
+            "https://github.com/abbodi1406/vcredist；继续",
+            "https://github.com/abbodi1406/vcredist：说明",
+            "https://github.com/abbodi1406/vcredist！",
+            "https://github.com/abbodi1406/vcredist？",
+        ] {
+            assert_eq!(find_url_len(text), url.len());
+        }
     }
 
     #[test]
