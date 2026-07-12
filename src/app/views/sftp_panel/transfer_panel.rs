@@ -33,11 +33,9 @@ impl AxShell {
             .iter()
             .filter(|transfer| matches!(transfer.state, crate::sftp::TransferState::Paused))
             .count();
-        let rows = transfers
-            .into_iter()
-            .map(|transfer| self.render_sftp_transfer_row(transfer, cx))
-            .collect::<Vec<_>>();
+        let transfer_count = transfers.len();
         let scroll_handle = self.sftp_transfer_scroll_handle.clone();
+        let view = cx.entity();
 
         v_flex()
             .size_full()
@@ -139,39 +137,41 @@ impl AxShell {
                     .flex_1()
                     .relative()
                     .min_h(px(0.))
-                    .child(
-                        div()
-                            .id("sftp-transfer-scroll-view")
-                            .size_full()
-                            .overflow_y_scroll()
-                            .track_scroll(&scroll_handle)
-                            .pr(px(14.))
-                            .child(if rows.is_empty() {
-                                selectable_plain_text(
-                                    "sftp-transfers-empty",
-                                    t!("no_transfers_yet").to_string(),
-                                )
-                                .size_full()
-                                .p_4()
-                                .text_center()
-                                .text_color(cx.theme().muted_foreground)
-                                .into_any_element()
-                            } else {
-                                v_flex().w_full().children(rows).into_any_element()
-                            }),
-                    )
-                    .child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .right_0()
-                            .bottom_0()
-                            .w(px(16.))
-                            .child(
-                                Scrollbar::vertical(&scroll_handle)
-                                    .scrollbar_show(ScrollbarShow::Always),
-                            ),
-                    ),
+                    .child(if transfers.is_empty() {
+                        selectable_plain_text(
+                            "sftp-transfers-empty",
+                            t!("no_transfers_yet").to_string(),
+                        )
+                        .size_full()
+                        .p_4()
+                        .text_center()
+                        .text_color(cx.theme().muted_foreground)
+                        .into_any_element()
+                    } else {
+                        let transfers = transfers.clone();
+                        uniform_list(
+                            "sftp-transfer-history-list",
+                            transfer_count,
+                            move |range, list_window, cx| {
+                                range
+                                    .into_iter()
+                                    .filter_map(|ix| {
+                                        let transfer = transfers.get(ix)?.clone();
+                                        Some(Self::render_sftp_transfer_row(
+                                            transfer,
+                                            view.clone(),
+                                            list_window,
+                                            cx,
+                                        ))
+                                    })
+                                    .collect::<Vec<_>>()
+                            },
+                        )
+                        .track_scroll(&scroll_handle)
+                        .w_full()
+                        .h_full()
+                        .into_any_element()
+                    }),
             )
     }
 
@@ -193,9 +193,10 @@ impl AxShell {
     }
 
     fn render_sftp_transfer_row(
-        &self,
         transfer: crate::sftp::Transfer,
-        cx: &mut Context<Self>,
+        view: gpui::Entity<AxShell>,
+        window: &mut Window,
+        cx: &mut gpui::App,
     ) -> AnyElement {
         let icon = match transfer.info.kind {
             crate::sftp::TransferType::Upload => IconName::ArrowUp,
@@ -217,7 +218,7 @@ impl AxShell {
                             .ghost()
                             .small()
                             .icon(IconName::Pause)
-                            .on_click(cx.listener(move |this, _, _, _| {
+                            .on_click(window.listener_for(&view, move |this, _, _, _| {
                                 if let Some(handle) =
                                     this.ensure_sftp_handle_for_group(&pause_group_id)
                                 {
@@ -231,7 +232,7 @@ impl AxShell {
                             .ghost()
                             .small()
                             .icon(IconName::Close)
-                            .on_click(cx.listener(move |this, _, _, _| {
+                            .on_click(window.listener_for(&view, move |this, _, _, _| {
                                 if let Some(handle) =
                                     this.ensure_sftp_handle_for_group(&cancel_group_id)
                                 {
@@ -252,7 +253,7 @@ impl AxShell {
                             .ghost()
                             .small()
                             .icon(IconName::Play)
-                            .on_click(cx.listener(move |this, _, _, _| {
+                            .on_click(window.listener_for(&view, move |this, _, _, _| {
                                 if let Some(handle) =
                                     this.ensure_sftp_handle_for_group(&resume_group_id)
                                 {
@@ -266,7 +267,7 @@ impl AxShell {
                             .ghost()
                             .small()
                             .icon(IconName::Close)
-                            .on_click(cx.listener(move |this, _, _, _| {
+                            .on_click(window.listener_for(&view, move |this, _, _, _| {
                                 if let Some(handle) =
                                     this.ensure_sftp_handle_for_group(&cancel_group_id)
                                 {
@@ -297,7 +298,7 @@ impl AxShell {
                         .ghost()
                         .small()
                         .icon(IconName::Close)
-                        .on_click(cx.listener(move |this, _, _, cx| {
+                        .on_click(window.listener_for(&view, move |this, _, _, cx| {
                             this.remove_transfer(&remove_id, cx);
                         })),
                 );
@@ -311,7 +312,7 @@ impl AxShell {
                         .ghost()
                         .small()
                         .icon(IconName::Close)
-                        .on_click(cx.listener(move |this, _, _, cx| {
+                        .on_click(window.listener_for(&view, move |this, _, _, cx| {
                             this.remove_transfer(&remove_id, cx);
                         })),
                 );
@@ -326,6 +327,7 @@ impl AxShell {
             .px_3()
             .border_b_1()
             .border_color(cx.theme().border.opacity(0.35))
+            .fast_hover(cx)
             .child(
                 Icon::new(icon)
                     .with_size(Size::Small)

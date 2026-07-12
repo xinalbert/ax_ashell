@@ -71,7 +71,7 @@ impl AxShell {
                                             _cx.theme().muted
                                         })
                                         .cursor_pointer()
-                                        .hover(|this| this.bg(_cx.theme().secondary))
+                                        .fast_hover(_cx)
                                         .on_mouse_down(
                                             MouseButton::Left,
                                             window.listener_for(&view, |this, _, window, cx| {
@@ -119,7 +119,7 @@ impl AxShell {
                                             _cx.theme().muted
                                         })
                                         .cursor_pointer()
-                                        .hover(|this| this.bg(_cx.theme().secondary))
+                                        .fast_hover(_cx)
                                         .on_mouse_down(
                                             MouseButton::Left,
                                             window.listener_for(&view, |this, _, window, cx| {
@@ -154,120 +154,119 @@ impl AxShell {
                                     div()
                                         .relative()
                                         .max_h(px(320.))
-                                        .size_full()
-                                        .child(
-                                            v_flex()
-                                                .size_full()
-                                                .id("selector-scroll-view")
-                                                .track_scroll(&scroll_handle)
-                                                .overflow_y_scroll()
-                                                .gap_2()
-                                                .children(
-                                                    sessions.clone().into_iter().enumerate().map(
-                                                        |(ix, session)| {
-                                                            let connect_id = session.id.clone();
-                                                            let is_selected =
-                                                                selected_index == ix + 2;
-                                                            let name = session.name.clone();
-                                                            let detail = format!(
-                                                                "{}@{}:{}",
-                                                                session.user,
-                                                                session.host,
-                                                                session.port
-                                                            );
-                                                            div()
-                                                    .id(("selector-open", ix))
-                                                    .w_full()
-                                                    .p_2()
-                                                    .rounded_md()
-                                                    .border_1()
-                                                    .border_color(if is_selected {
-                                                        _cx.theme().primary
-                                                    } else {
-                                                        _cx.theme().border
-                                                    })
-                                                    .bg(if is_selected {
-                                                        _cx.theme().tab_active
-                                                    } else {
-                                                        _cx.theme().muted
-                                                    })
-                                                    .cursor_pointer()
-                                                    .hover(|this| this.bg(_cx.theme().secondary))
-                                                    .on_mouse_down(
-                                                        MouseButton::Left,
-                                                        window.listener_for(
-                                                            &view,
-                                                            move |this, _, window, cx| {
-                                                                this.active_dialog = None;
-                                                                this.connect_saved_session_and_focus(
-                                                                    connect_id.clone(),
-                                                                    window,
-                                                                    cx,
+                                        .w_full()
+                                        .when(!sessions.is_empty(), |this| {
+                                            let sessions = sessions.clone();
+                                            let view = view.clone();
+                                            this.child(
+                                                uniform_list(
+                                                    "selector-saved-sessions-list",
+                                                    sessions.len(),
+                                                    move |range, list_window, _cx| {
+                                                        range
+                                                            .into_iter()
+                                                            .filter_map(|ix| {
+                                                                let session =
+                                                                    sessions.get(ix)?.clone();
+                                                                let connect_id =
+                                                                    session.id.clone();
+                                                                let is_selected =
+                                                                    selected_index == ix + 2;
+                                                                let name = session.name.clone();
+                                                                let detail = format!(
+                                                                    "{}@{}:{}",
+                                                                    session.user,
+                                                                    session.host,
+                                                                    session.port
                                                                 );
-                                                                window.close_dialog(cx);
-                                                                cx.notify();
-                                                            },
-                                                        ),
-                                                    )
-                                                    .child(
-                                                        v_flex()
-                                                            .gap_1()
-                                                            .child(
-                                                                selectable_plain_text(
-                                                                    ElementId::Name(
-                                                                        format!(
-                                                                            "selector-session-name-{ix}"
-                                                                        )
-                                                                        .into(),
-                                                                    ),
-                                                                    name,
+                                                                Some(
+                                                                    div()
+                                                                        .id(("selector-open", ix))
+                                                                        .w_full()
+                                                                        .h(px(72.))
+                                                                        .p_1()
+                                                                        .child(
+                                                                            div()
+                                                                                .size_full()
+                                                                                .p_2()
+                                                                                .rounded_md()
+                                                                                .border_1()
+                                                                                .border_color(
+                                                                                    if is_selected {
+                                                                                        _cx.theme().primary
+                                                                                    } else {
+                                                                                        _cx.theme().border
+                                                                                    },
+                                                                                )
+                                                                                .bg(if is_selected {
+                                                                                    _cx.theme().tab_active
+                                                                                } else {
+                                                                                    _cx.theme().muted
+                                                                                })
+                                                                                .cursor_pointer()
+                                                                                .fast_hover(_cx)
+                                                                                .on_mouse_down(
+                                                                                    MouseButton::Left,
+                                                                                    list_window.listener_for(
+                                                                                        &view,
+                                                                                        move |this, _, window, cx| {
+                                                                                            this.active_dialog = None;
+                                                                                            this.connect_saved_session_and_focus(
+                                                                                                connect_id.clone(),
+                                                                                                window,
+                                                                                                cx,
+                                                                                            );
+                                                                                            window.close_dialog(cx);
+                                                                                            cx.notify();
+                                                                                        },
+                                                                                    ),
+                                                                                )
+                                                                                .child(
+                                                                                    v_flex()
+                                                                                        .gap_1()
+                                                                                        .child(
+                                                                                            selectable_plain_text(
+                                                                                                ElementId::Name(
+                                                                                                    format!(
+                                                                                                        "selector-session-name-{ix}"
+                                                                                                    )
+                                                                                                    .into(),
+                                                                                                ),
+                                                                                                name,
+                                                                                            )
+                                                                                            .text_size(rems(1.0))
+                                                                                            .font_weight(
+                                                                                                FontWeight::SEMIBOLD,
+                                                                                            ),
+                                                                                        )
+                                                                                        .child(
+                                                                                            selectable_plain_text(
+                                                                                                ElementId::Name(
+                                                                                                    format!(
+                                                                                                        "selector-session-detail-{ix}"
+                                                                                                    )
+                                                                                                    .into(),
+                                                                                                ),
+                                                                                                detail,
+                                                                                            )
+                                                                                            .text_size(rems(0.917))
+                                                                                            .text_color(
+                                                                                                _cx.theme()
+                                                                                                    .muted_foreground,
+                                                                                            ),
+                                                                                        ),
+                                                                                ),
+                                                                        ),
                                                                 )
-                                                                    .text_size(rems(1.0))
-                                                                    .font_weight(
-                                                                        FontWeight::SEMIBOLD,
-                                                                    ),
-                                                            )
-                                                            .child(
-                                                                selectable_plain_text(
-                                                                    ElementId::Name(
-                                                                        format!(
-                                                                            "selector-session-detail-{ix}"
-                                                                        )
-                                                                        .into(),
-                                                                    ),
-                                                                    detail,
-                                                                )
-                                                                    .text_size(rems(0.917))
-                                                                    .text_color(
-                                                                        _cx.theme()
-                                                                            .muted_foreground,
-                                                                    ),
-                                                            ),
-                                                    )
-                                                        },
-                                                    ),
-                                                ),
-                                        )
-                                        .child(
-                                            div()
-                                                .absolute()
-                                                .top_0()
-                                                .bottom_0()
-                                                .left_0()
-                                                .right_0()
-                                                .child(
-                                                gpui_component::scroll::Scrollbar::new(
-                                                    &scroll_handle,
+                                                            })
+                                                            .collect::<Vec<_>>()
+                                                    },
                                                 )
-                                                .id("selector-scrollbar")
-                                                .axis(
-                                                    gpui_component::scroll::ScrollbarAxis::Vertical,
-                                                )
-                                                .scrollbar_show(
-                                                    gpui_component::scroll::ScrollbarShow::Always,
-                                                ),
-                                            ),
-                                        ),
+                                                .track_scroll(&scroll_handle)
+                                                .w_full()
+                                                .h(px(320.)),
+                                            )
+                                        }),
                                 ),
                         )
                     }

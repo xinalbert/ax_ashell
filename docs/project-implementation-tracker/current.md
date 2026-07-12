@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：把 Custom 主题里的字体亮度移到 Theme 设置的全局项，并拆分为界面文字亮度和终端文字亮度。
-- 交付物：全局 UI / Terminal 亮度配置与即时应用；Custom Theme Editor 不再显示或保存亮度字段；旧配置中的亮度值保持兼容迁移。
+- 目标：统一 AxShell Settings 下拉、菜单行和长列表的快速 hover 路径，减少 Settings / selector / sidebar / SFTP 菜单 hover 期间的全量渲染和重复候选构建。
+- 交付物：共享 `src/app/hover.rs` fast hover API；Settings `fast_menu` lazy + virtual list；UI/Terminal font candidate 缓存；SSH group、selector、saved sidebar、SFTP transfer 和右键菜单迁移到 fast hover / `uniform_list`；Theme Editor Base Theme 下拉改为 lazy candidate builder。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/config/model.rs`，`src/config/store.rs`，`src/app/state/appearance.rs`，`src/app/lifecycle/init.rs`，`src/app/theme.rs`，`src/app/actions/session.rs`，`src/app/dialogs/settings/appearance.rs`，`src/app/dialogs/settings/font_page.rs`，`src/app/dialogs/settings/custom.rs`，`src/terminal/element.rs`，`locales/`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
-- 不在本轮范围内：主题 JSON 色值、外部 `gpui-component` 源码、依赖与 `Cargo.toml` / `Cargo.lock`、真实 GUI 手工验收。
+- 当前范围：`AGENTS.md`，`.agents/skills/ax-ashell-fast-hover/`，`src/app/hover.rs`，`src/app/dialogs/`，`src/app/views/`，`src/app/actions/`，`src/app.rs`，`src/app/lifecycle/init.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 不在本轮范围内：主题 JSON 色值、外部 `gpui-component` / `gpui` 源码、`Cargo.toml` / `Cargo.lock`、Settings 页面结构重写、真实 GUI 手工验收。
 
 ## 当前状态
 
@@ -22,36 +22,39 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 明确亮度字段现状和迁移边界 | `rg -n "font_brightness|custom_font_brightness"` 与相关源码复核 | 当前亮度只在 custom theme draft 中保存，终端渲染读取 custom-only 亮度 |
-| P2 | completed | 全局 UI / Terminal 亮度配置字段、getter/setter 与旧配置兼容 | 配置单元测试、`cargo test --quiet config::store::theme_profile_tests` | 旧 `custom_font_brightness` 和 custom draft 中的非默认亮度迁移到 terminal 全局亮度 |
-| P3 | completed | Settings Theme 页新增两个亮度控件，Custom 页移除亮度输入 | 源码复核、`cargo check` | 控件即时保存并刷新主题 / 终端 |
-| P4 | completed | UI 前景色亮度和终端前景色亮度分别生效 | `cargo check`、聚焦测试、真实 GUI 手工边界说明 | UI 亮度调整 theme foreground 类 token；terminal 亮度调整终端前景色 |
-| P5 | completed | 格式化、完整回归和文档校验 | `rustfmt`、`cargo check`、`cargo test --quiet`、`git diff --check`、tracking validator | 不新增依赖，不修改 manifest/lock |
+| P1 | completed | 新增项目本地 fast hover skill 和 `src/app/hover.rs` 共享 API | skill 内容复核，项目地图刷新 | 后续 dropdown/list/menu hover 优先复用 `FastHoverOptions` / `FastHoverExt` |
+| P2 | completed | Settings fast menu 支持 lazy candidate cache 和长菜单 `uniform_list` | `cargo check` | 字体菜单和 Base Theme 下拉避免页面 render 时构建候选 |
+| P3 | completed | selector、saved sidebar、transfer history、SSH group 和自绘 context menu 迁移到 fast hover / `uniform_list` | fast hover 审计搜索，`cargo test --quiet` | 移除相关 `DropdownMenu` / `PopupMenuItem` / `context_menu` 路径 |
+| P4 | completed | 运行格式化、编译、完整测试和文档校验 | `rustfmt`，`cargo check`，`cargo test --quiet`，`git diff --check`，tracking validator | GUI 手感仍需手工确认 |
 
 ## 已完成
 
-- 已读取 `AGENTS.md`、环境记录、实施记录、项目地图和相关 skills。
+- 已读取 `AGENTS.md`、项目本地 `.agents/skills/ax-ashell-fast-hover/SKILL.md`、环境记录和当前实施记录。
 - 已确认本轮不需要联网、不使用多 agent、不新增依赖。
-- 已定位亮度相关字段、Custom 页输入生成、theme 应用链路和 terminal 渲染读取点。
-- 已新增全局 `ui_font_brightness` / `terminal_font_brightness` 配置和运行时状态，旧 custom 亮度会迁移到 terminal 全局亮度。
-- 已在 Appearance & Theme 页 Theme 组中新增两个亮度控件；Custom Theme Editor 不再渲染亮度输入。
-- 已让 UI 亮度在主题应用后调整前景色类 token，terminal 渲染读取全局 terminal 亮度。
-- 已执行相关 `rustfmt`、`cargo check`、配置/theme 聚焦测试、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator。
+- 已新增 `.agents/skills/ax-ashell-fast-hover/` 并在 `AGENTS.md` 指向该项目本地 skill。
+- 已新增 `src/app/hover.rs`，集中提供 `FastHoverOptions`、`FastHoverTokens`、`FastHoverExt`、`list_fast_hover_options`。
+- 已让 Settings `fast_menu` 复用共享 fast hover tokens，并对长菜单切到 `uniform_list`；lazy 菜单候选在一次 popover 会话内缓存。
+- 已缓存 Settings UI font names 和 terminal monospace font filtering 结果，避免 hover / reopen 热路径重复枚举和测量字体。
+- 已将 Theme Editor Base Theme 下拉从 `fast_settings_menu` 切换为 `fast_settings_menu_lazy`，展开时再按当前模式构建主题候选。
+- 已将 SSH group 下拉迁移到 Settings fast menu。
+- 已将 selector saved-session 列表、saved sidebar 展开 / 折叠列表和 SFTP transfer history 切到 `uniform_list` 可见行渲染。
+- 已将 SFTP / saved session 右键菜单改为自绘 fast hover 菜单行，避免 package context menu hover 路径叠加。
+- 已执行受影响 Rust 文件 `rustfmt --edition 2024`、`cargo check`、完整 `cargo test --quiet` 和 fast hover 审计搜索；提交前继续执行空白检查和 tracking docs validator。
 
 ## 验证
 
-- 已完成：本轮范围和实现路径复核；相关 `rustfmt`；`cargo check`；`cargo test --quiet config::store::theme_profile_tests`；`cargo test --quiet config::store::font_brightness_settings_tests`；`cargo test --quiet import_theme_tests`；完整 `cargo test --quiet`；`git diff --check`；tracking docs validator。
+- 已完成：源码路径复核；`rustfmt`；`cargo check`；完整 `cargo test --quiet`；fast hover 审计搜索；`git diff --check`；tracking docs validator。
 - 未完成：真实 GUI 手工确认。
 
 ## 风险与阻塞
 
-- 风险：UI 亮度属于主题 token 后处理，需限定在文字/前景色类字段，避免误改背景导致主题色调偏移。
+- 风险：自动化能覆盖编译和基本逻辑，但 hover 体感、popover 位置和真实 GUI 鼠标快速扫动仍需手工验收。
 - 无阻塞。
 
 ## 下一步
 
-- 提交本轮主题设置修复。
+- 创建 Git commit；随后在真实 GUI 中确认 Settings 下拉、SSH group、selector、sidebar、SFTP 右键菜单和 transfer history 的 hover 手感。
 
 ## 最后更新时间
 
-- 2026-07-12 07:58 +0800
+- 2026-07-12 10:05 +0800

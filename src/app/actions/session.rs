@@ -665,13 +665,9 @@ impl AxShell {
         self.active_group = Some(group_id.clone());
         self.ensure_active_workspace_tab_visible();
         if let Some(session_id) = self.active_session_id() {
-            if let Some(index) = self
-                .config
-                .sessions()
-                .iter()
-                .position(|s| s.id == session_id)
-            {
-                self.saved_scroll_handle.scroll_to_item(index);
+            if let Some(index) = self.saved_sidebar_visible_row_index_for_session(session_id) {
+                self.saved_scroll_handle
+                    .scroll_to_item(index, gpui::ScrollStrategy::Nearest);
             }
         }
         self.active_tab = Some(id.clone());
@@ -830,13 +826,9 @@ impl AxShell {
         }
         if self.tabs.iter().any(|t| t.id == id) {
             if let Some(session_id) = self.active_session_id() {
-                if let Some(index) = self
-                    .config
-                    .sessions()
-                    .iter()
-                    .position(|s| s.id == session_id)
-                {
-                    self.saved_scroll_handle.scroll_to_item(index);
+                if let Some(index) = self.saved_sidebar_visible_row_index_for_session(session_id) {
+                    self.saved_scroll_handle
+                        .scroll_to_item(index, gpui::ScrollStrategy::Nearest);
                 }
             }
             self.ensure_active_workspace_tab_visible();

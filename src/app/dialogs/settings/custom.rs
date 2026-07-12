@@ -63,28 +63,7 @@ pub(super) fn settings_custom_page(
                 let view = view_clone_for_custom.clone();
                 let current_base_name = custom_base_name.clone();
                 move |_, _window, _cx| {
-                    let items = gpui_component::ThemeRegistry::global(_cx)
-                        .sorted_themes()
-                        .into_iter()
-                        .filter(|theme| theme.mode == editing_mode)
-                        .map(|theme| {
-                            let theme_name = theme.name.clone();
-                            let checked = theme_name.as_ref() == current_base_name.as_str();
-                            super::fast_menu::FastMenuItem::new(
-                                theme_name.to_string(),
-                                checked,
-                                move |this, window, cx| {
-                                    this.set_custom_theme_base_preset(
-                                        editing_mode,
-                                        &theme_name,
-                                        window,
-                                        cx,
-                                    );
-                                },
-                            )
-                        })
-                        .collect();
-                    super::fast_menu::fast_settings_menu(
+                    super::fast_menu::fast_settings_menu_lazy(
                         "custom-theme-base-dropdown",
                         current_base_name.clone(),
                         Some(if editing_mode.is_dark() {
@@ -94,7 +73,33 @@ pub(super) fn settings_custom_page(
                         }),
                         px(220.),
                         Some(px(320.)),
-                        items,
+                        {
+                            let current_base_name = current_base_name.clone();
+                            move |_, cx| {
+                                gpui_component::ThemeRegistry::global(cx)
+                                    .sorted_themes()
+                                    .into_iter()
+                                    .filter(|theme| theme.mode == editing_mode)
+                                    .map(|theme| {
+                                        let theme_name = theme.name.clone();
+                                        let checked =
+                                            theme_name.as_ref() == current_base_name.as_str();
+                                        super::fast_menu::FastMenuItem::new(
+                                            theme_name.to_string(),
+                                            checked,
+                                            move |this, window, cx| {
+                                                this.set_custom_theme_base_preset(
+                                                    editing_mode,
+                                                    &theme_name,
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        )
+                                    })
+                                    .collect()
+                            }
+                        },
                         view.clone(),
                     )
                     .into_any_element()

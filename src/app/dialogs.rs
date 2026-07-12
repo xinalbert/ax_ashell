@@ -1,7 +1,7 @@
 use gpui::{
     Anchor, Context, ElementId, Focusable as _, FontWeight, InteractiveElement as _, MouseButton,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
-    prelude::FluentBuilder as _, px, rems,
+    prelude::FluentBuilder as _, px, rems, uniform_list,
 };
 use gpui_component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, WindowExt as _,
@@ -10,7 +10,6 @@ use gpui_component::{
     dialog::Dialog,
     h_flex,
     input::Input,
-    menu::{DropdownMenu as _, PopupMenuItem},
     popover::Popover,
     progress::Progress,
     scroll::{Scrollbar, ScrollbarShow},
@@ -22,9 +21,11 @@ use rust_i18n::t;
 
 use crate::{AxShell, monitoring::format_bytes, session::AuthMethod};
 
+pub(super) use crate::app::hover::FastHoverExt;
+
 mod delete_confirm;
 mod selector;
-mod settings;
+pub(super) mod settings;
 mod settings_close_confirm;
 mod sftp_close_confirm;
 mod ssh;

@@ -2,6 +2,7 @@ pub(crate) mod actions;
 mod config_sync;
 pub(crate) mod constants;
 pub mod dialogs;
+mod hover;
 mod input;
 mod lifecycle;
 mod pane;
@@ -24,7 +25,7 @@ use std::{
 };
 
 use crate::app::resizable::ResizableState;
-use gpui::{Bounds, Entity, FocusHandle, Pixels, SharedString, UniformListScrollHandle};
+use gpui::{Bounds, Entity, FocusHandle, Pixels, Point, SharedString, UniformListScrollHandle};
 use gpui_component::{input::InputState, menu::AppMenuBar};
 
 use crate::{
@@ -51,6 +52,13 @@ pub(crate) use terminal::{
     terminal_link_activation_modifier_pressed,
 };
 pub(crate) use workspace::{TabGroup, WorkspacePage};
+
+#[derive(Clone)]
+pub(crate) struct SavedSessionContextMenuState {
+    pub(crate) session_id: String,
+    pub(crate) connection_info: String,
+    pub(crate) position: Point<Pixels>,
+}
 
 pub(crate) struct AxShell {
     pub(crate) focus_handle: FocusHandle,
@@ -112,8 +120,8 @@ pub(crate) struct AxShell {
     pub(crate) local_files_scroll_handle: UniformListScrollHandle,
     pub(crate) disk_scroll_handle: gpui::ScrollHandle,
     pub(crate) tabs_scroll_handle: gpui::ScrollHandle,
-    pub(crate) selector_scroll_handle: gpui::ScrollHandle,
-    pub(crate) saved_scroll_handle: gpui::ScrollHandle,
+    pub(crate) selector_scroll_handle: UniformListScrollHandle,
+    pub(crate) saved_scroll_handle: UniformListScrollHandle,
     pub(crate) saved_group_name_input: Entity<InputState>,
     pub(crate) connection_scroll_handle: gpui::ScrollHandle,
     pub(crate) connection_progress: Option<ConnectionProgress>,
@@ -122,6 +130,7 @@ pub(crate) struct AxShell {
     pub(crate) pending_local_sftp_path_sync: Option<String>,
     pub(crate) local_file_browser: LocalFileBrowserState,
     pub(crate) sftp_context_menu: Option<SftpContextMenuState>,
+    pub(crate) saved_session_context_menu: Option<SavedSessionContextMenuState>,
     pub(crate) sftp_creating_folder: bool,
     pub(crate) sftp_close_remember_choice: bool,
     pub(crate) sftp_close_confirm_group_id: Option<String>,
@@ -133,7 +142,7 @@ pub(crate) struct AxShell {
     pub(crate) local_sftp_sort_column: SftpSortColumn,
     pub(crate) local_sftp_sort_direction: SortDirection,
     pub(crate) sftp_transfer_tab: SftpTransferTab,
-    pub(crate) sftp_transfer_scroll_handle: gpui::ScrollHandle,
+    pub(crate) sftp_transfer_scroll_handle: UniformListScrollHandle,
     pub(crate) transfers: Vec<crate::sftp::Transfer>,
     pub(crate) show_transfers_dialog: bool,
     pub(crate) pane_root: PaneLayout,
@@ -146,7 +155,7 @@ pub(crate) struct AxShell {
     pub(crate) terminal_composition: Option<TerminalComposition>,
     pub(crate) terminal_frozen_selection: Option<TerminalFrozenSelection>,
     pub(crate) sidebar_collapsed: bool,
-    pub(crate) collapsed_saved_scroll_handle: gpui::ScrollHandle,
+    pub(crate) collapsed_saved_scroll_handle: UniformListScrollHandle,
     pub(crate) status: SharedString,
     pub(crate) config: ConfigStore,
     pub(crate) app_menu_bar: Option<Entity<AppMenuBar>>,

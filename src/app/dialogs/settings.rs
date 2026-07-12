@@ -3,7 +3,7 @@ use super::*;
 mod about;
 mod appearance;
 mod custom;
-mod fast_menu;
+pub(super) mod fast_menu;
 mod font_page;
 mod general;
 mod help;

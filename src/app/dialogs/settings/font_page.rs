@@ -1,10 +1,39 @@
 use super::*;
 
+use std::cell::RefCell;
+
 use gpui::IntoElement;
 use gpui_component::setting::{SettingField, SettingGroup, SettingItem};
 
+thread_local! {
+    static SETTINGS_FONT_NAMES_CACHE: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
+    static TERMINAL_FONT_NAMES_CACHE: RefCell<Vec<(u32, Vec<String>)>> = const { RefCell::new(Vec::new()) };
+}
+
+fn settings_font_names(cx: &mut gpui::App) -> Vec<String> {
+    SETTINGS_FONT_NAMES_CACHE.with(|cache| {
+        if let Some(names) = cache.borrow().as_ref() {
+            return names.clone();
+        }
+
+        let names = cx.text_system().all_font_names();
+        *cache.borrow_mut() = Some(names.clone());
+        names
+    })
+}
+
 fn terminal_font_names(window: &mut Window, cx: &mut gpui::App, font_size: f32) -> Vec<String> {
-    let mut names = cx.text_system().all_font_names();
+    let cache_key = font_size.to_bits();
+    if let Some(names) = TERMINAL_FONT_NAMES_CACHE.with(|cache| {
+        cache
+            .borrow()
+            .iter()
+            .find_map(|(key, names)| (*key == cache_key).then(|| names.clone()))
+    }) {
+        return names;
+    }
+
+    let mut names = settings_font_names(cx);
     names.retain(|name| {
         crate::terminal::element::terminal_font_is_monospace(
             window,
@@ -14,6 +43,14 @@ fn terminal_font_names(window: &mut Window, cx: &mut gpui::App, font_size: f32) 
     });
     names.sort_unstable();
     names.dedup();
+    TERMINAL_FONT_NAMES_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.retain(|(key, _)| *key != cache_key);
+        cache.push((cache_key, names.clone()));
+        if cache.len() > 4 {
+            cache.remove(0);
+        }
+    });
     names
 }
 
@@ -115,7 +152,7 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                         {
                             let current = current.clone();
                             move |_window, cx| {
-                                let mut names = cx.text_system().all_font_names();
+                                let mut names = settings_font_names(cx);
                                 let using_system_maple = crate::app::theme::USING_SYSTEM_MAPLE
                                     .load(std::sync::atomic::Ordering::Relaxed);
                                 let mut items = vec![super::fast_menu::FastMenuItem::new(

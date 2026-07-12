@@ -73,80 +73,57 @@ impl AxShell {
                                                 .tab_index(1),
                                         )
                                         .child(
-                                            Button::new("ssh-group-dropdown")
-                                                .small()
-                                                .icon(IconName::ChevronsUpDown)
-                                                .label(t!("choose_group").to_string())
-                                                .disabled(saved_group_names.is_empty())
-                                                .dropdown_menu_with_anchor(
-                                                    Anchor::BottomRight,
-                                                    {
-                                                        let view = view.clone();
-                                                        let saved_group_names =
-                                                            saved_group_names.clone();
-                                                        let current_group_name =
-                                                            current_group_name.clone();
-                                                        move |mut menu, window, _cx| {
-                                                            menu = menu
-                                                                .min_w(180.)
-                                                                .max_h(px(320.))
-                                                                .scrollable(true)
-                                                                .item(
-                                                                    PopupMenuItem::new(
-                                                                        t!("ungrouped_group")
-                                                                            .to_string(),
-                                                                    )
-                                                                    .checked(
-                                                                        current_group_name
-                                                                            .is_empty(),
-                                                                    )
-                                                                    .on_click(
-                                                                        window.listener_for(
-                                                                            &view,
-                                                                            |this, _, window, cx| {
-                                                                                Self::set_input_value(
-                                                                                    &this.session_group_input,
-                                                                                    "",
-                                                                                    window,
-                                                                                    cx,
-                                                                                );
-                                                                            },
-                                                                        ),
-                                                                    ),
-                                                                );
-                                                            if !saved_group_names.is_empty() {
-                                                                menu = menu.separator();
-                                                            }
-                                                            for group_name in &saved_group_names {
-                                                                let checked =
-                                                                    current_group_name
-                                                                        == *group_name;
-                                                                let group_name =
-                                                                    group_name.clone();
-                                                                menu = menu.item(
-                                                                    PopupMenuItem::new(
-                                                                        group_name.clone(),
-                                                                    )
-                                                                    .checked(checked)
-                                                                    .on_click(
-                                                                        window.listener_for(
-                                                                            &view,
-                                                                            move |this, _, window, cx| {
-                                                                                Self::set_input_value(
-                                                                                    &this.session_group_input,
-                                                                                    group_name.clone(),
-                                                                                    window,
-                                                                                    cx,
-                                                                                );
-                                                                            },
-                                                                        ),
-                                                                    ),
-                                                                );
-                                                            }
-                                                            menu
+                                            settings::fast_menu::fast_settings_menu_lazy_disabled(
+                                                "ssh-group-dropdown",
+                                                t!("choose_group").to_string(),
+                                                Some(IconName::ChevronsUpDown),
+                                                px(180.),
+                                                Some(px(320.)),
+                                                saved_group_names.is_empty(),
+                                                {
+                                                    let saved_group_names =
+                                                        saved_group_names.clone();
+                                                    let current_group_name =
+                                                        current_group_name.clone();
+                                                    move |_, _| {
+                                                        let mut items = vec![
+                                                            settings::fast_menu::FastMenuItem::new(
+                                                                t!("ungrouped_group").to_string(),
+                                                                current_group_name.is_empty(),
+                                                                |this, window, cx| {
+                                                                    Self::set_input_value(
+                                                                        &this.session_group_input,
+                                                                        "",
+                                                                        window,
+                                                                        cx,
+                                                                    );
+                                                                },
+                                                            ),
+                                                        ];
+                                                        for group_name in &saved_group_names {
+                                                            let checked =
+                                                                current_group_name == *group_name;
+                                                            let group_name = group_name.clone();
+                                                            items.push(
+                                                                settings::fast_menu::FastMenuItem::new(
+                                                                    group_name.clone(),
+                                                                    checked,
+                                                                    move |this, window, cx| {
+                                                                        Self::set_input_value(
+                                                                            &this.session_group_input,
+                                                                            group_name.clone(),
+                                                                            window,
+                                                                            cx,
+                                                                        );
+                                                                    },
+                                                                ),
+                                                            );
                                                         }
-                                                    },
-                                                ),
+                                                        items
+                                                    }
+                                                },
+                                                view.clone(),
+                                            ),
                                         ),
                                 )
                                 .child(Input::new(&host_input).tab_index(2))

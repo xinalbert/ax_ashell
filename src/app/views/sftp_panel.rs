@@ -297,7 +297,7 @@ impl AxShell {
                                     .gap_1()
                                     .overflow_hidden()
                                     .cursor_pointer()
-                                    .hover(|style| style.bg(cx.theme().list_hover))
+                                    .fast_hover_options(cx, list_fast_hover_options(cx))
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
@@ -336,7 +336,7 @@ impl AxShell {
                             .gap_1()
                             .overflow_hidden()
                             .cursor_pointer()
-                            .hover(|style| style.bg(cx.theme().list_hover))
+                            .fast_hover_options(cx, list_fast_hover_options(cx))
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, cx| {
@@ -374,7 +374,7 @@ impl AxShell {
                             .gap_1()
                             .overflow_hidden()
                             .cursor_pointer()
-                            .hover(|style| style.bg(cx.theme().list_hover))
+                            .fast_hover_options(cx, list_fast_hover_options(cx))
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, cx| {
@@ -460,7 +460,10 @@ impl AxShell {
                                                     .px_3()
                                                     .gap_2()
                                                     .bg(bg)
-                                                    .hover(|style| style.bg(theme.list_hover))
+                                                    .fast_hover_options(
+                                                        _cx,
+                                                        list_fast_hover_options(_cx),
+                                                    )
                                                     .border_b_1()
                                                     .border_color(theme.border.opacity(0.35))
                                                     .on_mouse_down(
@@ -804,7 +807,7 @@ impl AxShell {
                                     .gap_1()
                                     .overflow_hidden()
                                     .cursor_pointer()
-                                    .hover(|style| style.bg(cx.theme().list_hover))
+                                    .fast_hover_options(cx, list_fast_hover_options(cx))
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
@@ -843,7 +846,7 @@ impl AxShell {
                             .gap_1()
                             .overflow_hidden()
                             .cursor_pointer()
-                            .hover(|style| style.bg(cx.theme().list_hover))
+                            .fast_hover_options(cx, list_fast_hover_options(cx))
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, cx| {
@@ -881,7 +884,7 @@ impl AxShell {
                             .gap_1()
                             .overflow_hidden()
                             .cursor_pointer()
-                            .hover(|style| style.bg(cx.theme().list_hover))
+                            .fast_hover_options(cx, list_fast_hover_options(cx))
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, cx| {
@@ -966,7 +969,10 @@ impl AxShell {
                                                 .px_3()
                                                 .gap_2()
                                                 .bg(bg)
-                                                .hover(|style| style.bg(theme.list_hover))
+                                                .fast_hover_options(
+                                                    _cx,
+                                                    list_fast_hover_options(_cx),
+                                                )
                                                 .border_b_1()
                                                 .border_color(theme.border.opacity(0.35))
                                                 .on_mouse_down(

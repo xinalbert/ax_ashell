@@ -427,8 +427,8 @@ impl AxShell {
             local_files_scroll_handle: gpui::UniformListScrollHandle::new(),
             disk_scroll_handle: gpui::ScrollHandle::new(),
             tabs_scroll_handle: gpui::ScrollHandle::new(),
-            selector_scroll_handle: gpui::ScrollHandle::new(),
-            saved_scroll_handle: gpui::ScrollHandle::new(),
+            selector_scroll_handle: gpui::UniformListScrollHandle::new(),
+            saved_scroll_handle: gpui::UniformListScrollHandle::new(),
             saved_group_name_input,
             connection_scroll_handle: gpui::ScrollHandle::new(),
             connection_progress: None,
@@ -443,6 +443,7 @@ impl AxShell {
                 selected_entries: HashSet::new(),
             },
             sftp_context_menu: None,
+            saved_session_context_menu: None,
             sftp_creating_folder: false,
             sftp_close_remember_choice: false,
             sftp_close_confirm_group_id: None,
@@ -454,7 +455,7 @@ impl AxShell {
             local_sftp_sort_column: crate::app::SftpSortColumn::Name,
             local_sftp_sort_direction: crate::app::SortDirection::Asc,
             sftp_transfer_tab: crate::app::SftpTransferTab::Active,
-            sftp_transfer_scroll_handle: gpui::ScrollHandle::new(),
+            sftp_transfer_scroll_handle: gpui::UniformListScrollHandle::new(),
             transfers: {
                 let mut transfers = config.transfers();
                 for t in &mut transfers {
@@ -476,7 +477,7 @@ impl AxShell {
             dragging_splitter: None,
             drag_split_origin: None,
             sidebar_collapsed: config.sidebar_collapsed(),
-            collapsed_saved_scroll_handle: gpui::ScrollHandle::new(),
+            collapsed_saved_scroll_handle: gpui::UniformListScrollHandle::new(),
             status: "ready".into(),
             active_title_bar_style: config.effective_title_bar_style(),
             config,

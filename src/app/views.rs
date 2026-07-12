@@ -12,7 +12,6 @@ use gpui_component::{
     checkbox::Checkbox,
     h_flex,
     input::Input,
-    menu::{ContextMenuExt as _, PopupMenuItem},
     progress::Progress,
     scroll::{Scrollbar, ScrollbarShow},
     tab::{Tab, TabBar},
@@ -35,6 +34,8 @@ use crate::{
     sftp::format_mtime,
     terminal::{self, TabKind, TerminalTab},
 };
+
+pub(super) use crate::app::hover::{FastHoverExt, fast_hover_tokens, list_fast_hover_options};
 
 mod helpers;
 mod layout;

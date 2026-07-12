@@ -310,6 +310,25 @@ impl Render for AxShell {
             .children(Root::render_dialog_layer(window, cx))
             .children(Root::render_sheet_layer(window, cx))
             .when_some(self.sftp_context_menu.clone(), |this, menu| {
+                let menu_hover_tokens = fast_hover_tokens(cx);
+                let menu_radius = cx.theme().radius;
+                let menu_fg = cx.theme().popover_foreground;
+                let menu_item = move |id: &'static str, label: String| {
+                    div()
+                        .id(id)
+                        .w_full()
+                        .h(px(30.))
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .justify_start()
+                        .rounded(menu_radius)
+                        .text_size(rems(0.917))
+                        .text_color(menu_fg)
+                        .cursor_pointer()
+                        .fast_hover_with_tokens(menu_hover_tokens)
+                        .child(label)
+                };
                 let menu_body = match menu.target.clone() {
                     SftpContextMenuTarget::Remote { path, is_dir } => {
                         let download_label = if is_dir {
@@ -320,135 +339,140 @@ impl Render for AxShell {
                         v_flex()
                             .w_full()
                             .when(is_dir, |this| {
-                                let open_button =
-                                    Button::new("sftp-context-open")
-                                        .ghost()
-                                        .w_full()
-                                        .justify_start()
-                                        .hover(|style| style.bg(cx.theme().list_hover))
-                                        .label(t!("open_folder"))
-                                        .on_click(cx.listener(|this, _, _, cx| {
+                                this.child(menu_item("sftp-context-open", t!("open_folder").to_string())
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
                                             this.trigger_sftp_context_open(cx);
-                                        }));
-                                this.child(open_button)
+                                            cx.stop_propagation();
+                                        }),
+                                    ))
                             })
                             .child(
-                                Button::new("sftp-context-download")
-                                    .ghost()
-                                    .w_full()
-                                    .justify_start()
-                                    .hover(|style| style.bg(cx.theme().list_hover))
-                                    .label(download_label)
-                                    .on_click(cx.listener(|this, _, window, cx| {
+                                menu_item("sftp-context-download", download_label).on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, window, cx| {
                                         this.trigger_sftp_context_download(window, cx);
-                                    })),
+                                        cx.stop_propagation();
+                                    }),
+                                ),
                             )
                             .when(!is_dir && is_editable_text_file(&path), |this| {
                                 this.child(
-                                    Button::new("sftp-context-edit")
-                                        .ghost()
-                                        .w_full()
-                                        .justify_start()
-                                        .hover(|style| style.bg(cx.theme().list_hover))
-                                        .label(t!("edit_file"))
-                                        .tooltip(t!("edit_file_tooltip").to_string())
-                                        .on_click(cx.listener(|this, _, _, cx| {
+                                    menu_item("sftp-context-edit", t!("edit_file").to_string())
+                                        .tooltip(|window, cx| {
+                                            gpui_component::tooltip::Tooltip::new(
+                                                t!("edit_file_tooltip").to_string(),
+                                            )
+                                            .build(window, cx)
+                                        })
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(|this, _, _, cx| {
                                             this.trigger_sftp_context_edit(cx);
-                                        })),
+                                                cx.stop_propagation();
+                                            }),
+                                        ),
                                 )
                             })
                             .child(
-                                Button::new("sftp-context-refresh")
-                                    .ghost()
-                                    .w_full()
-                                    .justify_start()
-                                    .hover(|style| style.bg(cx.theme().list_hover))
-                                    .label(t!("refresh"))
-                                    .on_click(cx.listener(|this, _, _, cx| {
+                                menu_item("sftp-context-refresh", t!("refresh").to_string())
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
                                         this.trigger_sftp_context_refresh(cx);
-                                    })),
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
                             )
                             .child(
-                                Button::new("sftp-context-new-folder")
-                                    .ghost()
-                                    .w_full()
-                                    .justify_start()
-                                    .hover(|style| style.bg(cx.theme().list_hover))
-                                    .label(t!("new_folder"))
-                                    .on_click(cx.listener(|this, _, window, cx| {
+                                menu_item("sftp-context-new-folder", t!("new_folder").to_string())
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, window, cx| {
                                         this.trigger_sftp_context_new_folder(window, cx);
-                                    })),
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
                             )
                             .child(
-                                Button::new("sftp-context-upload-file")
-                                    .ghost()
-                                    .w_full()
-                                    .justify_start()
-                                    .hover(|style| style.bg(cx.theme().list_hover))
-                                    .label(t!("upload_file"))
-                                    .on_click(cx.listener(|this, _, window, cx| {
+                                menu_item("sftp-context-upload-file", t!("upload_file").to_string())
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, window, cx| {
                                         this.trigger_sftp_context_upload_file(window, cx);
-                                    })),
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
                             )
                             .child(
-                                Button::new("sftp-context-upload-folder")
-                                    .ghost()
-                                    .w_full()
-                                    .justify_start()
-                                    .hover(|style| style.bg(cx.theme().list_hover))
-                                    .label(t!("upload_folder"))
-                                    .on_click(cx.listener(|this, _, window, cx| {
+                                menu_item("sftp-context-upload-folder", t!("upload_folder").to_string())
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, window, cx| {
                                         this.trigger_sftp_context_upload_folder(window, cx);
-                                    })),
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
                             )
                             .child(
-                                Button::new("sftp-context-delete")
-                                    .ghost()
-                                    .w_full()
-                                    .justify_start()
-                                    .hover(|style| style.bg(cx.theme().list_hover))
-                                    .label(t!("delete"))
-                                    .on_click(cx.listener(|this, _, window, cx| {
+                                menu_item("sftp-context-delete", t!("delete").to_string())
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, window, cx| {
                                         this.trigger_sftp_context_delete(window, cx);
-                                    })),
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
                             )
                             .into_any_element()
                     }
                     SftpContextMenuTarget::Local { is_dir, .. } => v_flex()
                         .w_full()
                         .child(
-                            Button::new("sftp-context-local-open")
-                                .ghost()
-                                .w_full()
-                                .justify_start()
-                                .hover(|style| style.bg(cx.theme().list_hover))
-                                .label(if is_dir { t!("open_folder") } else { t!("open_file") })
-                                .on_click(cx.listener(|this, _, _, cx| {
+                            menu_item(
+                                "sftp-context-local-open",
+                                if is_dir {
+                                    t!("open_folder").to_string()
+                                } else {
+                                    t!("open_file").to_string()
+                                },
+                            )
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
                                     this.trigger_sftp_context_open(cx);
-                                })),
+                                    cx.stop_propagation();
+                                }),
+                            ),
                         )
-                        .child(
-                            Button::new("sftp-context-local-upload")
-                                .ghost()
-                                .w_full()
-                                .justify_start()
-                                .hover(|style| style.bg(cx.theme().list_hover))
-                                .label(t!("upload"))
-                                .disabled(!sftp_context_remote_ready)
-                                .on_click(cx.listener(|this, _, _, cx| {
+                        .child({
+                            let upload_item =
+                                menu_item("sftp-context-local-upload", t!("upload").to_string())
+                                    .when(!sftp_context_remote_ready, |this| this.opacity(0.55));
+                            if sftp_context_remote_ready {
+                                upload_item
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
                                     this.trigger_local_context_upload(cx);
-                                })),
-                        )
+                                            cx.stop_propagation();
+                                        }),
+                                    )
+                                    .into_any_element()
+                            } else {
+                                upload_item.into_any_element()
+                            }
+                        })
                         .child(
-                            Button::new("sftp-context-local-refresh")
-                                .ghost()
-                                .w_full()
-                                .justify_start()
-                                .hover(|style| style.bg(cx.theme().list_hover))
-                                .label(t!("refresh"))
-                                .on_click(cx.listener(|this, _, _, cx| {
+                            menu_item("sftp-context-local-refresh", t!("refresh").to_string())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
                                     this.trigger_sftp_context_refresh(cx);
-                                })),
+                                        cx.stop_propagation();
+                                    }),
+                                ),
                         )
                         .into_any_element(),
                 };
@@ -469,6 +493,117 @@ impl Render for AxShell {
                             MouseButton::Right,
                             cx.listener(|this, _, _, cx| {
                                 this.dismiss_sftp_context_menu(cx);
+                            }),
+                        )
+                        .child(
+                            div()
+                                .absolute()
+                                .left(menu.position.x)
+                                .top(menu.position.y)
+                                .w(px(190.))
+                                .p_1()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(cx.theme().border)
+                                .bg(cx.theme().popover)
+                                .shadow_lg()
+                                .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                    window.prevent_default();
+                                    cx.stop_propagation();
+                                })
+                                .on_mouse_down(MouseButton::Right, |_, window, cx| {
+                                    window.prevent_default();
+                                    cx.stop_propagation();
+                                })
+                                .child(menu_body),
+                        ),
+                )
+            })
+            .when_some(self.saved_session_context_menu.clone(), |this, menu| {
+                let view = cx.entity();
+                let menu_hover_tokens = fast_hover_tokens(cx);
+                let menu_radius = cx.theme().radius;
+                let menu_fg = cx.theme().popover_foreground;
+                let menu_item = move |id: &'static str, label: String| {
+                    div()
+                        .id(id)
+                        .w_full()
+                        .h(px(30.))
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .justify_start()
+                        .rounded(menu_radius)
+                        .text_size(rems(0.917))
+                        .text_color(menu_fg)
+                        .cursor_pointer()
+                        .fast_hover_with_tokens(menu_hover_tokens)
+                        .child(label)
+                };
+                let copy_value = menu.connection_info.clone();
+                let clone_id = menu.session_id.clone();
+                let edit_id = menu.session_id.clone();
+                let delete_id = menu.session_id.clone();
+                let menu_body = v_flex()
+                    .w_full()
+                    .child(menu_item("saved-context-copy", t!("copy_connection_info").to_string())
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            window.listener_for(&view, move |this, _, _, cx| {
+                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                    copy_value.clone(),
+                                ));
+                                this.dismiss_saved_session_context_menu(cx);
+                                cx.stop_propagation();
+                            }),
+                        ))
+                    .child(
+                        menu_item("saved-context-clone", t!("clone").to_string()).on_mouse_down(
+                            MouseButton::Left,
+                            window.listener_for(&view, move |this, _, window, cx| {
+                                this.dismiss_saved_session_context_menu(cx);
+                                this.clone_saved_session(clone_id.clone(), window, cx);
+                                cx.stop_propagation();
+                            }),
+                        ),
+                    )
+                    .child(
+                        menu_item("saved-context-edit", t!("edit").to_string()).on_mouse_down(
+                            MouseButton::Left,
+                            window.listener_for(&view, move |this, _, window, cx| {
+                                this.dismiss_saved_session_context_menu(cx);
+                                this.edit_saved_session(edit_id.clone(), window, cx);
+                                cx.stop_propagation();
+                            }),
+                        ),
+                    )
+                    .child(
+                        menu_item("saved-context-delete", t!("delete").to_string()).on_mouse_down(
+                            MouseButton::Left,
+                            window.listener_for(&view, move |this, _, _, cx| {
+                                this.dismiss_saved_session_context_menu(cx);
+                                this.remove_saved_session(delete_id.clone(), cx);
+                                cx.stop_propagation();
+                            }),
+                        ),
+                    );
+                this.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .bottom_0()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.dismiss_saved_session_context_menu(cx);
+                            }),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(|this, _, _, cx| {
+                                this.dismiss_saved_session_context_menu(cx);
                             }),
                         )
                         .child(

@@ -886,6 +886,7 @@ impl AxShell {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        self.saved_session_context_menu = None;
         self.sftp_context_menu = Some(SftpContextMenuState {
             target: SftpContextMenuTarget::Remote {
                 path: remote_path,
@@ -903,6 +904,7 @@ impl AxShell {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        self.saved_session_context_menu = None;
         self.sftp_context_menu = Some(SftpContextMenuState {
             target: SftpContextMenuTarget::Local {
                 path: local_path,

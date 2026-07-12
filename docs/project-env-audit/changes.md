@@ -1,3 +1,35 @@
+## 2026-07-12 Base Theme 下拉 lazy fast menu 预检
+
+- 日期：2026-07-12 09:44 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；截图中的 Theme Editor Base Theme 下拉菜单行已走 `fast_menu`，本轮只补齐 lazy candidate builder，避免 Settings 页面 render 时构建主题候选。
+- 受影响文件：`src/app/dialogs/settings/custom.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：计划执行 `rustfmt --edition 2024 src/app/dialogs/settings/custom.rs`、`cargo check`、`git diff --check` 和 tracking docs validator。
+
+## 2026-07-12 完成 Base Theme 下拉 lazy fast menu 环境验证
+
+- 日期：2026-07-12 09:47 +0800
+- 变化摘要：Theme Editor Base Theme 下拉已切到 `fast_settings_menu_lazy`，菜单行继续使用共享 fast hover；运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/app/dialogs/settings/custom.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：`rustfmt --edition 2024 src/app/dialogs/settings/custom.rs` 通过；`cargo check` 通过；fast hover 审计搜索通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；真实 GUI Base Theme 下拉 hover 手感仍需手工确认。
+
+## 2026-07-12 项目本地 fast hover skill 预检
+
+- 日期：2026-07-12 09:23 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮只新增 `.agents/skills/ax-ashell-fast-hover/` 项目本地 skill，用于指导后续 agent 复用 `src/app/hover.rs`、Settings `fast_menu` 和长列表 `uniform_list` 规则。
+- 受影响文件：`.agents/skills/ax-ashell-fast-hover/`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：计划执行 skill quick validate、`git diff --check` 和 tracking docs validator；不运行 Rust 编译，因为本轮不改 Rust 源码。
+
+## 2026-07-12 完成项目本地 fast hover skill 环境验证
+
+- 日期：2026-07-12 09:29 +0800
+- 变化摘要：项目本地 `ax-ashell-fast-hover` skill 已创建并通过校验，`AGENTS.md` 已补充 skill 入口；运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`AGENTS.md`，`.agents/skills/ax-ashell-fast-hover/SKILL.md`，`.agents/skills/ax-ashell-fast-hover/agents/openai.yaml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：skill quick validate 通过；`git diff --check` 通过；tracking docs validator 通过；Rust 源码未改，本轮未运行 `cargo check` / `cargo test`。
+
 ## 2026-07-12 修正内置主题 registry reload 后回落默认暗色
 
 - 日期：2026-07-12 07:21 +0800
@@ -5,6 +37,38 @@
 - 受影响文件：`src/app/theme.rs`，`src/config/store.rs`，跟踪文档。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
 - 验证结果：`rustfmt --edition 2024 src/app/theme.rs src/config/store.rs` 通过；`cargo check` 通过；theme/profile 定向测试共 15 项通过；`cargo test --quiet` 113 项全部通过；`cargo build` 通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；GUI profile 连续切换仍需手工确认。
+
+## 2026-07-12 全局快速 hover 接口与长列表虚拟化预检
+
+- 日期：2026-07-12 09:06 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮新增 `src/app/hover.rs` 参数化快速 hover 接口，把 Settings 外剩余 selector、sidebar saved sessions 和 SFTP transfer history 等长列表切到 `gpui::uniform_list` 可见行渲染，并把 SFTP / saved session 右键菜单改为自绘 fast hover 菜单行。
+- 受影响文件：`AGENTS.md`，`src/app/hover.rs`，`src/app/dialogs/settings/fast_menu.rs`，`src/app/dialogs/ssh.rs`，`src/app/dialogs/selector.rs`，`src/app/views.rs`，`src/app/views/layout.rs`，`src/app/views/sidebar.rs`，`src/app/views/sftp_panel.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`src/app/actions/saved_sessions.rs`，`src/app/actions/session.rs`，`src/app/actions/sftp.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：受影响 Rust 文件 `rustfmt --edition 2024` 通过；`cargo check` 通过，仅保留既有 `block v0.1.6` future-incompat warning；仍需完整测试、空白检查和 tracking docs validator。
+
+## 2026-07-12 完成全局快速 hover 统一环境验证
+
+- 日期：2026-07-12 09:18 +0800
+- 变化摘要：共享快速 hover 接口、selector/sidebar/transfer 虚拟列表和 SFTP/saved session 自绘右键菜单已完成；运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：受影响 Rust 文件 `rustfmt --edition 2024` 通过；`cargo check` 通过；`cargo test --quiet` 117 项全部通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；真实 GUI hover 手感仍需手工确认。
+
+## 2026-07-12 Settings 长下拉快速 hover 预检
+
+- 日期：2026-07-12 08:09 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮把 Settings 中字体等长下拉菜单切换到与 SFTP 列表同类的 `uniform_list` 虚拟渲染路径，减少全量行渲染导致的 hover 卡顿。
+- 受影响文件：`src/app/dialogs/settings/fast_menu.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：确认本轮验证命令收敛为 `rustfmt --edition 2024 src/app/dialogs/settings/fast_menu.rs`、`cargo check`、`git diff --check` 和 tracking docs validator；真实 GUI 下拉 hover 手感仍需手工确认。
+
+## 2026-07-12 Settings 字体下拉候选缓存补充
+
+- 日期：2026-07-12 08:18 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；用户指出 `Terminal Font` 下拉仍卡后，确认除列表渲染外还有候选构建慢路径：terminal 字体下拉会逐字体执行等宽测量过滤。本轮补充缓存一次打开期间的 `FastMenuItem` 列表、系统字体名和按字号过滤后的 terminal 字体候选。
+- 受影响文件：`src/app/dialogs/settings/fast_menu.rs`，`src/app/dialogs/settings/font_page.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：`rustfmt --edition 2024 src/app/dialogs/settings/fast_menu.rs src/app/dialogs/settings/font_page.rs` 通过；`cargo check` 通过，仅保留既有 `block v0.1.6` future-incompat warning；仍需完整测试、空白检查和 tracking docs validator。
 
 ## 2026-07-11 Settings 交互与主题实时预览修正预检
 

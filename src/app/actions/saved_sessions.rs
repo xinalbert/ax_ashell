@@ -1,8 +1,8 @@
-use gpui::{Context, Focusable as _, KeyDownEvent, Window};
+use gpui::{Context, Focusable as _, KeyDownEvent, Pixels, Point, Window};
 use gpui_component::WindowExt as _;
 use rust_i18n::t;
 
-use crate::{AxShell, SelectorEntry, session::Session};
+use crate::{AxShell, SelectorEntry, app::SavedSessionContextMenuState, session::Session};
 
 use super::session::normalize_session_group_name;
 use crate::diagnostics::{mask_host, mask_value};
@@ -37,7 +37,8 @@ impl AxShell {
         if next != self.selector_selection {
             self.selector_selection = next;
             if next >= 2 {
-                self.selector_scroll_handle.scroll_to_item(next - 2);
+                self.selector_scroll_handle
+                    .scroll_to_item(next - 2, gpui::ScrollStrategy::Nearest);
             }
             cx.notify();
         }
@@ -114,6 +115,36 @@ impl AxShell {
         groups
     }
 
+    pub(crate) fn saved_sidebar_visible_row_index_for_session(
+        &self,
+        session_id: &str,
+    ) -> Option<usize> {
+        let mut row_ix = 1; // Local Terminal row is always first.
+
+        for (group_name, sessions) in self.saved_session_groups() {
+            let group_row_ix = row_ix;
+            row_ix += 1;
+
+            let is_expanded = self.renaming_saved_group.as_deref() == Some(group_name.as_str())
+                || self.expanded_saved_groups.contains(group_name.as_str());
+            if !is_expanded {
+                if sessions.iter().any(|session| session.id == session_id) {
+                    return Some(group_row_ix);
+                }
+                continue;
+            }
+
+            for session in sessions {
+                if session.id == session_id {
+                    return Some(row_ix);
+                }
+                row_ix += 1;
+            }
+        }
+
+        None
+    }
+
     pub(crate) fn saved_group_names(&self) -> Vec<String> {
         let mut group_names = Vec::new();
         for session in self.config.sessions() {
@@ -124,6 +155,28 @@ impl AxShell {
             group_names.push(group_name);
         }
         group_names
+    }
+
+    pub(crate) fn open_saved_session_context_menu(
+        &mut self,
+        session_id: String,
+        connection_info: String,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.sftp_context_menu = None;
+        self.saved_session_context_menu = Some(SavedSessionContextMenuState {
+            session_id,
+            connection_info,
+            position,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn dismiss_saved_session_context_menu(&mut self, cx: &mut Context<Self>) {
+        if self.saved_session_context_menu.take().is_some() {
+            cx.notify();
+        }
     }
 
     pub(crate) fn display_group_name(group_name: &str) -> String {

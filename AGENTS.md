@@ -32,6 +32,19 @@
 - Several modules use `#[path]` compatibility exports from `src/app.rs`; preserve these unless the task explicitly asks for a larger module-path migration.
 - `src/session/config.rs` is a compatibility re-export layer. Do not add new real configuration logic there; use `src/config/store.rs` or `src/session/model.rs` as appropriate.
 
+## Settings Dropdown And Hover Performance
+
+- Before changing AxShell hover/dropdown/list behavior, read the project-local skill at `.agents/skills/ax-ashell-fast-hover/SKILL.md` and follow its shared fast hover workflow.
+- Fast hover styling is centralized in `src/app/hover.rs`. Use `.fast_hover(cx)` for the default hover, `.fast_hover_options(cx, FastHoverOptions::new()...)` when a list needs custom hover/active colors or preserved text color, and `.fast_hover_with_tokens(tokens)` only when tokens are intentionally precomputed for many rows.
+- Do not hand-code repeated hover tokens such as `sidebar_accent.opacity(0.8)` / `sidebar_accent_foreground` in feature modules. Add a parameter to `FastHoverOptions` if a new hover requirement appears.
+- Settings dropdowns and long hover lists should use the local `src/app/dialogs/settings/fast_menu.rs` helper plus the shared fast hover interface. Do not add a second Settings dropdown / hover-list implementation unless there is a documented reason.
+- Long dropdowns and saved/transfer/file lists should follow the SFTP list model: fixed-height rows, `gpui::uniform_list` or equivalent virtual rendering, and only visible rows rendered during scroll / hover.
+- When investigating slow hover in a dropdown or list, check both layers:
+  - row rendering / hover styling, such as `fast_menu` or `uniform_list` row elements
+  - candidate/data construction, such as font enumeration, monospace filtering, SFTP entries, or other expensive builders
+- Do not assume hover is cheap just because the list is already visible. Verify that hover or popover re-rendering does not rebuild expensive candidates. Cache expensive candidate lists outside the hover path when the data is expected to be stable during the menu session.
+- For Settings font dropdowns, keep UI Font and Terminal Font on the shared `fast_menu` path and cache system font names / terminal monospace filtering rather than creating private dropdown logic.
+
 ## Implementation Tracking
 
 - Before real implementation work, read `docs/project-env-audit/current.md` and `docs/project-implementation-tracker/current.md`.

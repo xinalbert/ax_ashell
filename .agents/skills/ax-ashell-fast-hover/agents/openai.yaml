@@ -1,0 +1,4 @@
+interface:
+  display_name: "AxShell Fast Hover"
+  short_description: "Standardize AxShell dropdown/list/menu hover behavior"
+  default_prompt: "Use $ax-ashell-fast-hover to update AxShell dropdown, list, or menu hover behavior consistently."
