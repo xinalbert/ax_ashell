@@ -333,6 +333,14 @@ impl Render for AxShell {
                 let menu_hover_tokens = fast_hover_tokens(cx);
                 let menu_radius = cx.theme().radius;
                 let menu_fg = cx.theme().popover_foreground;
+                let menu_width = px(190.);
+                let menu_height = px(128.);
+                let menu_margin = px(8.);
+                let viewport_size = window.viewport_size();
+                let max_left = (viewport_size.width - menu_width - menu_margin).max(menu_margin);
+                let max_top = (viewport_size.height - menu_height - menu_margin).max(menu_margin);
+                let menu_left = menu.position.x.min(max_left).max(menu_margin);
+                let menu_top = menu.position.y.min(max_top).max(menu_margin);
                 let menu_item = move |id: &'static str, label: String| {
                     div()
                         .id(id)
@@ -518,9 +526,9 @@ impl Render for AxShell {
                         .child(
                             div()
                                 .absolute()
-                                .left(menu.position.x)
-                                .top(menu.position.y)
-                                .w(px(190.))
+                                .left(menu_left)
+                                .top(menu_top)
+                                .w(menu_width)
                                 .p_1()
                                 .rounded_md()
                                 .border_1()
