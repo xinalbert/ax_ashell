@@ -1,4 +1,4 @@
-use std::sync::mpsc::Sender;
+use std::sync::{Arc, mpsc::Sender};
 
 #[derive(Debug)]
 pub enum BackendCommand {
@@ -14,6 +14,12 @@ pub trait BackendShutdown: Send + Sync {
     fn shutdown(&self);
 }
 
+struct InactiveBackendShutdown;
+
+impl BackendShutdown for InactiveBackendShutdown {
+    fn shutdown(&self) {}
+}
+
 #[derive(Clone)]
 pub enum BackendTx {
     Local {
@@ -27,6 +33,14 @@ pub enum BackendTx {
 }
 
 impl BackendTx {
+    pub fn inactive() -> Self {
+        let (commands, _receiver) = std::sync::mpsc::channel();
+        Self::Local {
+            commands,
+            shutdown: Arc::new(InactiveBackendShutdown),
+        }
+    }
+
     pub fn send(&self, command: BackendCommand) {
         if matches!(command, BackendCommand::Close) {
             self.shutdown();

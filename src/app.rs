@@ -42,7 +42,7 @@ use search::SearchState;
 
 pub(crate) use dialogs::DialogKind;
 pub(crate) use pane::PaneLayout;
-pub(crate) use session_ui::{ConnectionProgress, SelectorEntry};
+pub(crate) use session_ui::{ConnectionProgress, SelectorEntry, TerminalPasswordPrompt};
 pub(crate) use sftp::{
     LocalFileBrowserState, LocalFileEntry, SftpContextMenuState, SftpContextMenuTarget,
     SftpSortColumn, SftpTransferTab, SftpUiState, SortDirection,
@@ -125,6 +125,8 @@ pub(crate) struct AxShell {
     pub(crate) saved_group_name_input: Entity<InputState>,
     pub(crate) connection_scroll_handle: gpui::ScrollHandle,
     pub(crate) connection_progress: Option<ConnectionProgress>,
+    pub(crate) terminal_password_prompt: Option<TerminalPasswordPrompt>,
+    pub(crate) terminal_password_retry_tabs: HashSet<String>,
     pub(crate) pending_sftp_path_sync: Option<String>,
     pub(crate) pending_sftp_selection_path: Option<String>,
     pub(crate) pending_local_sftp_path_sync: Option<String>,

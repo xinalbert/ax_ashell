@@ -280,6 +280,14 @@ impl AxShell {
                         tab.connected = true;
                         tab.disconnected_reason = None;
                     }
+                    if self
+                        .terminal_password_prompt
+                        .as_ref()
+                        .is_some_and(|prompt| prompt.tab_id == tab_id)
+                    {
+                        self.terminal_password_prompt = None;
+                    }
+                    self.terminal_password_retry_tabs.remove(&tab_id);
                     self.sync_system_tab_to_active_group();
                     self.request_active_system_snapshot();
                     if self
@@ -453,6 +461,11 @@ impl AxShell {
                     }
                     if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str()) {
                         self.monitoring.status = Some(reason.clone().into());
+                    }
+                    if self.should_begin_terminal_password_prompt(&tab_id, &reason) {
+                        result.terminal_changed |=
+                            self.begin_terminal_password_prompt(&tab_id, &reason, cx);
+                        continue;
                     }
                     if let Some(progress) = self.connection_progress.as_mut()
                         && progress.tab_id == tab_id

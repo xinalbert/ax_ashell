@@ -432,6 +432,8 @@ impl AxShell {
             saved_group_name_input,
             connection_scroll_handle: gpui::ScrollHandle::new(),
             connection_progress: None,
+            terminal_password_prompt: None,
+            terminal_password_retry_tabs: HashSet::new(),
             pending_sftp_path_sync: Some("/".into()),
             pending_sftp_selection_path: None,
             pending_local_sftp_path_sync: Some(default_local_dir.clone()),

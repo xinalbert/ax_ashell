@@ -18,6 +18,124 @@ thread_local! {
 }
 
 impl AxShell {
+    fn terminal_password_prompt_active_for(&self, tab_id: &str) -> bool {
+        self.terminal_password_prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.tab_id == tab_id)
+    }
+
+    fn append_terminal_password_prompt_text(&mut self, tab_id: &str, text: &str) {
+        let text: String = text.chars().filter(|ch| !ch.is_control()).collect();
+        if text.is_empty() {
+            return;
+        }
+
+        let char_count = text.chars().count();
+        if let Some(prompt) = self
+            .terminal_password_prompt
+            .as_mut()
+            .filter(|prompt| prompt.tab_id == tab_id)
+        {
+            prompt.password.push_str(&text);
+        }
+        self.feed_terminal_tab_bytes(tab_id, "*".repeat(char_count).as_bytes());
+    }
+
+    fn pop_terminal_password_prompt_char(&mut self, tab_id: &str) {
+        let removed = self
+            .terminal_password_prompt
+            .as_mut()
+            .filter(|prompt| prompt.tab_id == tab_id)
+            .is_some_and(|prompt| prompt.password.pop().is_some());
+        if removed {
+            self.feed_terminal_tab_bytes(tab_id, b"\x08 \x08");
+        }
+    }
+
+    fn submit_terminal_password_prompt(
+        &mut self,
+        tab_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(prompt) = self.terminal_password_prompt.take() else {
+            return;
+        };
+        if prompt.tab_id != tab_id {
+            self.terminal_password_prompt = Some(prompt);
+            return;
+        }
+
+        self.feed_terminal_tab_bytes(tab_id, b"\r\n");
+        if prompt.password.is_empty() {
+            self.terminal_password_prompt =
+                Some(crate::app::TerminalPasswordPrompt::new(tab_id.to_string()));
+            self.feed_terminal_tab_bytes(tab_id, b"Password: ");
+        } else {
+            self.retry_terminal_password_prompt(tab_id, prompt.password, cx);
+        }
+        window.prevent_default();
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn cancel_terminal_password_prompt(&mut self, tab_id: &str) {
+        if self
+            .terminal_password_prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.tab_id == tab_id)
+        {
+            self.terminal_password_prompt = None;
+            self.feed_terminal_tab_bytes(tab_id, b"^C\r\n");
+            self.status = "ssh password entry cancelled".into();
+        }
+    }
+
+    fn handle_terminal_password_prompt_key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(active_id) = self.active_tab.clone() else {
+            return false;
+        };
+        if !self.terminal_password_prompt_active_for(&active_id) {
+            return false;
+        }
+
+        let key = event.keystroke.key.as_str();
+        let plain_key = !event.keystroke.modifiers.shift
+            && !event.keystroke.modifiers.control
+            && !event.keystroke.modifiers.alt
+            && !event.keystroke.modifiers.platform;
+
+        if key == "enter" && plain_key {
+            self.submit_terminal_password_prompt(&active_id, window, cx);
+            return true;
+        }
+
+        if key == "backspace" && plain_key {
+            self.pop_terminal_password_prompt_char(&active_id);
+        } else if key == "escape" && plain_key {
+            self.cancel_terminal_password_prompt(&active_id);
+        } else if event.keystroke.modifiers.control && key.eq_ignore_ascii_case("c") {
+            self.cancel_terminal_password_prompt(&active_id);
+        } else if event.prefer_character_input
+            && !event.keystroke.modifiers.control
+            && !event.keystroke.modifiers.function
+            && !event.keystroke.modifiers.platform
+            && let Some(text) = event.keystroke.key_char.as_deref()
+        {
+            self.append_terminal_password_prompt_text(&active_id, text);
+        }
+
+        window.prevent_default();
+        cx.stop_propagation();
+        cx.notify();
+        true
+    }
+
     pub(crate) fn on_terminal_key_down(
         &mut self,
         event: &KeyDownEvent,
@@ -39,6 +157,10 @@ impl AxShell {
         }
 
         if self.handle_terminal_workspace_keybinding(event, window, cx) {
+            return;
+        }
+
+        if self.handle_terminal_password_prompt_key_down(event, window, cx) {
             return;
         }
 
@@ -334,6 +456,11 @@ impl AxShell {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
+        if self.terminal_password_prompt_active_for(&active_id) {
+            window.prevent_default();
+            cx.stop_propagation();
+            return;
+        }
         self.clear_terminal_marked_text(window, cx);
         {
             let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
@@ -379,6 +506,28 @@ impl AxShell {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
+        if self.terminal_password_prompt_active_for(&active_id) {
+            let mut password = String::new();
+            let mut submit = false;
+            for ch in text.chars() {
+                if ch == '\r' || ch == '\n' {
+                    submit = true;
+                    break;
+                }
+                if !ch.is_control() {
+                    password.push(ch);
+                }
+            }
+            self.append_terminal_password_prompt_text(&active_id, &password);
+            if submit {
+                self.submit_terminal_password_prompt(&active_id, window, cx);
+            } else {
+                window.prevent_default();
+                cx.stop_propagation();
+                cx.notify();
+            }
+            return;
+        }
         {
             let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
                 return;
@@ -498,6 +647,14 @@ impl AxShell {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
+        if self.terminal_password_prompt_active_for(&active_id) {
+            self.append_terminal_password_prompt_text(&active_id, text);
+            window.invalidate_character_coordinates();
+            window.prevent_default();
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
         {
             let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
                 return;

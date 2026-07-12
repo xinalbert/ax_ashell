@@ -7,11 +7,15 @@ use uuid::Uuid;
 
 use crate::{
     AxShell, PaneLayout, TabGroup,
-    app::constants::{DEFAULT_COLS, DEFAULT_ROWS},
-    app::{WorkspacePage, terminal_link_activation_modifier_pressed},
+    app::{
+        WorkspacePage,
+        constants::{DEFAULT_COLS, DEFAULT_ROWS},
+        session_ui::should_prompt_for_terminal_password_before_connect,
+        terminal_link_activation_modifier_pressed,
+    },
     backend::{local, ssh},
     session::{AuthMethod, Session},
-    terminal::{BackendCommand, RenderSnapshot, TabKind, TerminalTab},
+    terminal::{BackendCommand, BackendTx, RenderSnapshot, TabKind, TerminalTab},
 };
 
 pub(super) fn normalize_session_group_name(value: &str) -> String {
@@ -620,14 +624,19 @@ impl AxShell {
         self.expanded_saved_groups
             .insert(normalize_session_group_name(&session.group_name));
         let id = Uuid::new_v4().to_string();
-        let backend = ssh::spawn_ssh_terminal(
-            self.runtime_state.runtime.handle(),
-            id.clone(),
-            session.clone(),
-            DEFAULT_COLS,
-            DEFAULT_ROWS,
-            self.runtime_state.events_tx.clone(),
-        );
+        let prompt_for_password = should_prompt_for_terminal_password_before_connect(&session);
+        let backend = if prompt_for_password {
+            BackendTx::inactive()
+        } else {
+            ssh::spawn_ssh_terminal(
+                self.runtime_state.runtime.handle(),
+                id.clone(),
+                session.clone(),
+                DEFAULT_COLS,
+                DEFAULT_ROWS,
+                self.runtime_state.events_tx.clone(),
+            )
+        };
         self.tabs.push(TerminalTab::new_ssh(
             id.clone(),
             &session,
@@ -635,12 +644,18 @@ impl AxShell {
             self.runtime_state.events_tx.clone(),
         ));
         self.active_tab = Some(id.clone());
-        self.connection_progress = Some(crate::app::ConnectionProgress {
-            tab_id: id.clone(),
-            title: rust_i18n::t!("connecting").into(),
-            lines: vec![rust_i18n::t!("starting_connection").into()],
-            failed: false,
-        });
+        if prompt_for_password {
+            self.connection_progress = None;
+            self.terminal_password_prompt =
+                Some(crate::app::TerminalPasswordPrompt::new(id.clone()));
+        } else {
+            self.connection_progress = Some(crate::app::ConnectionProgress {
+                tab_id: id.clone(),
+                title: rust_i18n::t!("connecting").into(),
+                lines: vec![rust_i18n::t!("starting_connection").into()],
+                failed: false,
+            });
+        }
         self.pane_root = PaneLayout::Single(id.clone());
         self.focused_pane_path = vec![];
         let group_id = Uuid::new_v4().to_string();
@@ -672,7 +687,15 @@ impl AxShell {
         }
         self.active_tab = Some(id.clone());
         self.pending_sftp_path_sync = Some("/".into());
-        self.status = "ssh tab opened".into();
+        if prompt_for_password {
+            if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) {
+                tab.status = "waiting for password".into();
+            }
+            self.feed_terminal_tab_bytes(&id, b"Password: ");
+            self.status = "waiting for ssh password".into();
+        } else {
+            self.status = "ssh tab opened".into();
+        }
         cx.notify();
     }
 
@@ -876,6 +899,14 @@ impl AxShell {
         {
             self.connection_progress = None;
         }
+        if self
+            .terminal_password_prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.tab_id == tab_id)
+        {
+            self.terminal_password_prompt = None;
+        }
+        self.terminal_password_retry_tabs.remove(tab_id);
         if self.search.target_tab.as_deref() == Some(tab_id) {
             self.search.query.clear();
             self.search.matches.clear();

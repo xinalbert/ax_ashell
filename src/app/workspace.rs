@@ -6,7 +6,10 @@ use rust_i18n::t;
 
 use crate::{
     AxShell,
-    app::{ConnectionProgress, PaneLayout, SftpUiState},
+    app::{
+        ConnectionProgress, PaneLayout, SftpUiState, TerminalPasswordPrompt,
+        session_ui::should_use_terminal_password_prompt,
+    },
     config::ConfigStore,
     terminal::{BackendCommand, TabKind},
 };
@@ -604,6 +607,143 @@ impl AxShell {
     pub(crate) fn remove_transfer(&mut self, transfer_id: &str, cx: &mut Context<Self>) {
         self.transfers.retain(|t| t.info.id != transfer_id);
         self.config.set_transfers(self.transfers.clone());
+        cx.notify();
+    }
+
+    pub(crate) fn should_begin_terminal_password_prompt(&self, tab_id: &str, reason: &str) -> bool {
+        let password_from_terminal_prompt = self.terminal_password_retry_tabs.contains(tab_id);
+        self.tabs
+            .iter()
+            .find(|tab| tab.id == tab_id)
+            .and_then(|tab| tab.session.as_ref())
+            .is_some_and(|session| {
+                should_use_terminal_password_prompt(session, reason, password_from_terminal_prompt)
+            })
+    }
+
+    pub(crate) fn begin_terminal_password_prompt(
+        &mut self,
+        tab_id: &str,
+        reason: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.should_begin_terminal_password_prompt(tab_id, reason) {
+            return false;
+        }
+
+        let password_from_terminal_prompt = self.terminal_password_retry_tabs.remove(tab_id);
+        if password_from_terminal_prompt
+            && let Some(session) = self
+                .tabs
+                .iter_mut()
+                .find(|tab| tab.id == tab_id)
+                .and_then(|tab| tab.session.as_mut())
+        {
+            session.password.clear();
+        }
+
+        if self
+            .connection_progress
+            .as_ref()
+            .is_some_and(|progress| progress.tab_id == tab_id)
+        {
+            self.connection_progress = None;
+        }
+        self.terminal_password_prompt = Some(TerminalPasswordPrompt::new(tab_id.to_string()));
+
+        if let Some(group) = self
+            .tab_groups
+            .iter()
+            .find(|group| group.pane_root.contains(tab_id))
+        {
+            self.active_group = Some(group.id.clone());
+            self.pane_root = group.pane_root.clone();
+        }
+        self.focus_pane_with_id(tab_id.to_string());
+        self.set_workspace_page(WorkspacePage::Terminal, cx);
+
+        let prompt = if password_from_terminal_prompt {
+            "\r\nPermission denied, please try again.\r\nPassword: ".to_string()
+        } else {
+            format!("\r\n{reason}\r\nPassword: ")
+        };
+        self.status = "waiting for ssh password".into();
+        self.feed_terminal_tab_bytes(tab_id, prompt.as_bytes())
+    }
+
+    pub(crate) fn feed_terminal_tab_bytes(&mut self, tab_id: &str, bytes: &[u8]) -> bool {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id) else {
+            return false;
+        };
+        let changed = tab.feed(bytes);
+        tab.scroll_to_bottom();
+        changed
+    }
+
+    pub(crate) fn retry_terminal_password_prompt(
+        &mut self,
+        tab_id: &str,
+        password: String,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(ix) = self.tabs.iter().position(|tab| tab.id == tab_id) else {
+            return;
+        };
+        let Some(mut session) = self.tabs[ix].session.clone() else {
+            return;
+        };
+        if session.auth != crate::session::AuthMethod::Password {
+            return;
+        }
+
+        session.password = password;
+        let new_generation = self.tabs[ix].backend_generation + 1;
+        let cols = self.tabs[ix].cols;
+        let rows = self.tabs[ix].rows;
+
+        self.tabs[ix].send_backend(BackendCommand::Close);
+        let backend = crate::backend::ssh::spawn_ssh_terminal(
+            self.runtime_state.runtime.handle(),
+            tab_id.to_string(),
+            session.clone(),
+            cols,
+            rows,
+            self.runtime_state.events_tx.clone(),
+        );
+
+        self.tabs[ix].session = Some(session);
+        self.tabs[ix].set_backend(backend);
+        self.tabs[ix].connected = false;
+        self.tabs[ix].status = "connecting".into();
+        self.tabs[ix].disconnected_reason = None;
+        self.tabs[ix].backend_generation = new_generation;
+        self.tabs[ix].backend_initialized = false;
+        self.terminal_password_retry_tabs.insert(tab_id.to_string());
+
+        if let Some(group) = self
+            .tab_groups
+            .iter()
+            .find(|group| group.pane_root.contains(tab_id))
+        {
+            let group_id = group.id.clone();
+            let group_session = self
+                .tabs
+                .iter()
+                .find(|tab| group.pane_root.contains(&tab.id) && tab.session.is_some())
+                .and_then(|tab| tab.session.clone());
+
+            if group_session.is_some() {
+                self.restart_sftp_handle_for_group(&group_id);
+            }
+        }
+
+        self.connection_progress = Some(ConnectionProgress {
+            tab_id: tab_id.to_string(),
+            title: t!("connecting").into(),
+            lines: vec![t!("starting_connection").into()],
+            failed: false,
+        });
+        self.status = "ssh tab retrying".into();
         cx.notify();
     }
 
