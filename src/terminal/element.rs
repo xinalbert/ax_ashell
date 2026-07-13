@@ -4,18 +4,18 @@ use alacritty_terminal::{
 };
 use gpui::{
     App, Bounds, Element, ElementId, Entity, FocusHandle, Font, FontStyle, FontWeight,
-    GlobalElementId, Hsla, InputHandler, IntoElement, LayoutId, Pixels, Point, Rgba, SharedString,
-    StrikethroughStyle, TextRun, TextStyle, UTF16Selection, UnderlineStyle, Window, fill, point,
-    px, relative, rgb,
+    GlobalElementId, Hsla, InputHandler, IntoElement, LayoutId, Pixels, Point, Rgba, ShapedLine,
+    SharedString, StrikethroughStyle, TextRun, TextStyle, UTF16Selection, UnderlineStyle, Window,
+    fill, point, px, relative, rgb,
 };
 use gpui_component::ActiveTheme as _;
 use std::{collections::HashMap, rc::Rc};
 
-use crate::AxShell;
 use crate::terminal::custom_blocks::{is_custom_block_supported, paint_custom_block};
 use crate::terminal::{
     RenderSnapshot, TerminalComposition, TerminalFrozenSelection, ViewportSelection,
 };
+use crate::{AxShell, app::HoveredUrl};
 
 #[derive(Clone, Copy)]
 struct TerminalMetrics {
@@ -136,38 +136,21 @@ impl BatchedTextRun {
         self.style.len += ch.len_utf8();
     }
 
-    fn paint_with_row_offset(
-        &self,
-        origin: Point<Pixels>,
-        metrics: TerminalMetrics,
-        row_offset: i32,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        let pos = point(
-            origin.x + metrics.cell_width * self.col as f32,
-            origin.y + metrics.line_height * (self.row + row_offset) as f32,
+    fn into_shaped(self, cell_width: Pixels, window: &mut Window) -> ShapedTextRun {
+        let shaped = window.text_system().shape_line_by_hash(
+            self.text_hash,
+            self.text.len(),
+            self.font_size,
+            std::slice::from_ref(&self.style),
+            Some(cell_width),
+            || self.text.clone().into(),
         );
 
-        window
-            .text_system()
-            .shape_line_by_hash(
-                self.text_hash,
-                self.text.len(),
-                self.font_size,
-                std::slice::from_ref(&self.style),
-                Some(metrics.cell_width),
-                || self.text.clone().into(),
-            )
-            .paint(
-                pos,
-                metrics.line_height,
-                gpui::TextAlign::Left,
-                None,
-                window,
-                cx,
-            )
-            .ok();
+        ShapedTextRun {
+            row: self.row,
+            col: self.col,
+            shaped,
+        }
     }
 }
 
@@ -221,8 +204,42 @@ pub struct PrepaintState {
 #[derive(Clone, Default)]
 struct RowLayout {
     rects: Vec<LayoutRect>,
-    runs: Vec<BatchedTextRun>,
+    runs: Vec<ShapedTextRun>,
     custom_blocks: Vec<LayoutCustomBlock>,
+}
+
+#[derive(Clone)]
+struct ShapedTextRun {
+    row: i32,
+    col: i32,
+    shaped: ShapedLine,
+}
+
+impl ShapedTextRun {
+    fn paint_with_row_offset(
+        &self,
+        origin: Point<Pixels>,
+        metrics: TerminalMetrics,
+        row_offset: i32,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let pos = point(
+            origin.x + metrics.cell_width * self.col as f32,
+            origin.y + metrics.line_height * (self.row + row_offset) as f32,
+        );
+
+        self.shaped
+            .paint(
+                pos,
+                metrics.line_height,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            )
+            .ok();
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -248,11 +265,41 @@ impl From<Hsla> for ColorKey {
 struct GridStyleKey {
     font_family: SharedString,
     font_size: u32,
+    cell_width: u32,
     font_brightness: u32,
     foreground: ColorKey,
     background: ColorKey,
     muted_foreground: ColorKey,
     primary: ColorKey,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct SelectionKey {
+    start_row: usize,
+    start_col: usize,
+    end_row: usize,
+    end_col: usize,
+    is_block: bool,
+}
+
+impl From<ViewportSelection> for SelectionKey {
+    fn from(selection: ViewportSelection) -> Self {
+        Self {
+            start_row: selection.start_row,
+            start_col: selection.start_col,
+            end_row: selection.end_row,
+            end_col: selection.end_col,
+            is_block: selection.is_block,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct GridLayoutKey {
+    style: GridStyleKey,
+    selection: Option<SelectionKey>,
+    composition: Option<TerminalComposition>,
+    hovered_url: Option<HoveredUrl>,
 }
 
 #[derive(Clone, Default)]
@@ -291,7 +338,7 @@ struct CachedRowLayout {
 }
 
 struct GridLayoutCache {
-    style: GridStyleKey,
+    key: GridLayoutKey,
     rows: Vec<CachedRowLayout>,
 }
 
@@ -537,16 +584,43 @@ impl TerminalElement {
         }
     }
 
-    fn grid_style_key(&self, font_brightness: f32, cx: &App) -> GridStyleKey {
+    fn grid_style_key(
+        &self,
+        font_brightness: f32,
+        metrics: TerminalMetrics,
+        cx: &App,
+    ) -> GridStyleKey {
         GridStyleKey {
             font_family: self.active_font_family(),
             font_size: self.font_size.as_f32().to_bits(),
+            cell_width: metrics.cell_width.as_f32().to_bits(),
             font_brightness: font_brightness.to_bits(),
             foreground: cx.theme().foreground.into(),
             background: cx.theme().background.into(),
             muted_foreground: cx.theme().muted_foreground.into(),
             primary: cx.theme().primary.into(),
         }
+    }
+
+    fn active_selection(&self) -> Option<ViewportSelection> {
+        if let Some(frozen) = self.frozen_selection.as_ref() {
+            remap_frozen_selection(frozen, &self.snapshot)
+        } else {
+            self.snapshot.selection
+        }
+    }
+
+    fn selection_key(&self) -> Option<SelectionKey> {
+        self.active_selection().map(SelectionKey::from)
+    }
+
+    fn hovered_url_for_tab(&self, cx: &App) -> Option<HoveredUrl> {
+        self.view
+            .read(cx)
+            .hovered_url
+            .as_ref()
+            .filter(|hovered_url| hovered_url.tab_id == self.tab_id)
+            .cloned()
     }
 
     fn row_highlights(&self) -> Vec<RowHighlights> {
@@ -573,11 +647,19 @@ impl TerminalElement {
     fn cached_grid_rows(
         &self,
         cache: Option<GridLayoutCache>,
+        metrics: TerminalMetrics,
+        window: &mut Window,
         cx: &App,
     ) -> (Vec<Rc<RowLayout>>, GridLayoutCache) {
         let font_brightness = self.view.read(cx).appearance.terminal_font_brightness;
-        let style = self.grid_style_key(font_brightness, cx);
-        let previous = cache.filter(|cache| cache.style == style);
+        let style = self.grid_style_key(font_brightness, metrics, cx);
+        let key = GridLayoutKey {
+            style: style.clone(),
+            selection: self.selection_key(),
+            composition: self.composition.clone(),
+            hovered_url: self.hovered_url_for_tab(cx),
+        };
+        let previous = cache.filter(|cache| cache.key == key);
         let highlights = self.row_highlights();
         let mut rows = Vec::with_capacity(self.snapshot.visible_rows.len());
         let mut cached_rows = Vec::with_capacity(self.snapshot.visible_rows.len());
@@ -596,7 +678,14 @@ impl TerminalElement {
                 .filter(|cached| cached.highlights == highlight_key)
                 .map(|cached| cached.layout.clone())
                 .unwrap_or_else(|| {
-                    Rc::new(self.layout_row(source, row_highlights, font_brightness, cx))
+                    Rc::new(self.layout_row(
+                        source,
+                        row_highlights,
+                        font_brightness,
+                        metrics,
+                        window,
+                        cx,
+                    ))
                 });
             rows.push(layout.clone());
             cached_rows.push(CachedRowLayout {
@@ -609,7 +698,7 @@ impl TerminalElement {
         (
             rows,
             GridLayoutCache {
-                style,
+                key,
                 rows: cached_rows,
             },
         )
@@ -620,6 +709,8 @@ impl TerminalElement {
         row: &super::RenderRow,
         highlights: &RowHighlights,
         font_brightness: f32,
+        metrics: TerminalMetrics,
+        window: &mut Window,
         cx: &App,
     ) -> RowLayout {
         let keyword_highlights: HashMap<_, _> = highlights.keyword.iter().copied().collect();
@@ -657,7 +748,7 @@ impl TerminalElement {
 
             if is_blank(cell) {
                 if let Some(run) = current_run.take() {
-                    runs.push(run);
+                    runs.push(run.into_shaped(metrics.cell_width, window));
                 }
                 continue;
             }
@@ -674,7 +765,7 @@ impl TerminalElement {
 
             if is_custom_block_supported(cell.c) {
                 if let Some(run) = current_run.take() {
-                    runs.push(run);
+                    runs.push(run.into_shaped(metrics.cell_width, window));
                 }
                 custom_blocks.push(LayoutCustomBlock {
                     c: cell.c,
@@ -698,7 +789,7 @@ impl TerminalElement {
             }
 
             if let Some(run) = current_run.take() {
-                runs.push(run);
+                runs.push(run.into_shaped(metrics.cell_width, window));
             }
 
             let mut run = BatchedTextRun::new(0, render_cell.col, cell.c, style, self.font_size);
@@ -711,7 +802,7 @@ impl TerminalElement {
         }
 
         if let Some(run) = current_run {
-            runs.push(run);
+            runs.push(run.into_shaped(metrics.cell_width, window));
         }
 
         RowLayout {
@@ -722,12 +813,7 @@ impl TerminalElement {
     }
 
     fn selection_rects(&self, cx: &App) -> Vec<LayoutRect> {
-        let active_selection = if let Some(frozen) = self.frozen_selection.as_ref() {
-            remap_frozen_selection(frozen, &self.snapshot)
-        } else {
-            self.snapshot.selection
-        };
-        active_selection
+        self.active_selection()
             .map(|selection| {
                 selection_background_rects(
                     selection,
@@ -740,13 +826,10 @@ impl TerminalElement {
     }
 
     fn hovered_url_underlines(&self, cx: &App) -> Vec<LayoutUnderline> {
-        let view_read = self.view.read(cx);
-        let Some(hovered_url) = view_read.hovered_url.as_ref() else {
+        let Some(hovered_url) = self.hovered_url_for_tab(cx) else {
             return Vec::new();
         };
-        if hovered_url.tab_id != self.tab_id {
-            return Vec::new();
-        }
+        let view_read = self.view.read(cx);
         let font_brightness = view_read.appearance.terminal_font_brightness;
         let mut underlines = Vec::with_capacity(hovered_url.cells.len());
         for &(row, col) in &hovered_url.cells {
@@ -1035,11 +1118,11 @@ impl Element for TerminalElement {
         let _ = self.base_text_style(cx);
         let metrics = self.measured_metrics(window);
         let grid_rows = if let Some(id) = id {
-            window.with_element_state(id, |cache: Option<GridLayoutCache>, _window| {
-                self.cached_grid_rows(cache, cx)
+            window.with_element_state(id, |cache: Option<GridLayoutCache>, window| {
+                self.cached_grid_rows(cache, metrics, window, cx)
             })
         } else {
-            self.cached_grid_rows(None, cx).0
+            self.cached_grid_rows(None, metrics, window, cx).0
         };
         let selection_rects = self.selection_rects(cx);
         let underlines = self.hovered_url_underlines(cx);
@@ -1546,16 +1629,18 @@ fn named_color(named: NamedColor, _foreground: bool, cx: &App) -> Hsla {
 #[cfg(test)]
 mod tests {
     use super::{
-        FNV1A_OFFSET_BASIS, byte_index_for_utf16_offset, composition_selected_byte_range,
-        contrast_ratio, fnv1a_hash, fnv1a_update, high_contrast_cursor_color,
-        keyword_highlight_allowed, remap_frozen_selection, selection_background_rects,
+        ColorKey, FNV1A_OFFSET_BASIS, GridLayoutKey, GridStyleKey, SelectionKey,
+        byte_index_for_utf16_offset, composition_selected_byte_range, contrast_ratio, fnv1a_hash,
+        fnv1a_update, high_contrast_cursor_color, keyword_highlight_allowed,
+        remap_frozen_selection, selection_background_rects,
     };
+    use crate::app::{HoverTargetKind, HoveredUrl};
     use crate::terminal::{RenderSnapshot, TerminalFrozenSelection, ViewportSelection};
     use alacritty_terminal::{
         term::cell::{Cell, Flags},
         vte::ansi::{Color as AnsiColor, NamedColor},
     };
-    use gpui::{Hsla, rgb};
+    use gpui::{Hsla, SharedString, rgb};
     use std::collections::HashMap;
 
     #[test]
@@ -1654,6 +1739,54 @@ mod tests {
     }
 
     #[test]
+    fn grid_layout_key_tracks_state_that_invalidates_shaped_rows() {
+        let base = GridLayoutKey {
+            style: style_key(8.0),
+            selection: None,
+            composition: None,
+            hovered_url: None,
+        };
+
+        let selection = GridLayoutKey {
+            selection: Some(SelectionKey::from(ViewportSelection {
+                start_row: 1,
+                start_col: 2,
+                end_row: 3,
+                end_col: 4,
+                is_block: false,
+            })),
+            ..base.clone()
+        };
+        let composition = GridLayoutKey {
+            composition: Some(crate::terminal::TerminalComposition {
+                tab_id: "tab".to_string(),
+                text: "ime".to_string(),
+                selected_range_utf16: Some(0..1),
+                anchor_row: 1,
+                anchor_col: 2,
+            }),
+            ..base.clone()
+        };
+        let hover = GridLayoutKey {
+            hovered_url: Some(HoveredUrl {
+                target: HoverTargetKind::Url("https://example.test".to_string()),
+                tab_id: "tab".to_string(),
+                cells: vec![(0, 1)],
+            }),
+            ..base.clone()
+        };
+        let cell_width = GridLayoutKey {
+            style: style_key(9.0),
+            ..base.clone()
+        };
+
+        assert!(base != selection);
+        assert!(base != composition);
+        assert!(base != hover);
+        assert!(base != cell_width);
+    }
+
+    #[test]
     fn frozen_selection_stays_at_viewport_position_with_stream_history() {
         let frozen = frozen_selection(8, 8);
         let snapshot = snapshot(10, 7);
@@ -1733,6 +1866,19 @@ mod tests {
             rows,
             cols: 10,
             highlights: std::rc::Rc::new(HashMap::new()),
+        }
+    }
+
+    fn style_key(cell_width: f32) -> GridStyleKey {
+        GridStyleKey {
+            font_family: SharedString::from("Maple Mono NF CN"),
+            font_size: 14.0f32.to_bits(),
+            cell_width: cell_width.to_bits(),
+            font_brightness: 1.0f32.to_bits(),
+            foreground: ColorKey::from(Hsla::from(rgb(0xffffff))),
+            background: ColorKey::from(Hsla::from(rgb(0x000000))),
+            muted_foreground: ColorKey::from(Hsla::from(rgb(0x888888))),
+            primary: ColorKey::from(Hsla::from(rgb(0x57c7ff))),
         }
     }
 }

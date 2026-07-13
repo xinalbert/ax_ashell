@@ -131,7 +131,7 @@
 | `src/sftp/operations.rs` | SFTP 通用远程操作 | `recursive_delete` | 改递归删除行为时 |
 | `src/sftp/worker.rs` | SFTP handle、command、work pin 和 shutdown controller | `SftpHandle`，`SftpCommand`，`SftpWorkPin`，`spawn_sftp` | 改 command API、pin 计数、worker 创建或有界关闭时 |
 | `src/sftp/worker/runtime.rs` | SFTP 单一命令循环和 child task 所有权 | `run_sftp`，`cancel_sftp_child_tasks` | 改命令调度、cursor/transfer state、remote edit watcher 或 child task 回收时 |
-| `src/terminal/element.rs` | terminal 行级布局缓存、字体 metrics、等宽保护与实时覆盖层绘制 | `TerminalElement`，`GridLayoutCache`，`RowLayout`，`shape_line_by_hash`，`cell_run_style`，`cursor_layout` | 改终端 text/background/block 准备缓存、搜索/keyword 色彩失效键、光标/选择/IME/URL hover 绘制或字体间距问题时 |
+| `src/terminal/element.rs` | terminal 行级 `ShapedLine` 缓存、字体 metrics、等宽保护与实时覆盖层绘制 | `TerminalElement`，`GridLayoutCache`，`GridLayoutKey`，`RowLayout`，`ShapedTextRun`，`cell_run_style`，`cursor_layout` | 改终端 text/background/block 准备缓存、搜索/keyword 色彩失效键、光标/选择/IME/URL hover 绘制或字体间距问题时 |
 | `src/terminal.rs` | terminal 模块入口和公开出口 | module declarations，backend/tab/input exports | 改 terminal 模块树或既有 `crate::terminal::*` 路径时 |
 | `src/terminal/backend.rs` | terminal backend command、sender 和 shutdown controller | `BackendCommand`，`BackendTx`，`BackendShutdown` | 改本地/SSH terminal 命令协议或关闭控制时；全应用事件在 `src/events.rs` |
 | `src/terminal/tab.rs` | terminal tab、共享行块 snapshot、滚屏复用、selection 和高亮节流 | `TerminalTab`，`RenderSnapshot`，`RenderRow`，`build_visible_rows`，`render_row_matches_term`，`SnapshotCache`，`HighlightRefresh`，`TermDamage` | `feed` / resize / scroll 累积并 reset damage；底部滚屏仅在逐 cell 对照当前 grid 后复用行；关键词颜色最多每 125ms 刷新且只随已验证行移动 |
@@ -182,8 +182,8 @@
 ## 刷新规则
 
 - 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、启动初始化、local shell profile/PTY argv、Rayon worker 配置或自定义值范围、日志/crash hook、Tokio runtime 生命周期、terminal Output batching / dirty generation / `TermDamage` / snapshot / highlight cache、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、内置字体 family/字重/授权/排序、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、内置 theme JSON、设置页字段分组、Settings 子页面新增/删除/改名、Settings 快速菜单、Settings 重开 keyed state、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、workspace page / tab 模型、terminal tab UI 状态回收、terminal backend shutdown controller、SFTP 默认本机目录、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 列表排序/传输标签面板、SFTP 目录导航失败恢复、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`AGENTS.md`，`Cargo.toml`，`Cargo.lock`，`src/app/workspace.rs`，`src/app/actions/session.rs`，`src/app/actions/sftp.rs`，`src/app/actions/pane.rs`，`src/app/views/layout.rs`，`locales/`，`docs/project-env-audit/current.md`
+- 最近依据：`AGENTS.md`，`Cargo.toml`，`Cargo.lock`，`src/terminal/element.rs`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-13 21:04 +0800
+- 2026-07-13 22:36 +0800

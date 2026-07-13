@@ -775,6 +775,29 @@ fn build_visible_rows(
         }
     }
 
+    if let Some(previous_snapshot) =
+        previous.filter(|snapshot| snapshot.rows == rows && snapshot.cols == cols)
+    {
+        let previous_rows = previous_snapshot.visible_rows.as_ref();
+        let candidate_rows = if damage.full {
+            (0..rows).collect()
+        } else {
+            damage.rows.clone()
+        };
+        for row in candidate_rows {
+            if reused_rows.contains(&row) {
+                continue;
+            }
+            let Some(candidate) = previous_rows.get(row) else {
+                continue;
+            };
+            if render_row_matches_term(term, candidate, display_offset, row, cols) {
+                visible_rows[row] = candidate.clone();
+                reused_rows.insert(row);
+            }
+        }
+    }
+
     let rebuild_all = damage.full || previous.is_none();
     let changed_rows = rebuild_all
         .then(|| {
@@ -782,7 +805,14 @@ fn build_visible_rows(
                 .filter(|row| !reused_rows.contains(row))
                 .collect::<BTreeSet<_>>()
         })
-        .unwrap_or_else(|| damage.rows.clone());
+        .unwrap_or_else(|| {
+            damage
+                .rows
+                .iter()
+                .copied()
+                .filter(|row| !reused_rows.contains(row))
+                .collect()
+        });
 
     if changed_rows.is_empty() {
         return Rc::new(visible_rows);
@@ -1019,6 +1049,30 @@ mod tests {
         let refreshed = tab.render_snapshot_at(true, start + HIGHLIGHT_REFRESH_INTERVAL);
         assert!(!refreshed.highlights.is_empty());
         assert_eq!(tab.highlight_refresh.borrow().generation, 2);
+    }
+
+    #[test]
+    fn unchanged_rows_keep_deferred_highlights_across_full_damage() {
+        let mut tab = test_tab(32, 4);
+        let start = Instant::now();
+        tab.feed(b"retry 0\r\nERROR stable https://x.test");
+        let first = tab.render_snapshot_at(true, start);
+        let stable_row = first.visible_rows[1].clone();
+        assert!(first.highlights.contains_key(&(1, 0)));
+        assert!(first.highlights.contains_key(&(1, 13)));
+
+        tab.feed(b"\x1b[1;1Hretry 1");
+        tab.pending_damage.borrow_mut().mark_full();
+        tab.highlight_refresh
+            .borrow_mut()
+            .pending_damage
+            .mark_full();
+        let deferred = tab.render_snapshot_at(true, start + Duration::from_millis(1));
+
+        assert!(std::rc::Rc::ptr_eq(&stable_row, &deferred.visible_rows[1]));
+        assert!(deferred.highlights.contains_key(&(1, 0)));
+        assert!(deferred.highlights.contains_key(&(1, 13)));
+        assert_eq!(tab.highlight_refresh.borrow().generation, 1);
     }
 
     #[test]

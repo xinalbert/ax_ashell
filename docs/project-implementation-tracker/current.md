@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：在 saved SSH 右键菜单中增加“Open SFTP”入口，支持只打开 SFTP 页面而不创建 SSH shell tab，并确保没有可用 SSH/SFTP 上下文时 SFTP 快捷键不生效。
-- 交付物：SFTP-only group session 状态、saved session 右键菜单入口、SFTP 建连/session 解析接线、快捷键防护、必要文案、回归测试和验证记录。
+- 目标：修复终端重连状态持续刷新时，未变化的关键词 / URL 彩色高亮在 125ms 延迟高亮窗口内短暂消失导致的闪烁。
+- 交付物：full damage 下未变行的安全 `RenderRow` 复用、回归测试、自动化验证和 GUI 复测边界说明。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/workspace.rs`，`src/app/actions/saved_sessions.rs`，`src/app/actions/session.rs`，`src/app/actions/sftp.rs`，`src/app/views/layout.rs`，`src/app/views/tab_bar.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`locales/`，`docs/project-implementation-tracker/`。
-- 不在本轮范围内：修改 `Cargo.toml` / `Cargo.lock`、新增依赖、改变 SFTP 协议/认证流程、实现独立 `sftp://` URI 解析、重构 saved session 列表结构。
+- 当前范围：`src/terminal/tab.rs`，必要时 `src/terminal/highlight.rs` / `src/terminal/element.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 不在本轮范围内：修改 `Cargo.toml` / `Cargo.lock`、取消高亮限频、改变外部 Codex 请求重连行为、替换 GPUI / Metal renderer、改变 PTY 流控或 SSH/SFTP 功能。
 
 ## 当前状态
 
@@ -22,35 +22,34 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 确认 saved SSH 右键、SFTP group、快捷键和建连链路 | 源码审查 | SFTP 目前从 group 内 SSH tab 取 session，saved 右键未提供 SFTP-only 入口 |
-| P2 | completed | SFTP-only group session 状态、右键入口和快捷键防护 | `rustfmt`、聚焦测试、`cargo check` | 不创建 SSH shell tab；SFTP-only 页不响应 SFTP 快捷键 |
-| P3 | completed | 项目地图、文档记录和最终验证收口 | `cargo test --quiet`、`git diff --check`、tracking validator | GUI 右键菜单和真实 SFTP 建连需手工确认 |
+| P1 | completed | 截图输出来源、重连刷新与高亮闪烁机制定位 | 源码审查、字符串搜索 | `Reconnecting...` 来自外部 Codex 流式请求；AxShell 负责终端渲染和关键词 / URL 高亮 |
+| P2 | completed | full damage / dirty damage 下内容未变行继续复用旧 `RenderRow` | 聚焦单元测试、`cargo check` | 让延迟高亮能通过行块身份保留未变行颜色 |
+| P3 | completed | 格式化、自动化验证和文档收口 | `rustfmt`、聚焦测试、`cargo check`、`cargo test --quiet`、`git diff --check`、tracking validator | 已通过 |
+| P4 | completed | GUI 复测边界说明 | 真实 AxShell 里运行同类重连状态输出 | 自动化无法复现外部请求重连；保留为手工验收项 |
 
 ## 已完成
 
-- 已读取环境记录、实施记录、项目地图、项目本地 fast hover skill 和 saved session / SFTP / workspace / terminal 快捷键相关源码。
-- 已确认 saved SSH 右键菜单当前只有复制、导出、克隆、编辑和删除。
-- 已确认 SFTP worker 目前通过 group 内 SSH tab 的 `Session` 创建，因此 SFTP-only group 需要保存独立 session。
-- 已确认 `ToggleSftpZoom` / `OpenTransfers` 已有 active group 与 `group.sftp` 检查，但需要保持没有 SFTP/SSH 上下文时不能误开。
-- 已实现 `TabGroup::sftp_session`、saved SSH 右键 Open SFTP、SFTP-only group 建连、workspace tab 过滤空 terminal、关闭 SFTP-only 页时释放/隐藏 group、SFTP-only 页禁用 SFTP 快捷键，以及侧栏标题显示 `sftp / 会话名`。
-- 已刷新 `project-map.md` 中 SFTP-only group、右键入口和路由定位说明。
+- 已确认截图中的 `Reconnecting... 1/5`、`Stream disconnected before completion` 和 `https://aixj.vip/responses` 不是 AxShell 自身文案，而是终端内运行的外部 Codex/请求流输出。
+- 已确认 AxShell 的关键词 / URL 高亮最多每 125ms 重算一次；延迟窗口内只复用能通过 `Rc<RenderRow>` 身份证明未变的高亮。
+- 已定位闪烁原因：持续重连状态可能让 terminal damage 退化为 full damage，`build_visible_rows` 会重建未变行，导致旧高亮无法映射到新行块，在下一次高亮刷新前短暂消失。
+- 已修改 `build_visible_rows`：对 full damage 和 dirty rows 先逐 cell 对照当前 terminal grid，内容未变的行继续复用旧 `Rc<RenderRow>`；已新增回归测试覆盖 full damage 下未变 `ERROR` / URL 行保留延迟高亮。
+- 已完成格式化、聚焦测试、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator。
 
 ## 验证
 
-- 已完成：源码链路审查、施工计划刷新、`rustfmt`、hover/context 静态审计、`cargo check`、`cargo test --quiet workspace -- --nocapture`、`cargo test --quiet saved_sessions -- --nocapture`、`cargo test --quiet local_sftp -- --nocapture`、`cargo test --quiet`、`git diff --check`、tracking validator；标题 fallback 后已重跑 `cargo check` 和 `cargo test --quiet`。
-- 待完成：无。
-- 未完成：真实 GUI 中 saved SSH 右键 Open SFTP、不创建 shell tab、快捷键无 SSH/SFTP 上下文不可用需手工确认。
+- 已完成：`rustfmt --edition 2024 src/terminal/tab.rs`；`cargo test --quiet unchanged_rows_keep_deferred_highlights_across_full_damage` 1 项通过；`cargo test --quiet terminal::tab::tests` 16 项通过；`cargo check` 通过；完整 `cargo test --quiet` 165 项通过；`git diff --check` 通过；tracking docs validator 通过。
+- 未完成：真实 GUI 中外部 Codex 请求重连场景手工观察未执行。
 
 ## 风险与阻塞
 
-- 风险：SFTP-only group 没有 terminal pane，workspace tab、关闭逻辑和快捷键必须避免访问空 tab id。
-- 风险：SFTP-only group 应复用 saved `Session`，但不能启动 SSH shell backend。
+- 风险：保留未变行高亮会在相邻行变化影响跨行 URL 时最多保留 125ms 旧颜色；这比当前闪烁更可接受，下一次高亮刷新会纠正。
+- 风险：如果外部程序实际反复改写包含彩色关键词的同一行，该行仍会等到下一次高亮刷新才重新上色；本轮目标是修复未变化行被 full damage 误清空。
 - 无阻塞。
 
 ## 下一步
 
-- 本轮已完成；后续只需在真实 GUI 中确认 saved SSH 右键 Open SFTP、不创建 shell tab 和 SFTP-only 快捷键提示。
+- 在真实 AxShell 里复现同类 `Reconnecting...` 输出，确认状态行刷新时下方红色关键词和 URL 高亮不再闪烁。
 
 ## 最后更新时间
 
-- 2026-07-13 21:10 +0800
+- 2026-07-13 23:09 +0800

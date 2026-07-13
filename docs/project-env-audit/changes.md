@@ -2266,3 +2266,28 @@
 - 执行内容：在本机 `ConfigFile` 添加按保存 `Session.id` 存储的目录映射；成功导航才保存，临时连接不保存；加载、删除会话和同步下载的会话替换都会清理无效 mapping。恢复目录不可读时回退用户主目录但不修改记录；同步 payload 保持只含 sessions。
 - 验证结果：相关 Rust 文件已格式化，`cargo test --quiet local_sftp` 4 项、`cargo check`、完整 `cargo test --quiet` 162 项、`cargo build`、`git diff --check` 和 tracking validator 通过。`cargo check` / `cargo build` 仅保留既有 `block v0.1.6` future-incompat warning。
 - 风险/待办：需在真实 GUI 中验证两个保存会话各自恢复目录、删除目录后的 home 回退，以及未保存连接不写入配置。
+
+## 2026-07-13 终端 ShapedLine 行缓存实施记录
+
+- 时间：2026-07-13 22:36 +0800
+- 变化摘要：终端 `RowLayout` 现在在 prepaint / 行布局构建阶段生成并保存 `ShapedLine`，paint 阶段直接绘制缓存 shaped line，不再对每个未变 text run 调用 `shape_line_by_hash`。
+- 受影响文件：`src/terminal/element.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`。验证执行 `rustfmt`、聚焦测试、`cargo check`、完整 `cargo test --quiet`、`cargo build`、`git diff --check` 和 tracking validator。
+- 验证结果：`rustfmt --edition 2024 src/terminal/element.rs`、`cargo test --quiet grid_layout_key_tracks_state_that_invalidates_shaped_rows`、`cargo check`、完整 `cargo test --quiet` 164 项、`cargo build`、`git diff --check` 和 tracking validator 均通过。`cargo check` / `cargo build` 仅保留既有 `block v0.1.6` future-incompat warning。
+- 风险/待办：后续需在真实持续输出负载下复采样，量化 `shape_line_by_hash` 热点是否消失；`ShapedLine::paint` 的 glyph 绘制成本仍会存在。
+
+## 2026-07-13 终端重连状态高亮闪烁预检
+
+- 时间：2026-07-13 22:58 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮修复外部重连状态持续刷新时，AxShell 终端关键词 / URL 高亮因 full damage 重建未变行而在延迟窗口内闪烁。
+- 受影响文件：`src/terminal/tab.rs`，必要时 `src/terminal/highlight.rs` / `src/terminal/element.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`；保留 125ms 高亮限频和前台 16ms 终端刷新语义。
+- 验证结果：已确认截图文案来自终端内外部 Codex 请求流，AxShell 的相关问题在 `build_visible_rows` 行复用与延迟高亮映射；计划执行 `rustfmt`、聚焦测试、`cargo check`、`git diff --check` 和 tracking docs validator。
+
+## 2026-07-13 完成终端重连状态高亮闪烁环境验证
+
+- 时间：2026-07-13 23:09 +0800
+- 变化摘要：`build_visible_rows` 现在会在 full damage 和 dirty rows 重建前逐 cell 验证旧行是否仍等于当前 terminal grid；未变行继续复用旧 `Rc<RenderRow>`，让 125ms 延迟高亮窗口可以保留未变化的关键词 / URL 颜色。
+- 受影响文件：`src/terminal/tab.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`；高亮限频和终端刷新语义保持不变。
+- 验证结果：`rustfmt --edition 2024 src/terminal/tab.rs` 通过；新增回归测试 1 项、terminal tab 聚焦测试 16 项、`cargo check`、完整 `cargo test --quiet` 165 项、`git diff --check` 和 tracking validator 均通过。`cargo check` 仅保留既有 `block v0.1.6` future-incompat warning；真实 GUI 外部请求重连场景尚未手工观察。
