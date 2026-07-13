@@ -1,9 +1,5 @@
 use std::{collections::HashSet, time::Instant};
 
-use gpui::{AppContext as _, Context, SharedString, Window, px};
-use gpui_component::{ThemeMode, ThemeRegistry, input::InputState, menu::AppMenuBar};
-use rust_i18n::t;
-
 use crate::{
     AxShell, PaneLayout,
     app::{
@@ -18,6 +14,9 @@ use crate::{
     monitoring::SystemSampler,
     session::AuthMethod,
 };
+use gpui::{AppContext as _, Context, SharedString, Window, px};
+use gpui_component::{ThemeMode, ThemeRegistry, input::InputState, menu::AppMenuBar};
+use rust_i18n::t;
 
 impl AxShell {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -78,6 +77,24 @@ impl AxShell {
             InputState::new(window, cx)
                 .placeholder(t!("rayon_threads_input_placeholder").to_string())
                 .default_value(config.rayon_threads().to_string())
+        });
+        let local_shell_profile = config.default_local_shell_profile();
+        let local_shell_profile_name_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(t!("local_shell_profile_name_placeholder").to_string())
+                .default_value(local_shell_profile.name.clone())
+        });
+        let local_shell_profile_program_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(t!("local_shell_program_placeholder").to_string())
+                .default_value(local_shell_profile.program.clone())
+        });
+        let local_shell_profile_args_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .rows(3)
+                .placeholder(t!("local_shell_args_placeholder").to_string())
+                .default_value(local_shell_profile.args.join("\n"))
         });
         let app_menu_bar = if cfg!(any(target_os = "windows", target_os = "linux")) {
             Some(AppMenuBar::new(cx))
@@ -377,6 +394,9 @@ impl AxShell {
             ssh_retry_count_input,
             ssh_retry_delays_input,
             rayon_threads_input,
+            local_shell_profile_name_input,
+            local_shell_profile_program_input,
+            local_shell_profile_args_input,
             xquartz_app_path_input,
             sync_endpoint_input,
             sync_username_input,

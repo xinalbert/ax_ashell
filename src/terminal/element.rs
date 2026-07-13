@@ -9,6 +9,7 @@ use gpui::{
     px, relative, rgb,
 };
 use gpui_component::ActiveTheme as _;
+use std::{collections::HashMap, rc::Rc};
 
 use crate::AxShell;
 use crate::terminal::custom_blocks::{is_custom_block_supported, paint_custom_block};
@@ -32,9 +33,19 @@ struct LayoutRect {
 
 impl LayoutRect {
     fn paint(&self, origin: Point<Pixels>, metrics: TerminalMetrics, window: &mut Window) {
+        self.paint_with_row_offset(origin, metrics, 0, window);
+    }
+
+    fn paint_with_row_offset(
+        &self,
+        origin: Point<Pixels>,
+        metrics: TerminalMetrics,
+        row_offset: i32,
+        window: &mut Window,
+    ) {
         let position = point(
             origin.x + metrics.cell_width * self.col as f32,
-            origin.y + metrics.line_height * self.row as f32,
+            origin.y + metrics.line_height * (self.row + row_offset) as f32,
         );
         let size = gpui::size(metrics.cell_width * self.cells as f32, metrics.line_height);
         window.paint_quad(fill(Bounds::new(position, size), self.color));
@@ -51,10 +62,21 @@ struct LayoutUnderline {
 
 impl LayoutUnderline {
     fn paint(&self, origin: Point<Pixels>, metrics: TerminalMetrics, window: &mut Window) {
+        self.paint_with_row_offset(origin, metrics, 0, window);
+    }
+
+    fn paint_with_row_offset(
+        &self,
+        origin: Point<Pixels>,
+        metrics: TerminalMetrics,
+        row_offset: i32,
+        window: &mut Window,
+    ) {
         let thickness = px(1.0);
         let position = point(
             origin.x + metrics.cell_width * self.col as f32,
-            origin.y + metrics.line_height * (self.row as f32 + 1.0) - thickness,
+            origin.y + metrics.line_height * (self.row + row_offset) as f32 + metrics.line_height
+                - thickness,
         );
         let size = gpui::size(metrics.cell_width * self.cells as f32, thickness);
         window.paint_quad(fill(Bounds::new(position, size), self.color));
@@ -67,17 +89,20 @@ struct BatchedTextRun {
     col: i32,
     cell_count: usize,
     text: String,
+    text_hash: u64,
     style: TextRun,
     font_size: Pixels,
 }
 
 impl BatchedTextRun {
     fn new(row: i32, col: i32, ch: char, style: TextRun, font_size: Pixels) -> Self {
+        let text = ch.to_string();
         Self {
             row,
             col,
             cell_count: 1,
-            text: ch.to_string(),
+            text_hash: fnv1a_hash(&text),
+            text,
             style,
             font_size,
         }
@@ -95,35 +120,44 @@ impl BatchedTextRun {
 
     fn append(&mut self, ch: char, zerowidth: Option<&[char]>) {
         self.text.push(ch);
+        self.text_hash = fnv1a_update(self.text_hash, ch.encode_utf8(&mut [0; 4]).as_bytes());
         self.cell_count += 1;
         self.style.len += ch.len_utf8();
         if let Some(chars) = zerowidth {
             for c in chars {
-                self.text.push(*c);
-                self.style.len += c.len_utf8();
+                self.append_zerowidth(*c);
             }
         }
     }
 
-    fn paint(
+    fn append_zerowidth(&mut self, ch: char) {
+        self.text.push(ch);
+        self.text_hash = fnv1a_update(self.text_hash, ch.encode_utf8(&mut [0; 4]).as_bytes());
+        self.style.len += ch.len_utf8();
+    }
+
+    fn paint_with_row_offset(
         &self,
         origin: Point<Pixels>,
         metrics: TerminalMetrics,
+        row_offset: i32,
         window: &mut Window,
         cx: &mut App,
     ) {
         let pos = point(
             origin.x + metrics.cell_width * self.col as f32,
-            origin.y + metrics.line_height * self.row as f32,
+            origin.y + metrics.line_height * (self.row + row_offset) as f32,
         );
 
         window
             .text_system()
-            .shape_line(
-                self.text.clone().into(),
+            .shape_line_by_hash(
+                self.text_hash,
+                self.text.len(),
                 self.font_size,
                 std::slice::from_ref(&self.style),
                 Some(metrics.cell_width),
+                || self.text.clone().into(),
             )
             .paint(
                 pos,
@@ -137,6 +171,21 @@ impl BatchedTextRun {
     }
 }
 
+const FNV1A_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+const FNV1A_PRIME: u64 = 0x100000001b3;
+
+fn fnv1a_hash(text: &str) -> u64 {
+    fnv1a_update(FNV1A_OFFSET_BASIS, text.as_bytes())
+}
+
+fn fnv1a_update(mut hash: u64, bytes: &[u8]) -> u64 {
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV1A_PRIME);
+    }
+    hash
+}
+
 #[derive(Clone, Copy)]
 struct CursorLayout {
     row: usize,
@@ -148,7 +197,7 @@ struct CursorLayout {
 pub struct TerminalElement {
     view: Entity<AxShell>,
     focus_handle: FocusHandle,
-    snapshot: RenderSnapshot,
+    snapshot: Rc<RenderSnapshot>,
     composition: Option<TerminalComposition>,
     frozen_selection: Option<TerminalFrozenSelection>,
     font_family: SharedString,
@@ -163,11 +212,87 @@ pub struct TerminalElement {
 pub struct PrepaintState {
     bounds: Bounds<Pixels>,
     metrics: TerminalMetrics,
+    selection_rects: Vec<LayoutRect>,
+    grid_rows: Vec<Rc<RowLayout>>,
+    cursor: Option<CursorLayout>,
+    underlines: Vec<LayoutUnderline>,
+}
+
+#[derive(Clone, Default)]
+struct RowLayout {
     rects: Vec<LayoutRect>,
     runs: Vec<BatchedTextRun>,
     custom_blocks: Vec<LayoutCustomBlock>,
-    cursor: Option<CursorLayout>,
-    underlines: Vec<LayoutUnderline>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ColorKey {
+    h: u32,
+    s: u32,
+    l: u32,
+    a: u32,
+}
+
+impl From<Hsla> for ColorKey {
+    fn from(color: Hsla) -> Self {
+        Self {
+            h: color.h.to_bits(),
+            s: color.s.to_bits(),
+            l: color.l.to_bits(),
+            a: color.a.to_bits(),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct GridStyleKey {
+    font_family: SharedString,
+    font_size: u32,
+    font_brightness: u32,
+    foreground: ColorKey,
+    background: ColorKey,
+    muted_foreground: ColorKey,
+    primary: ColorKey,
+}
+
+#[derive(Clone, Default)]
+struct RowHighlights {
+    keyword: Vec<(i32, Hsla)>,
+    search: Vec<(i32, Hsla)>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct RowHighlightKey {
+    keyword: Vec<(i32, ColorKey)>,
+    search: Vec<(i32, ColorKey)>,
+}
+
+impl From<&RowHighlights> for RowHighlightKey {
+    fn from(highlights: &RowHighlights) -> Self {
+        Self {
+            keyword: highlights
+                .keyword
+                .iter()
+                .map(|(col, color)| (*col, (*color).into()))
+                .collect(),
+            search: highlights
+                .search
+                .iter()
+                .map(|(col, color)| (*col, (*color).into()))
+                .collect(),
+        }
+    }
+}
+
+struct CachedRowLayout {
+    source: Rc<super::RenderRow>,
+    highlights: RowHighlightKey,
+    layout: Rc<RowLayout>,
+}
+
+struct GridLayoutCache {
+    style: GridStyleKey,
+    rows: Vec<CachedRowLayout>,
 }
 
 #[derive(Clone)]
@@ -291,7 +416,7 @@ impl TerminalElement {
     pub fn new(
         view: Entity<AxShell>,
         focus_handle: FocusHandle,
-        snapshot: RenderSnapshot,
+        snapshot: Rc<RenderSnapshot>,
         composition: Option<TerminalComposition>,
         frozen_selection: Option<TerminalFrozenSelection>,
         font_family: SharedString,
@@ -412,42 +537,99 @@ impl TerminalElement {
         }
     }
 
-    fn layout_grid(
-        &self,
-        cx: &App,
-    ) -> (
-        Vec<LayoutRect>,
-        Vec<BatchedTextRun>,
-        Vec<LayoutCustomBlock>,
-        Vec<LayoutUnderline>,
-    ) {
-        let view_read = self.view.read(cx);
-        let hovered_url = view_read.hovered_url.clone();
-        let font_brightness = view_read.appearance.terminal_font_brightness;
+    fn grid_style_key(&self, font_brightness: f32, cx: &App) -> GridStyleKey {
+        GridStyleKey {
+            font_family: self.active_font_family(),
+            font_size: self.font_size.as_f32().to_bits(),
+            font_brightness: font_brightness.to_bits(),
+            foreground: cx.theme().foreground.into(),
+            background: cx.theme().background.into(),
+            muted_foreground: cx.theme().muted_foreground.into(),
+            primary: cx.theme().primary.into(),
+        }
+    }
 
+    fn row_highlights(&self) -> Vec<RowHighlights> {
+        let mut rows = vec![RowHighlights::default(); self.snapshot.visible_rows.len()];
+        for (&(row, col), &color) in self.snapshot.highlights.iter() {
+            if let Some(highlights) = rows.get_mut(row as usize) {
+                highlights.keyword.push((col, color));
+            }
+        }
+        if let Some(search_highlights) = self.search_highlights.as_ref() {
+            for (&(row, col), &color) in search_highlights {
+                if let Some(highlights) = rows.get_mut(row as usize) {
+                    highlights.search.push((col, color));
+                }
+            }
+        }
+        for highlights in &mut rows {
+            highlights.keyword.sort_by_key(|(col, _)| *col);
+            highlights.search.sort_by_key(|(col, _)| *col);
+        }
+        rows
+    }
+
+    fn cached_grid_rows(
+        &self,
+        cache: Option<GridLayoutCache>,
+        cx: &App,
+    ) -> (Vec<Rc<RowLayout>>, GridLayoutCache) {
+        let font_brightness = self.view.read(cx).appearance.terminal_font_brightness;
+        let style = self.grid_style_key(font_brightness, cx);
+        let previous = cache.filter(|cache| cache.style == style);
+        let highlights = self.row_highlights();
+        let mut rows = Vec::with_capacity(self.snapshot.visible_rows.len());
+        let mut cached_rows = Vec::with_capacity(self.snapshot.visible_rows.len());
+
+        for (row_index, source) in self.snapshot.visible_rows.iter().enumerate() {
+            let row_highlights = &highlights[row_index];
+            let highlight_key = RowHighlightKey::from(row_highlights);
+            let layout = previous
+                .as_ref()
+                .and_then(|cache| {
+                    cache
+                        .rows
+                        .iter()
+                        .find(|cached| Rc::ptr_eq(&cached.source, source))
+                })
+                .filter(|cached| cached.highlights == highlight_key)
+                .map(|cached| cached.layout.clone())
+                .unwrap_or_else(|| {
+                    Rc::new(self.layout_row(source, row_highlights, font_brightness, cx))
+                });
+            rows.push(layout.clone());
+            cached_rows.push(CachedRowLayout {
+                source: source.clone(),
+                highlights: highlight_key,
+                layout,
+            });
+        }
+
+        (
+            rows,
+            GridLayoutCache {
+                style,
+                rows: cached_rows,
+            },
+        )
+    }
+
+    fn layout_row(
+        &self,
+        row: &super::RenderRow,
+        highlights: &RowHighlights,
+        font_brightness: f32,
+        cx: &App,
+    ) -> RowLayout {
+        let keyword_highlights: HashMap<_, _> = highlights.keyword.iter().copied().collect();
+        let search_highlights: HashMap<_, _> = highlights.search.iter().copied().collect();
         let mut rects = Vec::new();
         let mut runs = Vec::new();
         let mut custom_blocks = Vec::new();
-        let mut underlines = Vec::new();
         let mut current_run: Option<BatchedTextRun> = None;
 
-        let keyword_highlights = &self.snapshot.highlights;
-        let search_highlights = self.search_highlights.as_ref();
-        let active_selection = if let Some(frozen) = self.frozen_selection.as_ref() {
-            remap_frozen_selection(frozen, &self.snapshot)
-        } else {
-            self.snapshot.selection
-        };
-        if let Some(selection) = active_selection {
-            rects.extend(selection_background_rects(
-                selection,
-                self.snapshot.rows,
-                self.snapshot.cols,
-                cx.theme().selection,
-            ));
-        }
-
-        for render_cell in &self.snapshot.cells {
+        for render_cell in &row.cells {
             let cell = &render_cell.cell;
             if cell.flags.intersects(
                 Flags::HIDDEN | Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
@@ -455,13 +637,10 @@ impl TerminalElement {
                 continue;
             }
 
-            let selected = active_selection.is_some_and(|selection| {
-                selection_contains(selection, render_cell.row, render_cell.col)
-            });
             let bg = color_to_hsla(cell.bg, false, font_brightness, cx);
-            if !selected && (!is_default_bg(cell.bg) || cell.flags.contains(Flags::INVERSE)) {
+            if !is_default_bg(cell.bg) || cell.flags.contains(Flags::INVERSE) {
                 rects.push(LayoutRect {
-                    row: render_cell.row,
+                    row: 0,
                     col: render_cell.col,
                     cells: if cell.flags.contains(Flags::WIDE_CHAR) {
                         2
@@ -484,52 +663,22 @@ impl TerminalElement {
             }
 
             let mut style = self.cell_run_style(cell, font_brightness, cx);
-
-            if let Some(hl_color) = search_highlights
-                .and_then(|map| map.get(&(render_cell.row, render_cell.col)))
-                .copied()
-            {
+            if let Some(hl_color) = search_highlights.get(&render_cell.col).copied() {
                 style.color = adjust_terminal_foreground_brightness(hl_color, font_brightness);
-            } else if let Some(hl_color) = keyword_highlights
-                .get(&(render_cell.row, render_cell.col))
-                .copied()
+            } else if let Some(hl_color) = keyword_highlights.get(&render_cell.col).copied()
+                && keyword_highlight_allowed(cell)
             {
-                // Preserve original ANSI/truecolor emphasis from the terminal output.
-                if keyword_highlight_allowed(cell) {
-                    style.color = adjust_terminal_foreground_brightness(hl_color, font_brightness);
-                }
+                // Preserve original ANSI/truecolor emphasis from terminal output.
+                style.color = adjust_terminal_foreground_brightness(hl_color, font_brightness);
             }
 
-            // Apply hover underline if mouse is hovering over this URL
-            if let Some(hu) = &hovered_url {
-                if hu.tab_id == self.tab_id
-                    && hu
-                        .cells
-                        .contains(&(render_cell.row as usize, render_cell.col as usize))
-                {
-                    underlines.push(LayoutUnderline {
-                        row: render_cell.row,
-                        col: render_cell.col,
-                        cells: if cell.flags.contains(Flags::WIDE_CHAR) {
-                            2
-                        } else {
-                            1
-                        },
-                        color: style.color,
-                    });
-                }
-            }
-
-            // Box Drawing & Block Elements interception
-            let is_custom_block = is_custom_block_supported(cell.c);
-
-            if is_custom_block {
+            if is_custom_block_supported(cell.c) {
                 if let Some(run) = current_run.take() {
                     runs.push(run);
                 }
                 custom_blocks.push(LayoutCustomBlock {
                     c: cell.c,
-                    row: render_cell.row,
+                    row: 0,
                     col: render_cell.col,
                     cells: if cell.flags.contains(Flags::WIDE_CHAR) {
                         2
@@ -541,28 +690,21 @@ impl TerminalElement {
                 continue;
             }
 
-            if let Some(run) = current_run.as_mut() {
-                if run.can_append(&style, render_cell.row, render_cell.col) {
-                    run.append(cell.c, cell.zerowidth());
-                    continue;
-                }
+            if let Some(run) = current_run.as_mut()
+                && run.can_append(&style, 0, render_cell.col)
+            {
+                run.append(cell.c, cell.zerowidth());
+                continue;
             }
 
             if let Some(run) = current_run.take() {
                 runs.push(run);
             }
 
-            let mut run = BatchedTextRun::new(
-                render_cell.row,
-                render_cell.col,
-                cell.c,
-                style,
-                self.font_size,
-            );
+            let mut run = BatchedTextRun::new(0, render_cell.col, cell.c, style, self.font_size);
             if let Some(chars) = cell.zerowidth() {
                 for ch in chars {
-                    run.text.push(*ch);
-                    run.style.len += ch.len_utf8();
+                    run.append_zerowidth(*ch);
                 }
             }
             current_run = Some(run);
@@ -572,12 +714,82 @@ impl TerminalElement {
             runs.push(run);
         }
 
-        (
-            merge_rects(rects),
+        RowLayout {
+            rects: merge_rects(rects),
             runs,
             custom_blocks,
-            merge_underlines(underlines),
-        )
+        }
+    }
+
+    fn selection_rects(&self, cx: &App) -> Vec<LayoutRect> {
+        let active_selection = if let Some(frozen) = self.frozen_selection.as_ref() {
+            remap_frozen_selection(frozen, &self.snapshot)
+        } else {
+            self.snapshot.selection
+        };
+        active_selection
+            .map(|selection| {
+                selection_background_rects(
+                    selection,
+                    self.snapshot.rows,
+                    self.snapshot.cols,
+                    cx.theme().selection,
+                )
+            })
+            .unwrap_or_default()
+    }
+
+    fn hovered_url_underlines(&self, cx: &App) -> Vec<LayoutUnderline> {
+        let view_read = self.view.read(cx);
+        let Some(hovered_url) = view_read.hovered_url.as_ref() else {
+            return Vec::new();
+        };
+        if hovered_url.tab_id != self.tab_id {
+            return Vec::new();
+        }
+        let font_brightness = view_read.appearance.terminal_font_brightness;
+        let mut underlines = Vec::with_capacity(hovered_url.cells.len());
+        for &(row, col) in &hovered_url.cells {
+            let Some(cell) = self
+                .snapshot
+                .visible_rows
+                .get(row)
+                .and_then(|render_row| render_row.cells.iter().find(|cell| cell.col == col as i32))
+                .map(|render_cell| &render_cell.cell)
+            else {
+                continue;
+            };
+            if cell.flags.intersects(
+                Flags::HIDDEN | Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
+            ) {
+                continue;
+            }
+            let mut style = self.cell_run_style(cell, font_brightness, cx);
+            if let Some(color) = self
+                .snapshot
+                .highlights
+                .get(&(row as i32, col as i32))
+                .copied()
+                && keyword_highlight_allowed(cell)
+            {
+                style.color = adjust_terminal_foreground_brightness(color, font_brightness);
+            }
+            if let Some(color) = self
+                .search_highlights
+                .as_ref()
+                .and_then(|highlights| highlights.get(&(row as i32, col as i32)))
+                .copied()
+            {
+                style.color = adjust_terminal_foreground_brightness(color, font_brightness);
+            }
+            underlines.push(LayoutUnderline {
+                row: row as i32,
+                col: col as i32,
+                cells: usize::from(cell.flags.contains(Flags::WIDE_CHAR)) + 1,
+                color: style.color,
+            });
+        }
+        merge_underlines(underlines)
     }
 
     fn cursor_layout(&self, cx: &App) -> Option<CursorLayout> {
@@ -619,9 +831,9 @@ impl TerminalElement {
     fn cursor_background_color(&self, row: usize, col: usize, cx: &App) -> Hsla {
         let Some(render_cell) = self
             .snapshot
-            .cells
-            .iter()
-            .find(|cell| cell.row == row as i32 && cell.col == col as i32)
+            .visible_rows
+            .get(row)
+            .and_then(|render_row| render_row.cells.iter().find(|cell| cell.col == col as i32))
         else {
             return cx.theme().background;
         };
@@ -791,7 +1003,7 @@ impl Element for TerminalElement {
     type PrepaintState = PrepaintState;
 
     fn id(&self) -> Option<ElementId> {
-        None
+        Some(format!("terminal-grid-{}", self.tab_id).into())
     }
 
     fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
@@ -813,7 +1025,7 @@ impl Element for TerminalElement {
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
+        id: Option<&GlobalElementId>,
         _inspector_id: Option<&gpui::InspectorElementId>,
         bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
@@ -822,7 +1034,15 @@ impl Element for TerminalElement {
     ) -> Self::PrepaintState {
         let _ = self.base_text_style(cx);
         let metrics = self.measured_metrics(window);
-        let (rects, runs, custom_blocks, underlines) = self.layout_grid(cx);
+        let grid_rows = if let Some(id) = id {
+            window.with_element_state(id, |cache: Option<GridLayoutCache>, _window| {
+                self.cached_grid_rows(cache, cx)
+            })
+        } else {
+            self.cached_grid_rows(None, cx).0
+        };
+        let selection_rects = self.selection_rects(cx);
+        let underlines = self.hovered_url_underlines(cx);
 
         // Save the precise GPUI-rendered bounds of this terminal element.
         // This is 100% accurate because it is recorded during layout prepaint.
@@ -859,9 +1079,8 @@ impl Element for TerminalElement {
                 cell_width: metrics.cell_width,
                 line_height: metrics.line_height,
             },
-            rects,
-            runs,
-            custom_blocks,
+            selection_rects,
+            grid_rows,
             cursor: self.cursor_layout(cx),
             underlines,
         }
@@ -889,32 +1108,42 @@ impl Element for TerminalElement {
         );
         window.paint_quad(fill(prepaint.bounds, cx.theme().background));
 
-        for rect in &prepaint.rects {
+        for (row, row_layout) in prepaint.grid_rows.iter().enumerate() {
+            for rect in &row_layout.rects {
+                rect.paint_with_row_offset(draw_origin, prepaint.metrics, row as i32, window);
+            }
+        }
+
+        for rect in &prepaint.selection_rects {
             rect.paint(draw_origin, prepaint.metrics, window);
         }
 
-        for run in &prepaint.runs {
-            run.paint(draw_origin, prepaint.metrics, window, cx);
+        for (row, row_layout) in prepaint.grid_rows.iter().enumerate() {
+            for run in &row_layout.runs {
+                run.paint_with_row_offset(draw_origin, prepaint.metrics, row as i32, window, cx);
+            }
         }
 
         for u in &prepaint.underlines {
             u.paint(draw_origin, prepaint.metrics, window);
         }
 
-        for block in &prepaint.custom_blocks {
-            let x =
-                draw_origin.x.as_f32() + block.col as f32 * prepaint.metrics.cell_width.as_f32();
-            let y =
-                draw_origin.y.as_f32() + block.row as f32 * prepaint.metrics.line_height.as_f32();
-            paint_custom_block(
-                window,
-                block.c,
-                x,
-                y,
-                prepaint.metrics.cell_width.as_f32() * block.cells as f32,
-                prepaint.metrics.line_height.as_f32(),
-                block.color,
-            );
+        for (row, row_layout) in prepaint.grid_rows.iter().enumerate() {
+            for block in &row_layout.custom_blocks {
+                let x = draw_origin.x.as_f32()
+                    + block.col as f32 * prepaint.metrics.cell_width.as_f32();
+                let y = draw_origin.y.as_f32()
+                    + prepaint.metrics.line_height.as_f32() * (block.row + row as i32) as f32;
+                paint_custom_block(
+                    window,
+                    block.c,
+                    x,
+                    y,
+                    prepaint.metrics.cell_width.as_f32() * block.cells as f32,
+                    prepaint.metrics.line_height.as_f32(),
+                    block.color,
+                );
+            }
         }
 
         window.handle_input(
@@ -1317,9 +1546,9 @@ fn named_color(named: NamedColor, _foreground: bool, cx: &App) -> Hsla {
 #[cfg(test)]
 mod tests {
     use super::{
-        byte_index_for_utf16_offset, composition_selected_byte_range, contrast_ratio,
-        high_contrast_cursor_color, keyword_highlight_allowed, remap_frozen_selection,
-        selection_background_rects,
+        FNV1A_OFFSET_BASIS, byte_index_for_utf16_offset, composition_selected_byte_range,
+        contrast_ratio, fnv1a_hash, fnv1a_update, high_contrast_cursor_color,
+        keyword_highlight_allowed, remap_frozen_selection, selection_background_rects,
     };
     use crate::terminal::{RenderSnapshot, TerminalFrozenSelection, ViewportSelection};
     use alacritty_terminal::{
@@ -1415,6 +1644,16 @@ mod tests {
     }
 
     #[test]
+    fn text_layout_hash_tracks_zero_width_combining_characters() {
+        let base = fnv1a_hash("a");
+        let combined = fnv1a_update(base, "\u{0301}".as_bytes());
+
+        assert_ne!(combined, base);
+        assert_eq!(combined, fnv1a_hash("a\u{0301}"));
+        assert_eq!(fnv1a_hash(""), FNV1A_OFFSET_BASIS);
+    }
+
+    #[test]
     fn frozen_selection_stays_at_viewport_position_with_stream_history() {
         let frozen = frozen_selection(8, 8);
         let snapshot = snapshot(10, 7);
@@ -1482,14 +1721,18 @@ mod tests {
         selection: Option<ViewportSelection>,
     ) -> RenderSnapshot {
         RenderSnapshot {
-            cells: Vec::new(),
+            visible_rows: std::rc::Rc::new(
+                (0..rows)
+                    .map(|_| std::rc::Rc::new(crate::terminal::RenderRow { cells: Vec::new() }))
+                    .collect(),
+            ),
             cursor: None,
             selection,
             display_offset: 0,
             history_size,
             rows,
             cols: 10,
-            highlights: HashMap::new(),
+            highlights: std::rc::Rc::new(HashMap::new()),
         }
     }
 }

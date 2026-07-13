@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use portable_pty::{ChildKiller, CommandBuilder, PtySize, native_pty_system};
 
 use crate::{
+    config::LocalShellProfile,
     events::{BackendEvent, BackendEventSender},
     terminal::{BackendCommand, BackendShutdown, BackendTx},
 };
@@ -84,6 +85,7 @@ pub fn spawn_local_terminal(
     tab_id: String,
     cols: u16,
     rows: u16,
+    profile: &LocalShellProfile,
     events: BackendEventSender,
 ) -> Result<BackendTx> {
     let pty_system = native_pty_system();
@@ -96,25 +98,19 @@ pub fn spawn_local_terminal(
         })
         .context("open local PTY")?;
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-        if cfg!(windows) {
-            "powershell.exe".into()
-        } else {
-            "/bin/zsh".into()
-        }
-    });
-    let shell_label = crate::diagnostics::mask_path(&shell);
+    let shell_label = crate::diagnostics::mask_path(&profile.program);
     tracing::info!(
         component = "local_terminal",
         operation = "start",
         tab_id = %tab_id,
         shell = %shell_label,
+        profile = %profile.id,
         cols,
         rows,
         "Starting local terminal"
     );
 
-    let cmd = local_shell_command(&shell);
+    let cmd = local_shell_command(profile);
     let mut child = pair.slave.spawn_command(cmd).context("spawn local shell")?;
     let child_killer = child.clone_killer();
     drop(pair.slave);
@@ -299,8 +295,9 @@ pub fn spawn_local_terminal(
     })
 }
 
-fn local_shell_command(shell: &str) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new(shell);
+fn local_shell_command(profile: &LocalShellProfile) -> CommandBuilder {
+    let mut cmd = CommandBuilder::new(&profile.program);
+    cmd.args(&profile.args);
     cmd.env("TERM", LOCAL_TERM);
     cmd.env(
         "COLORTERM",
@@ -318,20 +315,37 @@ fn local_shell_command(shell: &str) -> CommandBuilder {
     if let Ok(home) = std::env::var("HOME") {
         cmd.env("HOME", home);
     }
-    cmd.env("SHELL", shell);
+    #[cfg(unix)]
+    cmd.env("SHELL", &profile.program);
     cmd
 }
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
+    use std::ffi::{OsStr, OsString};
+
+    use crate::config::LocalShellProfile;
 
     use super::{LOCAL_TERM, local_shell_command};
 
     #[test]
     fn local_shell_declares_the_supported_terminal_type() {
-        let command = local_shell_command("test-shell");
+        let profile = LocalShellProfile {
+            id: "test".into(),
+            name: "Test shell".into(),
+            program: "test-shell".into(),
+            args: vec!["--interactive".into(), "--flag with space".into()],
+        };
+        let command = local_shell_command(&profile);
 
         assert_eq!(command.get_env("TERM"), Some(OsStr::new(LOCAL_TERM)));
+        assert_eq!(
+            command.get_argv(),
+            &vec![
+                OsString::from("test-shell"),
+                OsString::from("--interactive"),
+                OsString::from("--flag with space"),
+            ]
+        );
     }
 }

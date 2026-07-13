@@ -232,7 +232,7 @@ impl AxShell {
         };
 
         if let Some(tab) = tab {
-            let snapshot = tab.render_snapshot();
+            let snapshot = tab.render_snapshot(self.config.keyword_highlight());
             let display_offset = snapshot.display_offset as i32;
             let rows = snapshot.rows as i32;
 
@@ -292,7 +292,7 @@ impl AxShell {
         let Some(tab) = tab else {
             return None;
         };
-        let snapshot = tab.render_snapshot();
+        let snapshot = tab.render_snapshot(self.config.keyword_highlight());
         let display_offset = snapshot.display_offset as i32;
         let rows = snapshot.rows as i32;
 

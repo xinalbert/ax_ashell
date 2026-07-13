@@ -5,7 +5,7 @@ use gpui_component::input::{InputEvent, InputState};
 
 use crate::{
     AxShell,
-    app::state::lifecycle::WindowLifecycleState,
+    app::{WorkspacePage, state::lifecycle::WindowLifecycleState},
     events::{BACKEND_EVENT_QUEUE_CAPACITY, BackendEvent},
 };
 
@@ -24,6 +24,29 @@ const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(600);
 struct DrainResult {
     terminal_changed: bool,
     ui_changed: bool,
+}
+
+// Output batches end before every non-output event so status and close events
+// observe all preceding terminal bytes.
+#[derive(Default)]
+struct TerminalOutputBatch(Vec<(String, Vec<u8>)>);
+
+impl TerminalOutputBatch {
+    fn push(&mut self, tab_id: String, bytes: Vec<u8>) {
+        if let Some((_, pending_bytes)) = self
+            .0
+            .iter_mut()
+            .find(|(pending_tab_id, _)| *pending_tab_id == tab_id)
+        {
+            pending_bytes.extend_from_slice(&bytes);
+        } else {
+            self.0.push((tab_id, bytes));
+        }
+    }
+
+    fn take(&mut self) -> Vec<(String, Vec<u8>)> {
+        std::mem::take(&mut self.0)
+    }
 }
 
 fn parse_rayon_threads_input(value: &str) -> Option<usize> {
@@ -57,6 +80,7 @@ impl AxShell {
                             this.schedule_ui_refresh();
                         }
                         let terminal_due = this.should_flush_terminal_refresh();
+                        let highlight_due = this.terminal_highlight_refresh_due(now);
                         let ui_due = this.should_flush_ui_refresh();
                         let system_sampled =
                             this.lifecycle.is_foreground() && this.sample_system_if_due();
@@ -77,6 +101,7 @@ impl AxShell {
                             && now.duration_since(last_blink_time) >= CURSOR_BLINK_INTERVAL;
                         if ui_due
                             || terminal_due
+                            || highlight_due
                             || system_sampled
                             || blink_due
                             || sftp_closed
@@ -281,6 +306,7 @@ impl AxShell {
     fn drain_backend_events(&mut self, cx: &mut Context<Self>) -> DrainResult {
         let mut result = DrainResult::default();
         let mut transfers_changed = false;
+        let mut terminal_output = TerminalOutputBatch::default();
         // Leave time for rendering and input even while a producer keeps the
         // bounded queue full.
         for _ in 0..BACKEND_EVENT_QUEUE_CAPACITY {
@@ -289,339 +315,348 @@ impl AxShell {
             };
             match event {
                 BackendEvent::Output { tab_id, bytes } => {
-                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                        tab.backend_initialized = true;
-                        result.terminal_changed |= tab.feed(&bytes);
-                    }
+                    terminal_output.push(tab_id, bytes);
                 }
-                BackendEvent::Status { tab_id, text } => {
-                    result.ui_changed = true;
-                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                        tab.backend_initialized = true;
-                        tab.status = text.clone();
-                    }
-                    if let Some(progress) = self.connection_progress.as_mut()
-                        && progress.tab_id == tab_id
-                    {
-                        progress.lines.push(text.clone().into());
-                        self.connection_scroll_handle
-                            .set_offset(gpui::point(px(0.), px(-99999.0)));
-                    }
-                    self.status = text.into();
-                }
-                BackendEvent::Connected { tab_id } => {
-                    result.ui_changed = true;
-                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                        tab.backend_initialized = true;
-                        tab.connected = true;
-                        tab.disconnected_reason = None;
-                    }
-                    if self
-                        .terminal_password_prompt
-                        .as_ref()
-                        .is_some_and(|prompt| prompt.tab_id == tab_id)
-                    {
-                        self.terminal_password_prompt = None;
-                    }
-                    self.terminal_password_retry_tabs.remove(&tab_id);
-                    self.sync_system_tab_to_active_group();
-                    self.request_active_system_snapshot();
-                    if self
-                        .connection_progress
-                        .as_ref()
-                        .is_some_and(|progress| progress.tab_id == tab_id && !progress.failed)
-                    {
-                        self.connection_progress = None;
-                    }
-                }
-                BackendEvent::SshConnectionModeResolved {
-                    tab_id,
-                    session_id,
-                    mode,
-                } => {
-                    result.ui_changed = true;
-                    for tab in self.tabs.iter_mut() {
-                        if tab.id == tab_id
-                            || tab
-                                .session
-                                .as_ref()
-                                .is_some_and(|session| session.id == session_id)
-                        {
-                            if let Some(session) = tab.session.as_mut() {
-                                session.last_successful_ssh_mode = Some(mode);
+                event => {
+                    self.flush_terminal_output(&mut terminal_output, &mut result);
+                    match event {
+                        BackendEvent::Status { tab_id, text } => {
+                            result.ui_changed = true;
+                            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                                tab.backend_initialized = true;
+                                tab.status = text.clone();
                             }
-                        }
-                    }
-                    if self
-                        .config
-                        .set_session_last_successful_ssh_mode(&session_id, mode)
-                    {
-                        self.config.save_logged("save_ssh_connection_mode");
-                    }
-                }
-                BackendEvent::SftpEntries {
-                    tab_id,
-                    path,
-                    entries,
-                    append,
-                    has_more,
-                    reached_limit,
-                } => {
-                    result.ui_changed = true;
-                    self.mark_sftp_activity_for_group(&tab_id);
-                    if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
-                        && let Some(sftp) = group.sftp.as_mut()
-                    {
-                        sftp.current_path = path;
-                        if append {
-                            sftp.entries.extend(entries);
-                        } else {
-                            sftp.entries = entries;
-                            sftp.selected_path = None;
-                            sftp.selected_entries.clear();
-                        }
-                        sftp.has_more_entries = has_more;
-                        sftp.loading_more_entries = false;
-                        sftp.reached_entries_limit = reached_limit;
-                        if let Some(target_path) = self.pending_sftp_selection_path.clone() {
-                            let matched = sftp
-                                .entries
-                                .iter()
-                                .find(|entry| entry.full_path == target_path);
-                            if let Some(entry) = matched {
-                                sftp.selected_path = Some(entry.full_path.clone());
-                                sftp.selected_entries.clear();
-                                sftp.selected_entries.insert(entry.full_path.clone());
-                            } else if sftp.current_path == target_path {
-                                sftp.selected_path = None;
-                                sftp.selected_entries.clear();
-                            }
-                            if sftp.current_path == target_path
-                                || sftp
-                                    .selected_path
-                                    .as_deref()
-                                    .is_some_and(|selected| selected == target_path)
+                            if let Some(progress) = self.connection_progress.as_mut()
+                                && progress.tab_id == tab_id
                             {
-                                self.pending_sftp_selection_path = None;
+                                progress.lines.push(text.clone().into());
+                                self.connection_scroll_handle
+                                    .set_offset(gpui::point(px(0.), px(-99999.0)));
+                            }
+                            self.status = text.into();
+                        }
+                        BackendEvent::Connected { tab_id } => {
+                            result.ui_changed = true;
+                            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                                tab.backend_initialized = true;
+                                tab.connected = true;
+                                tab.disconnected_reason = None;
+                            }
+                            if self
+                                .terminal_password_prompt
+                                .as_ref()
+                                .is_some_and(|prompt| prompt.tab_id == tab_id)
+                            {
+                                self.terminal_password_prompt = None;
+                            }
+                            self.terminal_password_retry_tabs.remove(&tab_id);
+                            self.sync_system_tab_to_active_group();
+                            self.request_active_system_snapshot();
+                            if self.connection_progress.as_ref().is_some_and(|progress| {
+                                progress.tab_id == tab_id && !progress.failed
+                            }) {
+                                self.connection_progress = None;
                             }
                         }
-                        self.pending_sftp_path_sync = Some(sftp.current_path.clone());
-                    }
-                }
-                BackendEvent::SftpPreview { tab_id, preview } => {
-                    result.ui_changed = true;
-                    self.mark_sftp_activity_for_group(&tab_id);
-                    if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
-                        && let Some(sftp) = group.sftp.as_mut()
-                    {
-                        sftp.selected_path = Some(preview.path.clone());
-                        sftp.preview = Some(preview);
-                    }
-                }
-                BackendEvent::SftpStatus { tab_id, text } => {
-                    result.ui_changed = true;
-                    self.mark_sftp_activity_for_group(&tab_id);
-                    if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
-                        && let Some(sftp) = group.sftp.as_mut()
-                    {
-                        sftp.status = text.clone();
-                    }
-                    if self.active_group.as_ref() == Some(&tab_id) {
-                        self.status = text.into();
-                    }
-                }
-                BackendEvent::RemoteSystem { tab_id, snapshot } => {
-                    result.ui_changed = true;
-                    self.monitoring.remote_sample_in_flight = false;
-                    if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str()) {
-                        self.monitoring.status = None;
-                        self.monitoring.system = snapshot.clone();
-                        self.monitoring.cpu_history.push(snapshot.cpu_percent);
-                        if self.monitoring.cpu_history.len() > 20 {
-                            self.monitoring.cpu_history.remove(0);
-                        }
-                        self.monitoring
-                            .net_rx_history
-                            .push(snapshot.net_rx_rate as f32);
-                        if self.monitoring.net_rx_history.len() > 20 {
-                            self.monitoring.net_rx_history.remove(0);
-                        }
-                        self.monitoring
-                            .net_tx_history
-                            .push(snapshot.net_tx_rate as f32);
-                        if self.monitoring.net_tx_history.len() > 20 {
-                            self.monitoring.net_tx_history.remove(0);
-                        }
-                    }
-                }
-                BackendEvent::RemoteSystemUnavailable { tab_id, reason } => {
-                    tracing::warn!(
-                        component = "monitoring",
-                        operation = "remote_sample",
-                        tab_id = %tab_id,
-                        error = %crate::diagnostics::sanitize_error(&reason),
-                        "Remote system monitoring is unavailable"
-                    );
-                    result.ui_changed = true;
-                    self.monitoring.remote_sample_in_flight = false;
-                    if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str()) {
-                        self.monitoring.status = Some(reason.clone().into());
-                        self.status = reason.into();
-                    }
-                }
-                BackendEvent::Closed { tab_id, reason } => {
-                    result.ui_changed = true;
-                    self.monitoring.remote_sample_in_flight = false;
-                    let is_stale = self
-                        .tabs
-                        .iter()
-                        .find(|t| t.id == tab_id)
-                        .is_some_and(|tab| tab.backend_generation > 0 && !tab.backend_initialized);
-                    if is_stale {
-                        continue;
-                    }
-                    if let Some(tab) = self.tabs.iter().find(|tab| tab.id == tab_id) {
-                        tab.shutdown_backend();
-                    }
-                    let is_graceful_exit =
-                        reason == "local shell closed" || reason == "ssh session closed";
-                    if is_graceful_exit {
-                        self.handle_tab_close(tab_id.clone());
-                        self.status = reason.into();
-                        continue;
-                    }
-                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                        tab.connected = false;
-                        tab.status = reason.clone();
-                        tab.disconnected_reason = Some(reason.clone());
-                    }
-                    if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str()) {
-                        self.monitoring.status = Some(reason.clone().into());
-                    }
-                    if self.should_begin_terminal_password_prompt(&tab_id, &reason) {
-                        result.terminal_changed |=
-                            self.begin_terminal_password_prompt(&tab_id, &reason, cx);
-                        continue;
-                    }
-                    if let Some(progress) = self.connection_progress.as_mut()
-                        && progress.tab_id == tab_id
-                    {
-                        progress.lines.push(reason.clone().into());
-                        self.connection_scroll_handle
-                            .set_offset(gpui::point(px(0.), px(-99999.0)));
-                        progress.title = rust_i18n::t!("connection_failed").into();
-                        progress.failed = true;
-                    }
-                    self.status = reason.into();
-                }
-                BackendEvent::TransferProgress {
-                    tab_id: _,
-                    id,
-                    transferred,
-                    total,
-                    state,
-                } => {
-                    result.ui_changed = true;
-                    if let Some(t) = self.transfers.iter_mut().find(|t| t.info.id == id) {
-                        t.transferred = transferred;
-                        if let Some(total) = total {
-                            t.total = Some(total);
-                        }
-                        t.state = state;
-                        transfers_changed = true;
-                    }
-                }
-                BackendEvent::TransferStarted { tab_id, info } => {
-                    result.ui_changed = true;
-                    self.mark_sftp_activity_for_group(&tab_id);
-                    let tab_title = self.transfer_source_title(&tab_id);
-                    self.transfers.insert(
-                        0,
-                        crate::sftp::Transfer {
+                        BackendEvent::SshConnectionModeResolved {
                             tab_id,
-                            tab_title,
-                            info,
-                            transferred: 0,
-                            total: None,
-                            state: crate::sftp::TransferState::Running,
-                        },
-                    );
-                    if self.transfers.len() > 100 {
-                        self.transfers.truncate(100);
-                    }
-                    transfers_changed = true;
-                }
-                BackendEvent::SftpHome { tab_id, home } => {
-                    result.ui_changed = true;
-                    self.mark_sftp_activity_for_group(&tab_id);
-                    if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
-                        && let Some(sftp) = group.sftp.as_mut()
-                    {
-                        sftp.home_dir = home;
-                    }
-                }
-                BackendEvent::TerminalTitleChanged { tab_id, title } => {
-                    result.ui_changed = true;
-                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                        tab.title = title.clone();
-                    }
-                }
-                BackendEvent::WorkingDirectoryChanged { tab_id, path }
-                | BackendEvent::WorkingDirectoryResolved { tab_id, path } => {
-                    result.ui_changed = true;
-                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
-                        tab.shell_working_dir = Some(path.clone());
-                    }
-                    self.sync_sftp_to_shell_working_dir_for_tab(&tab_id, &path, cx);
-                }
-                BackendEvent::SyncFinished(sync_result) => {
-                    result.ui_changed = true;
-                    self.sync_in_progress = false;
-                    match sync_result {
-                        crate::sync::SyncResult::Uploaded { etag } => {
-                            if etag.is_some() {
-                                self.config.set_sync_etag(etag);
-                            }
-                            self.sync_status = rust_i18n::t!("sync_upload_complete").into();
-                            if let Err(err) = self.config.save() {
-                                tracing::error!(
-                                    component = "sync",
-                                    operation = "save_upload_state",
-                                    error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
-                                    "Failed to save sync upload state"
-                                );
-                                self.sync_status =
-                                    format!("{}: {err:#}", rust_i18n::t!("sync_failed")).into();
-                            }
-                        }
-                        crate::sync::SyncResult::Downloaded { payload, etag } => {
-                            self.config.replace_sessions(payload.sessions);
-                            self.config.set_sync_etag(etag);
-                            match self.config.save() {
-                                Ok(()) => {
-                                    self.sync_status =
-                                        rust_i18n::t!("sync_download_complete").into()
-                                }
-                                Err(err) => {
-                                    tracing::error!(
-                                        component = "sync",
-                                        operation = "save_download",
-                                        error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
-                                        "Failed to save downloaded configuration"
-                                    );
-                                    self.sync_status =
-                                        format!("{}: {err:#}", rust_i18n::t!("sync_failed")).into()
+                            session_id,
+                            mode,
+                        } => {
+                            result.ui_changed = true;
+                            for tab in self.tabs.iter_mut() {
+                                if tab.id == tab_id
+                                    || tab
+                                        .session
+                                        .as_ref()
+                                        .is_some_and(|session| session.id == session_id)
+                                {
+                                    if let Some(session) = tab.session.as_mut() {
+                                        session.last_successful_ssh_mode = Some(mode);
+                                    }
                                 }
                             }
+                            if self
+                                .config
+                                .set_session_last_successful_ssh_mode(&session_id, mode)
+                            {
+                                self.config.save_logged("save_ssh_connection_mode");
+                            }
                         }
-                        crate::sync::SyncResult::Failed(error) => {
-                            self.sync_status =
-                                format!("{}: {error}", rust_i18n::t!("sync_failed")).into();
+                        BackendEvent::SftpEntries {
+                            tab_id,
+                            path,
+                            entries,
+                            append,
+                            has_more,
+                            reached_limit,
+                        } => {
+                            result.ui_changed = true;
+                            self.mark_sftp_activity_for_group(&tab_id);
+                            if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
+                                && let Some(sftp) = group.sftp.as_mut()
+                            {
+                                sftp.current_path = path;
+                                if append {
+                                    sftp.entries.extend(entries);
+                                } else {
+                                    sftp.entries = entries;
+                                    sftp.selected_path = None;
+                                    sftp.selected_entries.clear();
+                                }
+                                sftp.has_more_entries = has_more;
+                                sftp.loading_more_entries = false;
+                                sftp.reached_entries_limit = reached_limit;
+                                if let Some(target_path) = self.pending_sftp_selection_path.clone()
+                                {
+                                    let matched = sftp
+                                        .entries
+                                        .iter()
+                                        .find(|entry| entry.full_path == target_path);
+                                    if let Some(entry) = matched {
+                                        sftp.selected_path = Some(entry.full_path.clone());
+                                        sftp.selected_entries.clear();
+                                        sftp.selected_entries.insert(entry.full_path.clone());
+                                    } else if sftp.current_path == target_path {
+                                        sftp.selected_path = None;
+                                        sftp.selected_entries.clear();
+                                    }
+                                    if sftp.current_path == target_path
+                                        || sftp
+                                            .selected_path
+                                            .as_deref()
+                                            .is_some_and(|selected| selected == target_path)
+                                    {
+                                        self.pending_sftp_selection_path = None;
+                                    }
+                                }
+                                self.pending_sftp_path_sync = Some(sftp.current_path.clone());
+                            }
+                        }
+                        BackendEvent::SftpPreview { tab_id, preview } => {
+                            result.ui_changed = true;
+                            self.mark_sftp_activity_for_group(&tab_id);
+                            if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
+                                && let Some(sftp) = group.sftp.as_mut()
+                            {
+                                sftp.selected_path = Some(preview.path.clone());
+                                sftp.preview = Some(preview);
+                            }
+                        }
+                        BackendEvent::SftpStatus { tab_id, text } => {
+                            result.ui_changed = true;
+                            self.mark_sftp_activity_for_group(&tab_id);
+                            if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
+                                && let Some(sftp) = group.sftp.as_mut()
+                            {
+                                sftp.status = text.clone();
+                            }
+                            if self.active_group.as_ref() == Some(&tab_id) {
+                                self.status = text.into();
+                            }
+                        }
+                        BackendEvent::RemoteSystem { tab_id, snapshot } => {
+                            result.ui_changed = true;
+                            self.monitoring.remote_sample_in_flight = false;
+                            if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str()) {
+                                self.monitoring.status = None;
+                                self.monitoring.system = snapshot.clone();
+                                self.monitoring.cpu_history.push(snapshot.cpu_percent);
+                                if self.monitoring.cpu_history.len() > 20 {
+                                    self.monitoring.cpu_history.remove(0);
+                                }
+                                self.monitoring
+                                    .net_rx_history
+                                    .push(snapshot.net_rx_rate as f32);
+                                if self.monitoring.net_rx_history.len() > 20 {
+                                    self.monitoring.net_rx_history.remove(0);
+                                }
+                                self.monitoring
+                                    .net_tx_history
+                                    .push(snapshot.net_tx_rate as f32);
+                                if self.monitoring.net_tx_history.len() > 20 {
+                                    self.monitoring.net_tx_history.remove(0);
+                                }
+                            }
+                        }
+                        BackendEvent::RemoteSystemUnavailable { tab_id, reason } => {
+                            tracing::warn!(
+                                component = "monitoring",
+                                operation = "remote_sample",
+                                tab_id = %tab_id,
+                                error = %crate::diagnostics::sanitize_error(&reason),
+                                "Remote system monitoring is unavailable"
+                            );
+                            result.ui_changed = true;
+                            self.monitoring.remote_sample_in_flight = false;
+                            if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str()) {
+                                self.monitoring.status = Some(reason.clone().into());
+                                self.status = reason.into();
+                            }
+                        }
+                        BackendEvent::Closed { tab_id, reason } => {
+                            result.ui_changed = true;
+                            self.monitoring.remote_sample_in_flight = false;
+                            let is_stale =
+                                self.tabs
+                                    .iter()
+                                    .find(|t| t.id == tab_id)
+                                    .is_some_and(|tab| {
+                                        tab.backend_generation > 0 && !tab.backend_initialized
+                                    });
+                            if is_stale {
+                                continue;
+                            }
+                            if let Some(tab) = self.tabs.iter().find(|tab| tab.id == tab_id) {
+                                tab.shutdown_backend();
+                            }
+                            let is_graceful_exit =
+                                reason == "local shell closed" || reason == "ssh session closed";
+                            if is_graceful_exit {
+                                self.handle_tab_close(tab_id.clone());
+                                self.status = reason.into();
+                                continue;
+                            }
+                            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                                tab.connected = false;
+                                tab.status = reason.clone();
+                                tab.disconnected_reason = Some(reason.clone());
+                            }
+                            if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str()) {
+                                self.monitoring.status = Some(reason.clone().into());
+                            }
+                            if self.should_begin_terminal_password_prompt(&tab_id, &reason) {
+                                result.terminal_changed |=
+                                    self.begin_terminal_password_prompt(&tab_id, &reason, cx);
+                                continue;
+                            }
+                            if let Some(progress) = self.connection_progress.as_mut()
+                                && progress.tab_id == tab_id
+                            {
+                                progress.lines.push(reason.clone().into());
+                                self.connection_scroll_handle
+                                    .set_offset(gpui::point(px(0.), px(-99999.0)));
+                                progress.title = rust_i18n::t!("connection_failed").into();
+                                progress.failed = true;
+                            }
+                            self.status = reason.into();
+                        }
+                        BackendEvent::TransferProgress {
+                            tab_id: _,
+                            id,
+                            transferred,
+                            total,
+                            state,
+                        } => {
+                            result.ui_changed = true;
+                            if let Some(t) = self.transfers.iter_mut().find(|t| t.info.id == id) {
+                                t.transferred = transferred;
+                                if let Some(total) = total {
+                                    t.total = Some(total);
+                                }
+                                t.state = state;
+                                transfers_changed = true;
+                            }
+                        }
+                        BackendEvent::TransferStarted { tab_id, info } => {
+                            result.ui_changed = true;
+                            self.mark_sftp_activity_for_group(&tab_id);
+                            let tab_title = self.transfer_source_title(&tab_id);
+                            self.transfers.insert(
+                                0,
+                                crate::sftp::Transfer {
+                                    tab_id,
+                                    tab_title,
+                                    info,
+                                    transferred: 0,
+                                    total: None,
+                                    state: crate::sftp::TransferState::Running,
+                                },
+                            );
+                            if self.transfers.len() > 100 {
+                                self.transfers.truncate(100);
+                            }
+                            transfers_changed = true;
+                        }
+                        BackendEvent::SftpHome { tab_id, home } => {
+                            result.ui_changed = true;
+                            self.mark_sftp_activity_for_group(&tab_id);
+                            if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
+                                && let Some(sftp) = group.sftp.as_mut()
+                            {
+                                sftp.home_dir = home;
+                            }
+                        }
+                        BackendEvent::TerminalTitleChanged { tab_id, title } => {
+                            result.ui_changed = true;
+                            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                                tab.title = title.clone();
+                            }
+                        }
+                        BackendEvent::WorkingDirectoryChanged { tab_id, path }
+                        | BackendEvent::WorkingDirectoryResolved { tab_id, path } => {
+                            result.ui_changed = true;
+                            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+                                tab.shell_working_dir = Some(path.clone());
+                            }
+                            self.sync_sftp_to_shell_working_dir_for_tab(&tab_id, &path, cx);
+                        }
+                        BackendEvent::SyncFinished(sync_result) => {
+                            result.ui_changed = true;
+                            self.sync_in_progress = false;
+                            match sync_result {
+                                crate::sync::SyncResult::Uploaded { etag } => {
+                                    if etag.is_some() {
+                                        self.config.set_sync_etag(etag);
+                                    }
+                                    self.sync_status = rust_i18n::t!("sync_upload_complete").into();
+                                    if let Err(err) = self.config.save() {
+                                        tracing::error!(
+                                            component = "sync",
+                                            operation = "save_upload_state",
+                                            error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                                            "Failed to save sync upload state"
+                                        );
+                                        self.sync_status =
+                                            format!("{}: {err:#}", rust_i18n::t!("sync_failed"))
+                                                .into();
+                                    }
+                                }
+                                crate::sync::SyncResult::Downloaded { payload, etag } => {
+                                    self.config.replace_sessions(payload.sessions);
+                                    self.config.set_sync_etag(etag);
+                                    match self.config.save() {
+                                        Ok(()) => {
+                                            self.sync_status =
+                                                rust_i18n::t!("sync_download_complete").into()
+                                        }
+                                        Err(err) => {
+                                            tracing::error!(
+                                                component = "sync",
+                                                operation = "save_download",
+                                                error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                                                "Failed to save downloaded configuration"
+                                            );
+                                            self.sync_status =
+                                                format!("{}: {err:#}", rust_i18n::t!("sync_failed"))
+                                                    .into()
+                                        }
+                                    }
+                                }
+                                crate::sync::SyncResult::Failed(error) => {
+                                    self.sync_status =
+                                        format!("{}: {error}", rust_i18n::t!("sync_failed")).into();
+                                }
+                            }
+                        }
+                        BackendEvent::Output { .. } => {
+                            unreachable!("output events are batched above")
                         }
                     }
                 }
             }
         }
+        self.flush_terminal_output(&mut terminal_output, &mut result);
         if result.terminal_changed {
             self.schedule_terminal_refresh();
         }
@@ -629,6 +664,19 @@ impl AxShell {
             self.config.set_transfers(self.transfers.clone());
         }
         result
+    }
+
+    fn flush_terminal_output(
+        &mut self,
+        terminal_output: &mut TerminalOutputBatch,
+        result: &mut DrainResult,
+    ) {
+        for (tab_id, bytes) in terminal_output.take() {
+            if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id) {
+                tab.backend_initialized = true;
+                result.terminal_changed |= tab.feed(&bytes);
+            }
+        }
     }
 
     fn active_terminal_has_selection(&self) -> bool {
@@ -667,6 +715,19 @@ impl AxShell {
     fn should_flush_ui_refresh(&self) -> bool {
         self.runtime_state.pending_ui_refresh
             && self.runtime_state.last_ui_refresh.elapsed() >= self.refresh_interval()
+    }
+
+    fn terminal_highlight_refresh_due(&self, now: std::time::Instant) -> bool {
+        if self.workspace_page != WorkspacePage::Terminal || !self.config.keyword_highlight() {
+            return false;
+        }
+
+        self.pane_root.tab_ids().into_iter().any(|tab_id| {
+            self.tabs
+                .iter()
+                .find(|tab| tab.id == tab_id)
+                .is_some_and(|tab| tab.highlight_refresh_due(now))
+        })
     }
 
     fn refresh_interval(&self) -> Duration {
@@ -758,5 +819,45 @@ impl AxShell {
             self.apply_theme_preferences_for_system(cx);
             cx.refresh_windows();
         }
+    }
+}
+
+#[cfg(test)]
+mod terminal_output_batch_tests {
+    use super::{TerminalOutputBatch, parse_rayon_threads_input};
+
+    #[test]
+    fn output_batch_merges_by_tab_and_preserves_first_seen_order() {
+        let mut batch = TerminalOutputBatch::default();
+
+        batch.push("first".to_string(), b"a".to_vec());
+        batch.push("second".to_string(), b"b".to_vec());
+        batch.push("first".to_string(), b"c".to_vec());
+
+        assert_eq!(
+            batch.take(),
+            vec![
+                ("first".to_string(), b"ac".to_vec()),
+                ("second".to_string(), b"b".to_vec()),
+            ]
+        );
+    }
+
+    #[test]
+    fn taking_output_batch_clears_pending_bytes() {
+        let mut batch = TerminalOutputBatch::default();
+        batch.push("tab".to_string(), b"output".to_vec());
+
+        assert_eq!(batch.take(), vec![("tab".to_string(), b"output".to_vec())]);
+        assert!(batch.take().is_empty());
+    }
+
+    #[test]
+    fn rayon_thread_input_requires_a_positive_integer() {
+        assert_eq!(parse_rayon_threads_input(" 17 "), Some(17));
+        assert_eq!(parse_rayon_threads_input("1"), Some(1));
+        assert_eq!(parse_rayon_threads_input("0"), None);
+        assert_eq!(parse_rayon_threads_input(""), None);
+        assert_eq!(parse_rayon_threads_input("four"), None);
     }
 }

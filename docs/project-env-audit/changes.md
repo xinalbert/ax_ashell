@@ -2106,3 +2106,147 @@
 - 受影响文件：`src/app/views.rs`，`src/app/views/layout.rs`，跟踪文档。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖；未修改 `Cargo.toml` / `Cargo.lock`。
 - 验证结果：`rustfmt`、`cargo check`、完整 `cargo test --quiet`（130 项）、`git diff --check` 和 tracking validator 均通过；`cargo check` 保留既有 `block v0.1.6` future-incompat warning；真实 Ubuntu/GNOME Wayland GUI 控件仍需手工确认。
+## 2026-07-13 Tokio runtime 按需生命周期预检
+
+- 日期：2026-07-13 08:55 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮将把启动时无条件创建的 Tokio multi-thread runtime 改为首次远程工作时创建、所有根任务和 SFTP handle 释放后销毁。
+- 受影响文件：`src/app/state/runtime.rs`，`src/app/lifecycle/init.rs`，`src/app/actions/session.rs`，`src/app/actions/pane.rs`，`src/app/actions/sftp.rs`，`src/app/workspace.rs`，`src/app/config_sync.rs`，`src/app/lifecycle/event_loop.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改外部 cargo 缓存源码。
+- 验证结果：已完成 PID `51129` 线程采样与源码使用点复查；计划运行受影响 Rust 文件 `rustfmt`、定向 lifecycle 测试、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking docs validator；真实 GUI 线程回收仍需手工确认。
+
+## 2026-07-13 完成 Tokio runtime 按需生命周期环境验证
+
+- 日期：2026-07-13 09:09 +0800
+- 变化摘要：Tokio runtime 现仅在 SSH、SFTP 或配置同步首次执行时创建，固定为 2 worker / 最多 8 blocking worker；所有 SSH/SFTP 根 worker、shutdown reaper、sync future 和 X11 relay 通过 lease 防止提前销毁，最后一项工作结束后释放 runtime。
+- 受影响文件：`src/app.rs`，`src/app/state/runtime.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/actions/session.rs`，`src/app/actions/pane.rs`，`src/app/actions/sftp.rs`，`src/app/workspace.rs`，`src/app/config_sync.rs`，`src/backend/ssh.rs`，`src/backend/ssh/x11.rs`，`src/sftp/worker.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增依赖或 manifest/lock 变更；未使用远程功能的独立 dev 进程采样为 17 条总线程且无 `ax-tokio` worker。
+- 验证结果：两项 runtime 生命周期测试和完整 133 项 Rust 测试通过；`cargo check`、`cargo build`、`git diff --check` 和 tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；真实 SSH/SFTP/sync/X11 关闭后的 GUI 回收仍需手工确认。
+
+## 2026-07-13 Rayon worker 配置预检
+
+- 日期：2026-07-13 09:22 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮将在启动最早期通过配置设置 `RAYON_NUM_THREADS`，默认值为 2，并在资源设置页提供 4 的吞吐优先选项。
+- 受影响文件：`src/main.rs`，`src/app/lifecycle/startup.rs`，`src/config/model.rs`，`src/config/store.rs`，`src/app/dialogs/settings/monitoring.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`；通过 Rayon 已支持的 `RAYON_NUM_THREADS` 环境变量配置传递依赖中的 global pool。
+- 验证结果：计划执行受影响 Rust 文件格式化、Rayon 设置聚焦测试、`cargo check`、`cargo test --quiet`、`cargo build`、独立 debug app 线程采样、`git diff --check` 和 tracking docs validator。
+
+## 2026-07-13 完成 Rayon worker 配置环境验证
+
+- 日期：2026-07-13 09:35 +0800
+- 变化摘要：新增 `rayon_threads` 持久化设置，默认 2、仅允许 2 或 4；启动在 macOS launch environment 同步后、GPUI 初始化前设置 `RAYON_NUM_THREADS`；资源设置页提供 2（默认）和 4（更高吞吐）下拉选项，并提示修改后重启生效。
+- 受影响文件：`src/main.rs`，`src/app/lifecycle/startup.rs`，`src/config/model.rs`，`src/config/store.rs`，`src/app/dialogs/settings/monitoring.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-implementation-tracker/project-map.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖，未修改 `Cargo.toml` / `Cargo.lock`。
+- 验证结果：受影响 Rust 文件格式化、Rayon 聚焦测试、`cargo check`、完整 `cargo test --quiet`（135 项）、`cargo build`、fast menu 静态审计、`git diff --check` 和 tracking docs validator 均已通过；临时空配置启动的独立 debug app 采样为 2 条 `rayon_core` worker。保留既有 `block v0.1.6` future-incompat warning；4-worker 选项需用户在真实 Settings 中切换并重启后手工采样确认。
+
+## 2026-07-13 终端输出热点优化预检
+
+- 日期：2026-07-13 09:43 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮优化持续 PTY 输出时主线程对同一 tab 的重复解析和每段输出后的可视网格全屏 SipHash。
+- 受影响文件：`src/app/lifecycle/event_loop.rs`，`src/terminal/tab.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，复用 256 条有界 backend event queue 和现有刷新节流。
+- 验证结果：计划执行受影响 Rust 文件格式化、event loop/terminal 聚焦测试、`cargo check`、完整 `cargo test --quiet`、`cargo build`、同场景 debug `sample`、`git diff --check` 和 tracking docs validator。
+
+## 2026-07-13 完成终端输出热点优化环境验证
+
+- 时间：2026-07-13 10:00 +0800
+- 变化摘要：连续 PTY `Output` 在同一连续事件段按 tab 合并后只 feed 一次；终端变更判断改为 O(1) dirty generation，移除了逐段扫描可视网格的 SipHash；关键字高亮缓存用 generation 失效。
+- 受影响文件：`src/app/lifecycle/event_loop.rs`，`src/terminal/tab.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`；刷新节流、PTY/SSH 协议和事件顺序保持既有语义。
+- 验证结果：受影响 Rust 文件格式化、聚焦 batch/dirty-generation/ANSI 边界测试、`cargo check`、完整 `cargo test --quiet`（139 项）和 `cargo build` 通过；静态 debug `sample` 未持续产生 PTY 输出，确认旧 hash 热点帧为 0，但不能量化真实持续输出时的 CPU 降幅；保留既有 `block v0.1.6` future-incompat warning。
+
+## 2026-07-13 自定义 Rayon worker 设置预检
+
+- 时间：2026-07-13 10:05 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮会把资源页 Rayon worker 从固定 2/4 选项改为用户输入的 `1–64`，默认保持 2，重启后通过已有 `RAYON_NUM_THREADS` 生效。
+- 受影响文件：`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/dialogs/settings/monitoring.rs`，`src/config/model.rs`，`src/config/store.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`。
+- 验证结果：确认现有 `InputState` 支持回车/失焦提交；计划运行受影响 Rust 文件格式化、配置聚焦测试、`cargo check`、完整 `cargo test --quiet`、`cargo build`、`git diff --check` 和 tracking docs validator。
+
+## 2026-07-13 完成自定义 Rayon worker 设置环境验证
+
+- 时间：2026-07-13 10:13 +0800
+- 变化摘要：Rayon worker 配置从仅允许 2/4 改为 `1–64`；资源页改用数值输入，Enter 或失焦时保存并回显规范化值，非法文本保留当前配置；默认仍为 2，仍在应用重启前设置 `RAYON_NUM_THREADS`。
+- 受影响文件：`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/dialogs/settings/monitoring.rs`，`src/config/model.rs`，`src/config/store.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`；Rayon global pool 的 worker 数仍只在下次启动生效。
+- 验证结果：受影响 Rust 文件 `rustfmt`、Rayon 配置测试、输入解析测试、`cargo check`、完整 `cargo test --quiet`（140 项）和 `cargo build` 通过；保留既有 `block v0.1.6` future-incompat warning；真实 Settings 页面输入和重启后的 worker 数尚未手工确认。
+
+## 2026-07-13 Terminal snapshot 与关键词高亮优化预检
+
+- 时间：2026-07-13 10:25 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮将用 generation 缓存 terminal snapshot、以行级增量方式更新 keyword highlight，并从内存配置传入开关，移除 `render_snapshot()` 内磁盘加载。
+- 受影响文件：`src/terminal/tab.rs`，`src/terminal/highlight.rs`，`src/terminal/element.rs`，`src/app/actions/session.rs`，`src/app/actions/terminal.rs`，`src/app/search.rs`，`src/app/views/layout.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，保留前台 16 ms refresh 节流与既有 PTY 协议。
+- 验证结果：sample 表明 AxShell reader thread 与原生 Terminal `tty-io` 同为阻塞等待，CPU 热点在 AxShell GPUI draw、snapshot 和 highlighter；计划运行格式化、聚焦测试、`cargo check`、完整测试、构建、空白检查、tracking validator 和持续输出复采样。
+
+## 2026-07-13 完成 Terminal snapshot 与关键词高亮优化环境验证
+
+- 日期：2026-07-13 10:42 +0800
+- 变化摘要：terminal snapshot 以 `dirty_generation` 和内存 keyword 开关缓存为共享 `Rc`；可见 cell 不再在同一 generation 的每次 `Window::draw`/交互查询中重新构建。关键词/IP/port 高亮按可见行字符与列复用，URL 保留逻辑行处理；`render_snapshot()` 已无 `ConfigStore::load()`。
+- 受影响文件：`src/terminal/tab.rs`，`src/terminal/highlight.rs`，`src/terminal/element.rs`，`src/app/actions/session.rs`，`src/app/actions/terminal.rs`，`src/app/search.rs`，`src/app/views.rs`，`src/app/views/layout.rs`，`src/app/views/terminal_panel.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖，未修改 `Cargo.toml` / `Cargo.lock`，未联网或使用多 agent。
+- 验证结果：受影响 Rust 文件 `rustfmt`、snapshot 8 项与 highlight 14 项聚焦测试、`cargo check`、完整 `cargo test --quiet`（144 项）、`cargo build`、`git diff --check` 和 tracking validator 均通过。保留既有 `block v0.1.6` future-incompat warning；真实持续输出 GUI 的 CPU 新 sample 尚未执行，不能从自动化测试推断具体百分比降幅。
+
+## 2026-07-13 TermDamage 增量快照环境预检
+
+- 日期：2026-07-13 10:56 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；已确认锁定的 `alacritty_terminal 0.26.0` 原生提供逐行逐列 `TermDamage`，本轮将以其替代应用层整行内容比较。
+- 受影响文件：`src/terminal/tab.rs`，`src/terminal/highlight.rs`，`src/terminal/element.rs`，`docs/project-implementation-tracker/research.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`；已完成外部 API 与同类 terminal 实现检索，未使用多 agent。
+- 验证结果：已确认 `Term::damage()` / `reset_damage()` 与 `LineDamageBounds` 在本机 `0.26.0` 源码存在；后续将执行受影响 Rust 文件格式化、damage/snapshot/highlight 聚焦测试、`cargo check`、完整测试、构建、空白检查和 tracking validator。
+
+## 2026-07-13 完成 TermDamage 增量快照环境验证
+
+- 时间：2026-07-13 11:26 +0800
+- 变化摘要：`alacritty_terminal 0.26.0` 的 `TermDamage` 现作为可视 snapshot 的唯一行失效来源。受损行重建、未变行复用 `Rc<RenderRow>`；高亮关闭期间的行块变化也会在重新启用时失效 keyword 和 URL 缓存，URL 同时使用前后自动换行边界防止残留颜色。
+- 受影响文件：`src/terminal/tab.rs`，`src/terminal/highlight.rs`，`src/terminal/element.rs`，`src/app/actions/session.rs`，`src/app/actions/terminal.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`；`TermDamage` 每次读取后在 mutation 路径立即 `reset_damage()`。
+- 验证结果：受影响 Rust 文件 `rustfmt`、snapshot 聚焦测试 9 项、highlight 聚焦测试 18 项、`cargo check`、完整 `cargo test --quiet`（149 项）、`cargo build` 和 `git diff --check` 均通过。仅保留既有 `block v0.1.6` future-incompat warning；真实 GUI 持续输出 CPU 降幅未在本轮量化。
+
+## 2026-07-13 完成持续输出高亮限频环境验证
+
+- 时间：2026-07-13 12:05 +0800
+- 变化摘要：连续输出的 keyword/IP/port/URL 颜色从每个 terminal draw 重算改为最多每 `125ms` 一次；文字、ANSI 样式和光标继续使用现有 16ms 终端刷新。延迟窗口仅复用可证明未变或按 scrollback 增量平移的颜色，无法证明对应关系时清空，停止输出后由 event pump 自动补刷。
+- 受影响文件：`src/terminal/tab.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/actions/terminal.rs`，`src/app/actions/session.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`；高亮限频为固定 `125ms`，不新增用户配置项。
+- 验证结果：受影响 Rust 文件 `rustfmt`、tab 聚焦测试 11 项、highlight 聚焦测试 18 项、`cargo check`、完整 `cargo test --quiet`（151 项）、`cargo build` 和 `git diff --check` 均通过。仅保留既有 `block v0.1.6` future-incompat warning；真实 GUI 持续输出 CPU 降幅未在本轮量化。
+
+## 2026-07-13 完成本地 Shell Profile 环境验证
+
+- 时间：2026-07-13 12:51 +0800
+- 变化摘要：本地终端新增持久化 `LocalShellProfile`，配置包含名称、程序和逐行 argv 参数；默认 profile 按平台提供 macOS zsh/bash、Windows PowerShell/cmd/Git Bash/WSL、Linux login shell/bash/sh/zsh/fish 候选。Linux 无 `SHELL` 时回退由 `/bin/zsh` 改为 `/bin/sh`。
+- 受影响文件：`src/config/model.rs`，`src/config/store.rs`，`src/backend/local.rs`，`src/terminal/tab.rs`，`src/app/actions/session.rs`，`src/app/actions/pane.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/dialogs/settings/terminal.rs`，`locales/`，`docs/features/terminal-ssh*.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo 和 `portable-pty 0.9`；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`。PTY 使用 `CommandBuilder::args` 逐项传递参数，禁止命令字符串拼接；Windows 不覆盖 `SHELL`，保证 `wsl.exe` 内部环境不被污染。
+- 验证结果：`rustfmt` 通过；profile/PTY 聚焦测试 3 项、terminal tab 聚焦测试 12 项、`cargo check`、完整 `cargo test --quiet`（154 项）、`cargo build`、`git diff --check` 和 tracking validator 均通过。`cargo check` / `cargo build` 仅保留既有 `block v0.1.6` future-incompat warning；真实 GUI 下启动各平台 shell 未执行。
+
+## 2026-07-13 README 与文档双语文件名审查预检
+
+- 时间：2026-07-13 13:54 +0800
+- 变化摘要：本轮只维护 README 与 docs 的文件名/内容语言一致性及当前链接；不改 Rust 源码、依赖、CI 或发布配置。
+- 受影响文件：`README.md`，`README.zh.md`，`docs/README.md`，`docs/README.zh.md`，`docs/development*.md`，`docs/resource-lifecycle*.md`，相关用户文档和跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；验证限制为 Markdown 内链解析、`git diff --check` 和 tracking docs validator，避免在 dirty worktree 写入构建产物。
+- 验证结果：已确认文档树的目标约定是英文 `.md`、中文 `.zh.md`；待执行静态验证。
+
+## 2026-07-13 完成 README 与文档双语文件名环境验证
+
+- 时间：2026-07-13 13:57 +0800
+- 变化摘要：开发与资源生命周期文档已统一为英文 `.md`、中文 `.zh.md`；当前 README、文档导航和交叉链接均已同步。
+- 受影响文件：README、当前 docs 导航/用户页面、`docs/project-implementation-tracker/` 和本环境记录。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`，未运行会产生构建产物的命令。
+- 验证结果：忽略代码块、HTML 注释和行内代码后的 Markdown 活动相对链接解析通过；`git diff --check` 与 tracking docs validator 通过。
+
+## 2026-07-13 完成终端行级布局缓存环境验证
+
+- 时间：2026-07-13 14:04 +0800
+- 变化摘要：终端预绘制从每帧遍历完整可视 cell 改为稳定 GPUI element state 中的行级布局缓存；`Rc<RenderRow>`、字体/主题和行高亮不变时复用已准备的背景、text runs 和 block glyph。底部滚屏候选行必须逐 cell 对照当前 Alacritty grid 才可复用，延迟 keyword 高亮同样仅迁移已验证行块。
+- 受影响文件：`src/terminal/element.rs`，`src/terminal/tab.rs`，`src/terminal/highlight.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`。验证执行 `rustfmt`、terminal focused tests、`cargo check`、完整 `cargo test --quiet`、`cargo build`、`git diff --check`、tracking docs validator 和 macOS `sample`。
+- 验证结果：focused tests 47 项、完整测试 158 项、`cargo check`、`cargo build` 和 `git diff --check` 均通过；当前 debug dev PID 的 10 秒空闲 sample 未出现 terminal layout、shape 或 highlighter 热点，物理内存 93.9 MiB。采样进程不在持续输出场景，未量化对既有高压 sample 的 CPU 降幅；仅保留既有 `block v0.1.6` future-incompat warning。
+
+## 2026-07-13 本地 SFTP 会话目录恢复实施记录
+
+- 时间：2026-07-13 16:32 +0800
+- 目的：让本地 SFTP 浏览器为每个已保存 SSH 会话恢复最后一次成功打开的目录，同时避免将机器相关路径同步到 WebDAV 或 S3。
+- 改动范围：`src/config/model.rs`，`src/config/store.rs`，`src/app/actions/sftp.rs`，`src/app/workspace.rs`，`docs/features/sftp.md`，`docs/features/sftp.zh.md`，跟踪文档。
+- 执行内容：在本机 `ConfigFile` 添加按保存 `Session.id` 存储的目录映射；成功导航才保存，临时连接不保存；加载、删除会话和同步下载的会话替换都会清理无效 mapping。恢复目录不可读时回退用户主目录但不修改记录；同步 payload 保持只含 sessions。
+- 验证结果：相关 Rust 文件已格式化，`cargo test --quiet local_sftp` 4 项、`cargo check`、完整 `cargo test --quiet` 162 项、`cargo build`、`git diff --check` 和 tracking validator 通过。`cargo check` / `cargo build` 仅保留既有 `block v0.1.6` future-incompat warning。
+- 风险/待办：需在真实 GUI 中验证两个保存会话各自恢复目录、删除目录后的 home 回退，以及未保存连接不写入配置。

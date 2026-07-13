@@ -6,6 +6,10 @@
 
 Open a local terminal from the pinned **Local Terminal** entry in the saved-session area. Local terminals use the same tab, pane, search, and appearance controls as SSH terminals.
 
+Choose the default local shell under **Settings > Terminal > Local Shell Profiles**. A profile has a program and zero or more arguments, with one argument per line. This supports shells such as `zsh`, `bash`, PowerShell, Command Prompt, Git Bash, and WSL. For a named WSL distribution, use `wsl.exe` as the program and enter `-d` and the distribution name on separate lines.
+
+Profiles are editable and can be duplicated before customization. New local terminals use the selected default; splitting or reconnecting an existing local tab keeps that tab's profile.
+
 ## Create An SSH Session
 
 1. Open **New SSH** or the session selector.

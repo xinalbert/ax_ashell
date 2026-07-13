@@ -18,6 +18,47 @@ pub struct ConfigStore {
     cache: ConfigFile,
 }
 
+fn normalize_local_shell_profiles(config: &mut ConfigFile) {
+    let defaults = default_local_shell_profiles();
+    let mut ids = HashSet::new();
+    let mut profiles = std::mem::take(&mut config.local_shell_profiles)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, mut profile)| {
+            profile.program = profile.program.trim().to_string();
+            if profile.program.is_empty() {
+                return None;
+            }
+            profile.name = profile.name.trim().to_string();
+            if profile.name.is_empty() {
+                profile.name = profile.program.clone();
+            }
+            profile.args.retain(|arg| !arg.is_empty());
+            profile.id = profile.id.trim().to_string();
+            if profile.id.is_empty() {
+                profile.id = format!("profile-{index}");
+            }
+            let base_id = profile.id.clone();
+            let mut duplicate = 2;
+            while !ids.insert(profile.id.clone()) {
+                profile.id = format!("{base_id}-{duplicate}");
+                duplicate += 1;
+            }
+            Some(profile)
+        })
+        .collect::<Vec<_>>();
+    if profiles.is_empty() {
+        profiles = defaults;
+    }
+    if !profiles
+        .iter()
+        .any(|profile| profile.id == config.default_local_shell_profile_id)
+    {
+        config.default_local_shell_profile_id = profiles[0].id.clone();
+    }
+    config.local_shell_profiles = profiles;
+}
+
 fn normalize_last_local_sftp_paths(config: &mut ConfigFile) {
     let session_ids = config
         .sessions
@@ -109,6 +150,7 @@ impl ConfigStore {
         cache.deep_sleep_after_minutes =
             normalize_deep_sleep_after_minutes(cache.deep_sleep_after_minutes);
         cache.rayon_threads = normalize_rayon_threads(cache.rayon_threads);
+        normalize_local_shell_profiles(&mut cache);
         normalize_last_local_sftp_paths(&mut cache);
 
         let mut store = Self { path, cache };
@@ -127,6 +169,7 @@ impl ConfigStore {
             path: PathBuf::new(),
             cache,
         };
+        normalize_local_shell_profiles(&mut store.cache);
         store.normalize_theme_profiles();
         store.migrate_global_font_brightness_from_legacy();
         store.sync_custom_theme_draft_to_active_profile();
@@ -989,6 +1032,90 @@ impl ConfigStore {
         self.cache.keyword_highlight = val;
     }
 
+    pub fn local_shell_profiles(&self) -> &[LocalShellProfile] {
+        &self.cache.local_shell_profiles
+    }
+
+    pub fn default_local_shell_profile(&self) -> LocalShellProfile {
+        self.cache
+            .local_shell_profiles
+            .iter()
+            .find(|profile| profile.id == self.cache.default_local_shell_profile_id)
+            .or_else(|| self.cache.local_shell_profiles.first())
+            .cloned()
+            .expect("local shell profiles are normalized")
+    }
+
+    pub fn set_default_local_shell_profile(&mut self, id: &str) -> bool {
+        if !self
+            .cache
+            .local_shell_profiles
+            .iter()
+            .any(|profile| profile.id == id)
+        {
+            return false;
+        }
+        self.cache.default_local_shell_profile_id = id.to_string();
+        true
+    }
+
+    pub fn update_local_shell_profile(&mut self, profile: LocalShellProfile) -> bool {
+        if profile.program.trim().is_empty() {
+            return false;
+        }
+        let Some(existing) = self
+            .cache
+            .local_shell_profiles
+            .iter_mut()
+            .find(|existing| existing.id == profile.id)
+        else {
+            return false;
+        };
+        *existing = profile;
+        normalize_local_shell_profiles(&mut self.cache);
+        true
+    }
+
+    pub fn add_local_shell_profile(
+        &mut self,
+        name: String,
+        program: String,
+        args: Vec<String>,
+    ) -> Option<LocalShellProfile> {
+        if program.trim().is_empty() {
+            return None;
+        }
+        let profile = LocalShellProfile {
+            id: Uuid::new_v4().to_string(),
+            name,
+            program,
+            args,
+        };
+        let profile_id = profile.id.clone();
+        self.cache.local_shell_profiles.push(profile);
+        normalize_local_shell_profiles(&mut self.cache);
+        self.cache
+            .local_shell_profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .cloned()
+    }
+
+    pub fn remove_local_shell_profile(&mut self, id: &str) -> bool {
+        if self.cache.local_shell_profiles.len() <= 1 {
+            return false;
+        }
+        let previous_len = self.cache.local_shell_profiles.len();
+        self.cache
+            .local_shell_profiles
+            .retain(|profile| profile.id != id);
+        if self.cache.local_shell_profiles.len() == previous_len {
+            return false;
+        }
+        normalize_local_shell_profiles(&mut self.cache);
+        true
+    }
+
     pub fn ssh_connect_retry_count(&self) -> u32 {
         normalize_ssh_connect_retry_count(self.cache.ssh_connect_retry_count)
     }
@@ -1194,7 +1321,11 @@ impl ConfigStore {
 
         let path = path.trim();
         if path.is_empty() {
-            return self.cache.last_local_sftp_paths.remove(session_id).is_some();
+            return self
+                .cache
+                .last_local_sftp_paths
+                .remove(session_id)
+                .is_some();
         }
         if self.last_local_sftp_path(session_id) == Some(path) {
             return false;
@@ -1831,6 +1962,94 @@ mod deep_sleep_settings_tests {
             normalize_deep_sleep_after_minutes(2),
             default_deep_sleep_after_minutes()
         );
+    }
+}
+
+#[cfg(test)]
+mod rayon_thread_settings_tests {
+    use super::{
+        ConfigFile, ConfigStore, RAYON_THREADS_MAX, RAYON_THREADS_MIN, default_rayon_threads,
+        normalize_rayon_threads,
+    };
+
+    #[test]
+    fn rayon_threads_default_to_two_for_existing_configs() {
+        let config: ConfigFile = serde_json::from_str("{}").expect("config should deserialize");
+
+        assert_eq!(config.rayon_threads, default_rayon_threads());
+    }
+
+    #[test]
+    fn rayon_threads_accept_custom_values_and_clamp_the_upper_bound() {
+        for value in [RAYON_THREADS_MIN, 2, 4, 17, RAYON_THREADS_MAX] {
+            assert_eq!(normalize_rayon_threads(value), value);
+        }
+        assert_eq!(normalize_rayon_threads(0), default_rayon_threads());
+        assert_eq!(
+            normalize_rayon_threads(RAYON_THREADS_MAX + 1),
+            RAYON_THREADS_MAX
+        );
+
+        let mut config = ConfigStore::in_memory();
+        config.set_rayon_threads(17);
+        assert_eq!(config.rayon_threads(), 17);
+        config.set_rayon_threads(RAYON_THREADS_MAX + 1);
+        assert_eq!(config.rayon_threads(), RAYON_THREADS_MAX);
+        config.set_rayon_threads(0);
+        assert_eq!(config.rayon_threads(), default_rayon_threads());
+    }
+}
+
+#[cfg(test)]
+mod local_shell_profile_tests {
+    use crate::config::LocalShellProfile;
+
+    use super::{ConfigFile, ConfigStore, normalize_local_shell_profiles};
+
+    #[test]
+    fn missing_shell_profile_settings_receive_platform_defaults() {
+        let mut config: ConfigFile =
+            serde_json::from_str("{}").expect("config should deserialize without profiles");
+        normalize_local_shell_profiles(&mut config);
+
+        assert!(!config.local_shell_profiles.is_empty());
+        assert!(
+            config
+                .local_shell_profiles
+                .iter()
+                .any(|profile| profile.id == config.default_local_shell_profile_id)
+        );
+    }
+
+    #[test]
+    fn shell_profiles_reject_empty_programs_and_keep_a_valid_default() {
+        let mut config = ConfigStore::in_memory();
+        let original = config.default_local_shell_profile();
+
+        assert!(!config.update_local_shell_profile(LocalShellProfile {
+            id: original.id.clone(),
+            name: "invalid".into(),
+            program: "   ".into(),
+            args: Vec::new(),
+        }));
+        assert!(
+            config
+                .add_local_shell_profile("invalid".into(), " ".into(), Vec::new())
+                .is_none()
+        );
+
+        let added = config
+            .add_local_shell_profile(
+                "Ubuntu WSL".into(),
+                "wsl.exe".into(),
+                vec!["-d".into(), "Ubuntu".into()],
+            )
+            .expect("valid shell profile should be added");
+        assert!(config.set_default_local_shell_profile(&added.id));
+        assert_eq!(config.default_local_shell_profile(), added);
+
+        assert!(config.remove_local_shell_profile(&added.id));
+        assert_ne!(config.default_local_shell_profile().id, added.id);
     }
 }
 

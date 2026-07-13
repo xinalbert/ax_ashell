@@ -76,11 +76,12 @@ impl AxShell {
                     return this.render_home_page(cx).into_any_element();
                 }
                 let is_focused = path == this.focused_pane_path.as_slice();
+                let keyword_highlight_enabled = this.config.keyword_highlight();
                 let snapshot = this
                     .tabs
                     .iter()
                     .find(|t| &t.id == tab_id)
-                    .map(TerminalTab::render_snapshot);
+                    .map(|tab| tab.render_snapshot(keyword_highlight_enabled));
                 let Some(snapshot) = snapshot else {
                     return div().into_any_element();
                 };

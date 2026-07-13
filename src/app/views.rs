@@ -32,7 +32,7 @@ use crate::{
     },
     monitoring::format_bytes,
     sftp::format_mtime,
-    terminal::{self, TabKind, TerminalTab},
+    terminal::{self, TabKind},
 };
 
 pub(super) use crate::app::hover::{FastHoverExt, fast_hover_tokens, list_fast_hover_options};

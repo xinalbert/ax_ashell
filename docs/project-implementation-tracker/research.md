@@ -1,5 +1,25 @@
 # 外部检索记录
 
+## 2026-07-13 GPUI 持续输出的终端网格布局缓存
+
+- 时间：2026-07-13 13:18 +0800
+- 检索问题：在 AxShell 已通过 `TermDamage` 和 125ms 关键词限频降低 snapshot/highlight 成本后，如何安全继续降低持续输出时的 GPUI `paint` 路径成本。
+- 检索原因：用户确认继续优化并要求检索；新 sample 显示 `Window::draw_roots -> paint` 已成为主路径。
+- 来源列表：锁定 GPUI revision `f9c994796ad4341649d7b8664edbdfaae8bebd5d` 的 `Window::use_keyed_state` / `with_element_state` <https://github.com/zed-industries/zed/blob/f9c994796ad4341649d7b8664edbdfaae8bebd5d/crates/gpui/src/window.rs>；同 revision 的 Zed `terminal_element.rs` <https://github.com/zed-industries/zed/blob/f9c994796ad4341649d7b8664edbdfaae8bebd5d/crates/terminal_view/src/terminal_element.rs>；xterm.js `RenderDebouncer` <https://github.com/xtermjs/xterm.js/blob/master/src/browser/RenderDebouncer.ts>；WezTerm terminal render cache <https://github.com/wezterm/wezterm/blob/main/wezterm-gui/src/termwindow/render/mod.rs>。
+- 关键结论：GPUI 可通过稳定 element key 保存连续帧状态，但未提供适用于本任务的公开 display-list 缓存接口。Zed 当前 terminal element 仍在 `prepaint` 中生成 grid layout；xterm.js 合并最小行范围更新；WezTerm 以行 shape hash 缓存 shaping。当前风险最低的下一步是缓存 AxShell 自己的 `LayoutRect` / `BatchedTextRun` / custom block / underline 准备结果，以 snapshot 身份、字体/主题、搜索高亮、选择和 hover 状态为失效键；光标与 IME 保持每帧绘制。
+- 对实施计划的影响：P2 实现稳定 element state 的布局缓存；不修改 renderer、Metal、glyph atlas 或 PTY flow control。由于底部滚动通常使所有可视行内容变化，预期先减少无内容变化的重复 `prepaint`，再根据新 sample 决定是否需要增量行级 layout cache。
+- 未解决问题：缓存后的文本 `shape_line` / glyph paint 是否仍占主要 CPU，需要以相同工作负载重新 sample；如果是，后续才评估可缓存的 shaped line 或 renderer 级实例化。
+
+## 2026-07-13 Terminal dirty-region 渲染路径
+
+- 时间：2026-07-13 10:56 +0800
+- 检索问题：AxShell 持续 PTY 输出时，是否有比应用层整行内容比较更准确且低风险的 snapshot / keyword highlight 增量更新方案。
+- 检索原因：用户明确要求联网检索优化方案，并确认实施首选方案。
+- 来源列表：`alacritty_terminal 0.26.0` 的 `TermDamage` <https://docs.rs/alacritty_terminal/0.26.0/alacritty_terminal/term/enum.TermDamage.html>、`LineDamageBounds` <https://docs.rs/alacritty_terminal/0.26.0/alacritty_terminal/term/struct.LineDamageBounds.html>、`Term` API <https://docs.rs/alacritty_terminal/0.26.0/alacritty_terminal/term/struct.Term.html>；xterm.js `RenderDebouncer` <https://github.com/xtermjs/xterm.js/blob/master/src/browser/RenderDebouncer.ts> 与 `RenderService` <https://github.com/xtermjs/xterm.js/blob/master/src/browser/services/RenderService.ts>；WezTerm render cache <https://github.com/wezterm/wezterm/blob/main/wezterm-gui/src/termwindow/render/mod.rs>；Alacritty instanced renderer <https://github.com/Alacritty/alacritty/blob/master/alacritty/src/renderer/text/glsl3.rs>；xterm.js flow control <https://xtermjs.org/docs/guides/flowcontrol/>。
+- 关键结论：当前已锁定的 `alacritty_terminal 0.26.0` 提供 `TermDamage::Full/Partial` 和每行 `LineDamageBounds { line, left, right }`；读取 damage 后必须调用 `reset_damage()`。xterm.js 将多次更新合并到下一帧的最小行范围；WezTerm 分层缓存行 shaping 和 quad；Alacritty 的 glyph atlas / instanced rendering 是更高成本的 renderer 重写路径。逐 chunk 暂停/恢复 PTY 会增加上下文切换，不适合当前目标。
+- 对实施计划的影响：本轮以 `TermDamage` 为唯一内容 dirty 来源，在 `feed` / resize / scroll 后累计可视损伤；snapshot 用共享行块替换受损行，keyword/IP/port 重算受损行及 URL 自动换行相邻行。选择、配置、cursor 等 UI 状态另行失效，不将其混入 terminal damage。
+- 未解决问题：GPUI 文本 layout 仍可能是后续热点；只有新 sample 显示 snapshot/highlight 已非主要成本时，才评估行级 GPUI layout cache 或 glyph atlas 重写。
+
 ## 2026-07-12 主流主题 palette 来源
 
 - 时间：2026-07-12 09:54 +0800

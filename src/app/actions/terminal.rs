@@ -217,7 +217,7 @@ impl AxShell {
                 return;
             };
 
-            if tab.render_snapshot().display_offset > 0 {
+            if tab.display_offset() > 0 {
                 tab.scroll_to_bottom();
             }
         }
@@ -467,7 +467,7 @@ impl AxShell {
                 return;
             };
 
-            if tab.render_snapshot().display_offset > 0 {
+            if tab.display_offset() > 0 {
                 tab.scroll_to_bottom();
             }
         }
@@ -533,7 +533,7 @@ impl AxShell {
                 return;
             };
 
-            if tab.render_snapshot().display_offset > 0 {
+            if tab.display_offset() > 0 {
                 tab.scroll_to_bottom();
             }
         }
@@ -659,7 +659,7 @@ impl AxShell {
             let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
                 return;
             };
-            if tab.render_snapshot().display_offset > 0 {
+            if tab.display_offset() > 0 {
                 tab.scroll_to_bottom();
             }
         }
@@ -762,12 +762,16 @@ impl AxShell {
                 if let Some(active_id) = &self.active_tab {
                     if let Some((target, url_cells)) =
                         crate::terminal::highlight::find_terminal_target_at_cell(
-                            &snapshot.cells,
-                            snapshot.rows,
+                            &snapshot.visible_rows,
                             row,
                             col,
                         )
                     {
+                        if let Some(tab) = self.tabs.iter().find(|tab| tab.id == *active_id) {
+                            // URL detection itself uses the live row snapshot. Once it finds a
+                            // target, refresh delayed colors for the visible link immediately.
+                            tab.force_highlight_refresh();
+                        }
                         hovered_url = Some(crate::app::HoveredUrl {
                             target: match target {
                                 crate::terminal::highlight::TerminalTarget::Url(url) => {
@@ -1012,7 +1016,8 @@ impl AxShell {
             return;
         };
 
-        let snapshot = tab.render_snapshot();
+        tab.force_highlight_refresh();
+        let snapshot = tab.render_snapshot(self.config.keyword_highlight());
         let Some(selection) = snapshot.selection else {
             self.terminal_frozen_selection = None;
             return;

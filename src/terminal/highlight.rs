@@ -1,6 +1,11 @@
+#[cfg(test)]
 use crate::terminal::RenderCell;
+use crate::terminal::RenderRow;
 use gpui::Hsla;
-use std::collections::HashMap;
+use std::{
+    collections::{BTreeSet, HashMap},
+    rc::Rc,
+};
 
 trait HslaExt {
     fn into_rgba_like(self, r: u8, g: u8, b: u8) -> Self;
@@ -295,524 +300,615 @@ fn highlight_http_codes(
     }
 }
 
-pub fn highlight_cells(cells: &[RenderCell], rows: usize) -> HashMap<(i32, i32), Hsla> {
-    let colors = highlight_colors();
+#[cfg(test)]
+fn highlight_cells(cells: &[Vec<RenderCell>]) -> HashMap<(i32, i32), Hsla> {
+    let visible_rows = rows_from_cells(cells);
+    highlight_rows_incremental(
+        &visible_rows,
+        &(0..cells.len()).collect(),
+        true,
+        &mut HighlightCache::default(),
+    )
+}
 
-    let mut row_chars: Vec<Vec<(i32, char)>> = vec![Vec::with_capacity(128); rows];
-    for rc in cells {
-        if rc.row < 0 || (rc.row as usize) >= rows {
-            continue;
+#[derive(Default)]
+pub struct HighlightCache {
+    keyword_rows: Vec<CachedHighlightRow>,
+    url_rows: Vec<BTreeSet<i32>>,
+    url_wraps: Vec<bool>,
+}
+
+struct CachedHighlightRow {
+    source: Rc<RenderRow>,
+    highlights: Vec<(i32, Hsla)>,
+}
+
+pub fn highlight_rows_incremental(
+    rows: &[Rc<RenderRow>],
+    dirty_rows: &BTreeSet<usize>,
+    full_damage: bool,
+    cache: &mut HighlightCache,
+) -> HashMap<(i32, i32), Hsla> {
+    let colors = highlight_colors();
+    let cache_needs_reset =
+        full_damage || cache.keyword_rows.len() != rows.len() || cache.url_rows.len() != rows.len();
+    if cache_needs_reset {
+        cache.keyword_rows = rows
+            .iter()
+            .map(|row| CachedHighlightRow {
+                source: row.clone(),
+                highlights: highlight_row(row, &colors),
+            })
+            .collect();
+        cache.url_rows = vec![BTreeSet::new(); rows.len()];
+        cache.url_wraps = vec![false; rows.len()];
+    } else {
+        for &row_idx in dirty_rows {
+            let Some(row) = rows.get(row_idx) else {
+                continue;
+            };
+            cache.keyword_rows[row_idx] = CachedHighlightRow {
+                source: row.clone(),
+                highlights: highlight_row(row, &colors),
+            };
         }
-        row_chars[rc.row as usize].push((rc.col, rc.cell.c));
     }
-    for row in row_chars.iter_mut() {
-        row.sort_by_key(|&(col, _)| col);
+
+    // A disabled highlighter does not receive output damage. Recheck row identity
+    // when it is enabled again so stale cached colors cannot be reused.
+    let mut effective_dirty_rows = dirty_rows.clone();
+    for (row_idx, row) in rows.iter().enumerate() {
+        if !Rc::ptr_eq(&cache.keyword_rows[row_idx].source, row) {
+            cache.keyword_rows[row_idx] = CachedHighlightRow {
+                source: row.clone(),
+                highlights: highlight_row(row, &colors),
+            };
+            effective_dirty_rows.insert(row_idx);
+        }
+    }
+
+    let current_wraps: Vec<bool> = rows.iter().map(|row| row_wraps_to_next(row)).collect();
+    let url_dirty_rows = url_dirty_rows(
+        &current_wraps,
+        &cache.url_wraps,
+        &effective_dirty_rows,
+        cache_needs_reset,
+    );
+    for &row_idx in &url_dirty_rows {
+        cache.url_rows[row_idx].clear();
+    }
+    apply_url_highlights(rows, &url_dirty_rows, &mut cache.url_rows);
+    cache.url_wraps = current_wraps;
+
+    let mut map = HashMap::new();
+    for (row_idx, cached) in cache.keyword_rows.iter().enumerate() {
+        for &(col, color) in &cached.highlights {
+            map.insert((row_idx as i32, col), color);
+        }
+        for &col in &cache.url_rows[row_idx] {
+            map.entry((row_idx as i32, col)).or_insert(colors.url);
+        }
+    }
+    map
+}
+
+fn highlight_row(row: &RenderRow, colors: &HighlightColors) -> Vec<(i32, Hsla)> {
+    if row.cells.is_empty() {
+        return Vec::new();
     }
 
     let mut map = HashMap::new();
-
     let mut chars_buf = String::with_capacity(128);
     let mut byte_to_col: Vec<i32> = Vec::with_capacity(128);
-
-    for (row_idx, row) in row_chars.iter().enumerate() {
-        if row.is_empty() {
-            continue;
-        }
-        let row_i32 = row_idx as i32;
-
-        chars_buf.clear();
-        byte_to_col.clear();
-
-        for &(col, c) in row {
-            chars_buf.push(c);
-            while byte_to_col.len() < chars_buf.len() {
-                byte_to_col.push(col);
-            }
-        }
-        let text = chars_buf.as_str();
-
-        // ── 1. Critical errors (highest priority) ──────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "PANIC",
-                "EMERGENCY",
-                "FATAL",
-                "SEGFAULT",
-                "CRITICAL",
-                "OOM",
-                "OUT OF MEMORY",
-                "KERNEL PANIC",
-                "CORE DUMPED",
-                "BUS ERROR",
-            ],
-            colors.critical,
-        );
-
-        // ── 2. Error keywords ──────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["ERROR", "ERR"],
-            colors.error,
-        );
-
-        // ── 3. Alert ───────────────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["ALERT"],
-            colors.alert,
-        );
-
-        // ── 4. Warning keywords ────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["WARNING", "WARN"],
-            colors.warning,
-        );
-
-        // ── 5. Info keywords ───────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["INFO", "INFORMATION", "NOTICE"],
-            colors.info,
-        );
-
-        // ── 6. Debug keywords ──────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["DEBUG", "DBG", "TRACE"],
-            colors.debug,
-        );
-
-        // ── 7. Success status ──────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "SUCCESS",
-                "SUCCEEDED",
-                "SUCCESSFUL",
-                "PASSED",
-                "PASS",
-                "OK",
-                "DONE",
-                "COMPLETED",
-                "FINISHED",
-                "COMPLETE",
-            ],
-            colors.success,
-        );
-
-        // ── 8. Failure status ──────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["FAILED", "FAILURE", "FAIL", "NOT OK"],
-            colors.failure,
-        );
-
-        // ── 9. Pending / Waiting ───────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["PENDING", "WAITING", "PROCESSING", "IN PROGRESS", "QUEUED"],
-            colors.pending,
-        );
-
-        // ── 10. Running / Active ───────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["RUNNING", "ACTIVE", "EXECUTING", "IN_PROGRESS", "LIVE"],
-            colors.running,
-        );
-
-        // ── 11. Stopped / Inactive ─────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["STOPPED", "INACTIVE", "HALTED", "IDLE", "PAUSED"],
-            colors.stopped,
-        );
-
-        // ── 12. Skipped ────────────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["SKIPPED", "SKIP", "SKIPPING"],
-            colors.skipped,
-        );
-
-        // ── 13. Network UP ─────────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "UP",
-                "ONLINE",
-                "CONNECTED",
-                "REACHABLE",
-                "LISTENING",
-                "ESTABLISHED",
-                "LINK UP",
-            ],
-            colors.network_up,
-        );
-
-        // ── 14. Network DOWN ───────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "DOWN",
-                "OFFLINE",
-                "UNREACHABLE",
-                "DISCONNECTED",
-                "NOT LISTENING",
-                "LINK DOWN",
-                "NO CARRIER",
-            ],
-            colors.network_down,
-        );
-
-        // ── 15. Timeout ────────────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "TIMEOUT",
-                "TIMED OUT",
-                "TIMEOUTS",
-                "ETIMEDOUT",
-                "SLOW",
-                "LATENCY",
-            ],
-            colors.timeout,
-        );
-
-        // ── 16. Refused / Denied ───────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "REFUSED",
-                "REJECTED",
-                "DENIED",
-                "PERMISSION DENIED",
-                "ACCESS DENIED",
-                "FORBIDDEN",
-                "BLOCKED",
-                "DROP",
-            ],
-            colors.refused,
-        );
-
-        // ── 17. Security / Protocol ────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "SSH",
-                "SSHD",
-                "SSL",
-                "TLS",
-                "HTTPS",
-                "CERTIFICATE",
-                "CERT",
-                "FIREWALL",
-                "IPTABLES",
-                "ACL",
-                "WAF",
-            ],
-            colors.security,
-        );
-
-        // ── 18. Authentication ─────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "AUTHENTICATED",
-                "ACCEPTED",
-                "AUTHORIZED",
-                "LOGIN",
-                "LOGOUT",
-                "LOGGED IN",
-                "LOGGED OUT",
-                "SESSION",
-            ],
-            colors.auth,
-        );
-
-        // ── 19. Danger (root/sudo/secrets) ─────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "ROOT",
-                "SUDO",
-                "UID=0",
-                "PASSWORD",
-                "SECRET",
-                "TOKEN",
-                "API_KEY",
-                "APIKEY",
-                "PRIVATE KEY",
-                "CREDENTIALS",
-            ],
-            colors.danger,
-        );
-
-        // ── 20. Operations: Start ──────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "STARTED", "START", "STARTING", "BOOT", "BOOTING", "LAUNCHED", "LAUNCH",
-            ],
-            colors.started,
-        );
-
-        // ── 21. Operations: Stop ───────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "STOPPED",
-                "STOP",
-                "STOPPING",
-                "SHUTDOWN",
-                "SHUTTING DOWN",
-                "TERMINATED",
-            ],
-            colors.stopped_op,
-        );
-
-        // ── 22. Operations: Restart ────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "RESTARTED",
-                "RESTART",
-                "RESTARTING",
-                "RELOAD",
-                "RELOADED",
-                "RELOADING",
-            ],
-            colors.restart,
-        );
-
-        // ── 23. Operations: Deploy ─────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "DEPLOYED",
-                "DEPLOYMENT",
-                "DEPLOYING",
-                "DEPLOY",
-                "ROLLBACK",
-                "ROLLED BACK",
-                "ROLLING BACK",
-                "UPGRADE",
-                "UPGRADED",
-            ],
-            colors.deploy,
-        );
-
-        // ── 24. Operations: Crash ──────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "CRASH",
-                "CRASHED",
-                "CRASHING",
-                "SIGSEGV",
-                "SIGABRT",
-                "SIGKILL",
-                "DIED",
-                "EXITED",
-                "EXIT CODE",
-                "CORE DUMP",
-            ],
-            colors.crashed,
-        );
-
-        // ── 25. Resources: Memory ──────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &["MEMORY", "RAM", "HEAP", "STACK", "SWAP", "MEM"],
-            colors.memory,
-        );
-
-        // ── 26. Resources: CPU ─────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "CPU",
-                "PROCESSOR",
-                "CORE",
-                "CORES",
-                "THREAD",
-                "THREADS",
-                "LOAD",
-            ],
-            colors.cpu,
-        );
-
-        // ── 27. Resources: Disk ────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "DISK",
-                "STORAGE",
-                "PARTITION",
-                "MOUNT",
-                "FILESYSTEM",
-                "INODE",
-                "IOPS",
-                "READ",
-                "WRITE",
-            ],
-            colors.disk,
-        );
-
-        // ── 28. Dev: Exceptions ────────────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "EXCEPTION",
-                "TRACEBACK",
-                "THROW",
-                "THROWN",
-                "STACKTRACE",
-                "TYPEERROR",
-                "VALUEERROR",
-                "KEYERROR",
-                "ATTRIBUTEERROR",
-                "INDEXERROR",
-                "RUNTIMEERROR",
-                "IOERROR",
-                "OSERROR",
-                "NULLPOINTER",
-                "NPE",
-                "SEGFAULT",
-            ],
-            colors.exception,
-        );
-
-        // ── 29. Dev: Deprecated / TODO ─────────────────────────
-        highlight_keywords(
-            &mut map,
-            text,
-            &byte_to_col,
-            row_i32,
-            &[
-                "DEPRECATED",
-                "TODO",
-                "FIXME",
-                "HACK",
-                "XXX",
-                "WORKAROUND",
-                "TEMPORARY",
-            ],
-            colors.deprecated,
-        );
-
-        // ── 30. HTTP status codes ──────────────────────────────
-        highlight_http_codes(&mut map, text, &byte_to_col, row_i32, &colors);
-
-        // ── 31. IP addresses ───────────────────────────────────
-        for m in find_ip_addresses(text) {
-            let ip_len = find_ip_len(&text[m..]);
-            let start_col = byte_to_col[m];
-            let end_col = byte_to_col[(m + ip_len - 1).min(byte_to_col.len() - 1)];
-            for c in start_col..=end_col {
-                map.entry((row_i32, c)).or_insert(colors.network);
-            }
-        }
-
-        // ── 33. Port numbers ───────────────────────────────────
-        for m in find_ports(text) {
-            let port_len = find_port_len(&text[m..]);
-            let start_col = byte_to_col[m];
-            let end_col = byte_to_col[(m + port_len - 1).min(byte_to_col.len() - 1)];
-            for c in start_col..=end_col {
-                map.entry((row_i32, c)).or_insert(colors.port);
-            }
+    for cell in &row.cells {
+        chars_buf.push(cell.cell.c);
+        while byte_to_col.len() < chars_buf.len() {
+            byte_to_col.push(cell.col);
         }
     }
-    // ── 32. URLs (Logical lines for wrapping support) ───────────
-    let logical_lines = build_logical_lines(cells, rows);
+    let text = chars_buf.as_str();
+    // Row blocks can move when scrollback advances, so colors are stored as
+    // column-only data and assigned to the current viewport index by the caller.
+    let row_i32 = 0;
+
+    // ── 1. Critical errors (highest priority) ──────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "PANIC",
+            "EMERGENCY",
+            "FATAL",
+            "SEGFAULT",
+            "CRITICAL",
+            "OOM",
+            "OUT OF MEMORY",
+            "KERNEL PANIC",
+            "CORE DUMPED",
+            "BUS ERROR",
+        ],
+        colors.critical,
+    );
+
+    // ── 2. Error keywords ──────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["ERROR", "ERR"],
+        colors.error,
+    );
+
+    // ── 3. Alert ───────────────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["ALERT"],
+        colors.alert,
+    );
+
+    // ── 4. Warning keywords ────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["WARNING", "WARN"],
+        colors.warning,
+    );
+
+    // ── 5. Info keywords ───────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["INFO", "INFORMATION", "NOTICE"],
+        colors.info,
+    );
+
+    // ── 6. Debug keywords ──────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["DEBUG", "DBG", "TRACE"],
+        colors.debug,
+    );
+
+    // ── 7. Success status ──────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "SUCCESS",
+            "SUCCEEDED",
+            "SUCCESSFUL",
+            "PASSED",
+            "PASS",
+            "OK",
+            "DONE",
+            "COMPLETED",
+            "FINISHED",
+            "COMPLETE",
+        ],
+        colors.success,
+    );
+
+    // ── 8. Failure status ──────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["FAILED", "FAILURE", "FAIL", "NOT OK"],
+        colors.failure,
+    );
+
+    // ── 9. Pending / Waiting ───────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["PENDING", "WAITING", "PROCESSING", "IN PROGRESS", "QUEUED"],
+        colors.pending,
+    );
+
+    // ── 10. Running / Active ───────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["RUNNING", "ACTIVE", "EXECUTING", "IN_PROGRESS", "LIVE"],
+        colors.running,
+    );
+
+    // ── 11. Stopped / Inactive ─────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["STOPPED", "INACTIVE", "HALTED", "IDLE", "PAUSED"],
+        colors.stopped,
+    );
+
+    // ── 12. Skipped ────────────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["SKIPPED", "SKIP", "SKIPPING"],
+        colors.skipped,
+    );
+
+    // ── 13. Network UP ─────────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "UP",
+            "ONLINE",
+            "CONNECTED",
+            "REACHABLE",
+            "LISTENING",
+            "ESTABLISHED",
+            "LINK UP",
+        ],
+        colors.network_up,
+    );
+
+    // ── 14. Network DOWN ───────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "DOWN",
+            "OFFLINE",
+            "UNREACHABLE",
+            "DISCONNECTED",
+            "NOT LISTENING",
+            "LINK DOWN",
+            "NO CARRIER",
+        ],
+        colors.network_down,
+    );
+
+    // ── 15. Timeout ────────────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "TIMEOUT",
+            "TIMED OUT",
+            "TIMEOUTS",
+            "ETIMEDOUT",
+            "SLOW",
+            "LATENCY",
+        ],
+        colors.timeout,
+    );
+
+    // ── 16. Refused / Denied ───────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "REFUSED",
+            "REJECTED",
+            "DENIED",
+            "PERMISSION DENIED",
+            "ACCESS DENIED",
+            "FORBIDDEN",
+            "BLOCKED",
+            "DROP",
+        ],
+        colors.refused,
+    );
+
+    // ── 17. Security / Protocol ────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "SSH",
+            "SSHD",
+            "SSL",
+            "TLS",
+            "HTTPS",
+            "CERTIFICATE",
+            "CERT",
+            "FIREWALL",
+            "IPTABLES",
+            "ACL",
+            "WAF",
+        ],
+        colors.security,
+    );
+
+    // ── 18. Authentication ─────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "AUTHENTICATED",
+            "ACCEPTED",
+            "AUTHORIZED",
+            "LOGIN",
+            "LOGOUT",
+            "LOGGED IN",
+            "LOGGED OUT",
+            "SESSION",
+        ],
+        colors.auth,
+    );
+
+    // ── 19. Danger (root/sudo/secrets) ─────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "ROOT",
+            "SUDO",
+            "UID=0",
+            "PASSWORD",
+            "SECRET",
+            "TOKEN",
+            "API_KEY",
+            "APIKEY",
+            "PRIVATE KEY",
+            "CREDENTIALS",
+        ],
+        colors.danger,
+    );
+
+    // ── 20. Operations: Start ──────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "STARTED", "START", "STARTING", "BOOT", "BOOTING", "LAUNCHED", "LAUNCH",
+        ],
+        colors.started,
+    );
+
+    // ── 21. Operations: Stop ───────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "STOPPED",
+            "STOP",
+            "STOPPING",
+            "SHUTDOWN",
+            "SHUTTING DOWN",
+            "TERMINATED",
+        ],
+        colors.stopped_op,
+    );
+
+    // ── 22. Operations: Restart ────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "RESTARTED",
+            "RESTART",
+            "RESTARTING",
+            "RELOAD",
+            "RELOADED",
+            "RELOADING",
+        ],
+        colors.restart,
+    );
+
+    // ── 23. Operations: Deploy ─────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "DEPLOYED",
+            "DEPLOYMENT",
+            "DEPLOYING",
+            "DEPLOY",
+            "ROLLBACK",
+            "ROLLED BACK",
+            "ROLLING BACK",
+            "UPGRADE",
+            "UPGRADED",
+        ],
+        colors.deploy,
+    );
+
+    // ── 24. Operations: Crash ──────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "CRASH",
+            "CRASHED",
+            "CRASHING",
+            "SIGSEGV",
+            "SIGABRT",
+            "SIGKILL",
+            "DIED",
+            "EXITED",
+            "EXIT CODE",
+            "CORE DUMP",
+        ],
+        colors.crashed,
+    );
+
+    // ── 25. Resources: Memory ──────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &["MEMORY", "RAM", "HEAP", "STACK", "SWAP", "MEM"],
+        colors.memory,
+    );
+
+    // ── 26. Resources: CPU ─────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "CPU",
+            "PROCESSOR",
+            "CORE",
+            "CORES",
+            "THREAD",
+            "THREADS",
+            "LOAD",
+        ],
+        colors.cpu,
+    );
+
+    // ── 27. Resources: Disk ────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "DISK",
+            "STORAGE",
+            "PARTITION",
+            "MOUNT",
+            "FILESYSTEM",
+            "INODE",
+            "IOPS",
+            "READ",
+            "WRITE",
+        ],
+        colors.disk,
+    );
+
+    // ── 28. Dev: Exceptions ────────────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "EXCEPTION",
+            "TRACEBACK",
+            "THROW",
+            "THROWN",
+            "STACKTRACE",
+            "TYPEERROR",
+            "VALUEERROR",
+            "KEYERROR",
+            "ATTRIBUTEERROR",
+            "INDEXERROR",
+            "RUNTIMEERROR",
+            "IOERROR",
+            "OSERROR",
+            "NULLPOINTER",
+            "NPE",
+            "SEGFAULT",
+        ],
+        colors.exception,
+    );
+
+    // ── 29. Dev: Deprecated / TODO ─────────────────────────
+    highlight_keywords(
+        &mut map,
+        text,
+        &byte_to_col,
+        row_i32,
+        &[
+            "DEPRECATED",
+            "TODO",
+            "FIXME",
+            "HACK",
+            "XXX",
+            "WORKAROUND",
+            "TEMPORARY",
+        ],
+        colors.deprecated,
+    );
+
+    // ── 30. HTTP status codes ──────────────────────────────
+    highlight_http_codes(&mut map, text, &byte_to_col, row_i32, &colors);
+
+    // ── 31. IP addresses ───────────────────────────────────
+    for m in find_ip_addresses(text) {
+        let ip_len = find_ip_len(&text[m..]);
+        let start_col = byte_to_col[m];
+        let end_col = byte_to_col[(m + ip_len - 1).min(byte_to_col.len() - 1)];
+        for c in start_col..=end_col {
+            map.entry((row_i32, c)).or_insert(colors.network);
+        }
+    }
+
+    // ── 33. Port numbers ───────────────────────────────────
+    for m in find_ports(text) {
+        let port_len = find_port_len(&text[m..]);
+        let start_col = byte_to_col[m];
+        let end_col = byte_to_col[(m + port_len - 1).min(byte_to_col.len() - 1)];
+        for c in start_col..=end_col {
+            map.entry((row_i32, c)).or_insert(colors.port);
+        }
+    }
+
+    let mut highlights = map
+        .into_iter()
+        .filter_map(|((row, col), color)| (row == row_i32).then_some((col, color)))
+        .collect::<Vec<_>>();
+    highlights.sort_by_key(|(col, _)| *col);
+    highlights
+}
+
+fn apply_url_highlights(
+    rows: &[Rc<RenderRow>],
+    dirty_rows: &BTreeSet<usize>,
+    highlights: &mut [BTreeSet<i32>],
+) {
+    // URL detection must use logical lines because a terminal wrap can split a URL.
+    let logical_lines = build_logical_lines(rows);
     for line in &logical_lines {
+        if !line.rows.iter().any(|row| dirty_rows.contains(row)) {
+            continue;
+        }
         let text = line.text.as_str();
         for m in find_urls(text) {
             let url_len = find_url_len(&text[m..]);
@@ -820,13 +916,65 @@ pub fn highlight_cells(cells: &[RenderCell], rows: usize) -> HashMap<(i32, i32),
                 let idx = m + i;
                 if idx < line.byte_to_cell.len() {
                     let (r, c) = line.byte_to_cell[idx];
-                    map.entry((r as i32, c as i32)).or_insert(colors.url);
+                    highlights[r].insert(c as i32);
                 }
             }
         }
     }
+}
 
-    map
+fn url_dirty_rows(
+    current_wraps: &[bool],
+    previous_wraps: &[bool],
+    dirty_rows: &BTreeSet<usize>,
+    full_damage: bool,
+) -> BTreeSet<usize> {
+    if full_damage {
+        return (0..current_wraps.len()).collect();
+    }
+
+    let mut result = BTreeSet::new();
+    for &row in dirty_rows {
+        if row >= current_wraps.len() {
+            continue;
+        }
+
+        let mut start = row;
+        while start > 0
+            && (current_wraps[start - 1] || previous_wraps.get(start - 1).copied().unwrap_or(false))
+        {
+            start -= 1;
+        }
+        let mut end = row;
+        while end + 1 < current_wraps.len()
+            && (current_wraps[end] || previous_wraps.get(end).copied().unwrap_or(false))
+        {
+            end += 1;
+        }
+        result.extend(start..=end);
+    }
+    result
+}
+
+fn row_wraps_to_next(row: &RenderRow) -> bool {
+    row.cells.last().is_some_and(|cell| {
+        cell.cell
+            .flags
+            .contains(alacritty_terminal::term::cell::Flags::WRAPLINE)
+    })
+}
+
+#[cfg(test)]
+fn rows_from_cells(cells: &[Vec<RenderCell>]) -> Vec<Rc<RenderRow>> {
+    cells
+        .iter()
+        .cloned()
+        .into_iter()
+        .map(|mut cells| {
+            cells.sort_by_key(|cell| cell.col);
+            Rc::new(RenderRow { cells })
+        })
+        .collect()
 }
 
 fn find_ip_len(text: &str) -> usize {
@@ -1099,29 +1247,18 @@ fn find_port_len(text: &str) -> usize {
 }
 
 #[derive(Clone)]
-pub struct LogicalLine<'a> {
+pub struct LogicalLine {
     pub text: String,
     pub byte_to_cell: Vec<(usize, usize)>,
-    pub row_cells: Vec<&'a RenderCell>,
+    pub rows: Vec<usize>,
 }
 
-pub fn build_logical_lines<'a>(cells: &'a [RenderCell], rows: usize) -> Vec<LogicalLine<'a>> {
-    let mut row_chars: Vec<Vec<&RenderCell>> = vec![Vec::with_capacity(128); rows];
-    for rc in cells {
-        if rc.row < 0 || (rc.row as usize) >= rows {
-            continue;
-        }
-        row_chars[rc.row as usize].push(rc);
-    }
-    for row in row_chars.iter_mut() {
-        row.sort_by_key(|rc| rc.col);
-    }
-
+pub fn build_logical_lines(rows: &[Rc<RenderRow>]) -> Vec<LogicalLine> {
     let mut logical_lines = Vec::new();
     let mut current_line: Option<LogicalLine> = None;
 
-    for (row_idx, row_cells) in row_chars.into_iter().enumerate() {
-        if row_cells.is_empty() {
+    for (row_idx, row) in rows.iter().enumerate() {
+        if row.cells.is_empty() {
             if let Some(line) = current_line.take() {
                 logical_lines.push(line);
             }
@@ -1129,13 +1266,10 @@ pub fn build_logical_lines<'a>(cells: &'a [RenderCell], rows: usize) -> Vec<Logi
         }
 
         let wraps_from_prev = row_idx > 0 && {
-            current_line.as_ref().map_or(false, |line| {
-                line.row_cells.last().map_or(false, |rc| {
-                    rc.cell
-                        .flags
-                        .contains(alacritty_terminal::term::cell::Flags::WRAPLINE)
-                })
-            })
+            current_line
+                .as_ref()
+                .and_then(|line| line.rows.last())
+                .is_some_and(|&previous_row| row_wraps_to_next(&rows[previous_row]))
         };
 
         if !wraps_from_prev {
@@ -1147,17 +1281,17 @@ pub fn build_logical_lines<'a>(cells: &'a [RenderCell], rows: usize) -> Vec<Logi
         let mut line = current_line.take().unwrap_or_else(|| LogicalLine {
             text: String::with_capacity(128),
             byte_to_cell: Vec::with_capacity(128),
-            row_cells: Vec::new(),
+            rows: Vec::new(),
         });
 
-        for rc in row_cells {
-            line.text.push(rc.cell.c);
+        for cell in &row.cells {
+            line.text.push(cell.cell.c);
             let end_len = line.text.len();
             while line.byte_to_cell.len() < end_len {
-                line.byte_to_cell.push((rc.row as usize, rc.col as usize));
+                line.byte_to_cell.push((row_idx, cell.col as usize));
             }
-            line.row_cells.push(rc);
         }
+        line.rows.push(row_idx);
 
         current_line = Some(line);
     }
@@ -1170,12 +1304,11 @@ pub fn build_logical_lines<'a>(cells: &'a [RenderCell], rows: usize) -> Vec<Logi
 }
 
 pub fn find_url_at_cell(
-    cells: &[RenderCell],
-    rows: usize,
+    rows: &[Rc<RenderRow>],
     row: usize,
     col: usize,
 ) -> Option<(String, Vec<(usize, usize)>)> {
-    let logical_lines = build_logical_lines(cells, rows);
+    let logical_lines = build_logical_lines(rows);
     for line in logical_lines {
         let text = line.text.as_str();
         for m in find_urls(text) {
@@ -1202,16 +1335,15 @@ pub fn find_url_at_cell(
 }
 
 pub fn find_terminal_target_at_cell(
-    cells: &[RenderCell],
-    rows: usize,
+    rows: &[Rc<RenderRow>],
     row: usize,
     col: usize,
 ) -> Option<(TerminalTarget, Vec<(usize, usize)>)> {
-    if let Some((url, cells)) = find_url_at_cell(cells, rows, row, col) {
+    if let Some((url, cells)) = find_url_at_cell(rows, row, col) {
         return Some((TerminalTarget::Url(url), cells));
     }
 
-    let logical_lines = build_logical_lines(cells, rows);
+    let logical_lines = build_logical_lines(rows);
     for line in logical_lines {
         let text = line.text.as_str();
         for (start, path_len) in find_path_spans(text) {
@@ -1240,11 +1372,12 @@ pub fn find_terminal_target_at_cell(
 #[cfg(test)]
 mod tests {
     use super::{
-        TerminalTarget, find_path_len, find_path_spans, find_terminal_target_at_cell, find_url_len,
-        highlight_keywords, hsla,
+        HighlightCache, TerminalTarget, find_path_len, find_path_spans,
+        find_terminal_target_at_cell, find_url_len, highlight_cells, highlight_keywords,
+        highlight_rows_incremental, hsla, rows_from_cells,
     };
     use crate::terminal::RenderCell;
-    use std::collections::HashMap;
+    use std::collections::{BTreeSet, HashMap};
 
     fn highlighted_columns(text: &str, keywords: &[&str]) -> Vec<i32> {
         let mut map = HashMap::new();
@@ -1358,7 +1491,6 @@ mod tests {
             .chars()
             .enumerate()
             .map(|(col, ch)| RenderCell {
-                row: 0,
                 col: col as i32,
                 cell: alacritty_terminal::term::cell::Cell {
                     c: ch,
@@ -1367,10 +1499,182 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let target = find_terminal_target_at_cell(&cells, 1, 0, 3);
+        let rows = rows_from_cells(&[cells]);
+        let target = find_terminal_target_at_cell(&rows, 0, 3);
         assert_eq!(
             target.map(|(target, _)| target),
             Some(TerminalTarget::Path("../logs/app.log".to_string()))
         );
+    }
+
+    #[test]
+    fn incremental_highlights_match_full_highlights_after_rows_move() {
+        let previous = render_cells(&["INFO ready", "ERROR failed"]);
+        let current = render_cells(&["ERROR failed", "WARN retry"]);
+        let mut cache = HighlightCache::default();
+        let previous_rows = rows_from_cells(&previous);
+        let current_rows = rows_from_cells(&current);
+
+        let _ = highlight_rows_incremental(&previous_rows, &(0..2).collect(), true, &mut cache);
+        let incremental =
+            highlight_rows_incremental(&current_rows, &(0..2).collect(), true, &mut cache);
+
+        assert_eq!(incremental, highlight_cells(&current));
+    }
+
+    #[test]
+    fn incremental_highlights_preserve_urls_across_wrapped_rows() {
+        let mut cells = render_cells(&["https://exa", "mple.com/log"]);
+        cells
+            .get_mut(0)
+            .expect("first row")
+            .iter_mut()
+            .find(|cell| cell.col == 10)
+            .expect("last cell of first row")
+            .cell
+            .flags
+            .insert(alacritty_terminal::term::cell::Flags::WRAPLINE);
+
+        let rows = rows_from_cells(&cells);
+        let highlights = highlight_rows_incremental(
+            &rows,
+            &(0..2).collect(),
+            true,
+            &mut HighlightCache::default(),
+        );
+
+        assert!(highlights.contains_key(&(0, 0)));
+        assert!(highlights.contains_key(&(1, 11)));
+    }
+
+    #[test]
+    fn reenabled_highlighter_refreshes_rows_not_seen_while_disabled() {
+        let previous = rows_from_cells(&render_cells(&["INFO ready"]));
+        let current = rows_from_cells(&render_cells(&["ERROR failed"]));
+        let mut cache = HighlightCache::default();
+
+        let _ = highlight_rows_incremental(&previous, &(0..1).collect(), true, &mut cache);
+        let reenabled = highlight_rows_incremental(&current, &BTreeSet::new(), false, &mut cache);
+
+        assert!(reenabled.contains_key(&(0, 0)));
+        assert_eq!(reenabled, highlight_cells(&render_cells(&["ERROR failed"])));
+    }
+
+    #[test]
+    fn reenabled_highlighter_refreshes_url_rows_not_seen_while_disabled() {
+        let mut previous_cells = render_cells(&["https://exa", "mple.com/log"]);
+        previous_cells
+            .get_mut(0)
+            .expect("first row")
+            .iter_mut()
+            .find(|cell| cell.col == 10)
+            .expect("last cell of wrapped row")
+            .cell
+            .flags
+            .insert(alacritty_terminal::term::cell::Flags::WRAPLINE);
+        let previous = rows_from_cells(&previous_cells);
+        let current_cells = render_cells(&["no link here", "still no link"]);
+        let current = rows_from_cells(&current_cells);
+        let mut cache = HighlightCache::default();
+
+        let _ = highlight_rows_incremental(&previous, &(0..2).collect(), true, &mut cache);
+        let reenabled = highlight_rows_incremental(&current, &BTreeSet::new(), false, &mut cache);
+
+        assert_eq!(reenabled, highlight_cells(&current_cells));
+        assert!(!reenabled.contains_key(&(0, 0)));
+        assert!(!reenabled.contains_key(&(1, 0)));
+    }
+
+    #[test]
+    fn url_damage_expands_across_all_wrapped_rows() {
+        let mut cells = render_cells(&["https://exa", "mple.com/lo", "gs/file"]);
+        for row in 0..2 {
+            cells
+                .get_mut(row)
+                .expect("wrapped row")
+                .iter_mut()
+                .find(|cell| cell.col == 10)
+                .expect("last cell of wrapped row")
+                .cell
+                .flags
+                .insert(alacritty_terminal::term::cell::Flags::WRAPLINE);
+        }
+        let rows = rows_from_cells(&cells);
+        let mut cache = HighlightCache::default();
+        let _ = highlight_rows_incremental(&rows, &(0..3).collect(), true, &mut cache);
+
+        let mut changed_cells = cells.clone();
+        changed_cells
+            .get_mut(2)
+            .expect("last wrapped row")
+            .iter_mut()
+            .find(|cell| cell.col == 0)
+            .expect("last wrapped row first cell")
+            .cell
+            .c = ' ';
+        let changed_rows = rows_from_cells(&changed_cells);
+        let updated = highlight_rows_incremental(
+            &changed_rows,
+            &std::iter::once(2).collect(),
+            false,
+            &mut cache,
+        );
+
+        assert_eq!(updated, highlight_cells(&changed_cells));
+    }
+
+    #[test]
+    fn url_damage_uses_previous_wrap_boundary_after_wrap_is_removed() {
+        let mut cells = render_cells(&["https://exa", "mple.com/log"]);
+        cells
+            .get_mut(0)
+            .expect("first row")
+            .iter_mut()
+            .find(|cell| cell.col == 10)
+            .expect("last cell of wrapped row")
+            .cell
+            .flags
+            .insert(alacritty_terminal::term::cell::Flags::WRAPLINE);
+        let rows = rows_from_cells(&cells);
+        let mut cache = HighlightCache::default();
+        let _ = highlight_rows_incremental(&rows, &(0..2).collect(), true, &mut cache);
+
+        let mut changed_cells = cells.clone();
+        changed_cells
+            .get_mut(0)
+            .expect("first row")
+            .iter_mut()
+            .find(|cell| cell.col == 10)
+            .expect("last cell of wrapped row")
+            .cell
+            .flags
+            .remove(alacritty_terminal::term::cell::Flags::WRAPLINE);
+        let changed_rows = rows_from_cells(&changed_cells);
+        let updated = highlight_rows_incremental(
+            &changed_rows,
+            &std::iter::once(0).collect(),
+            false,
+            &mut cache,
+        );
+
+        assert_eq!(updated, highlight_cells(&changed_cells));
+    }
+
+    fn render_cells(lines: &[&str]) -> Vec<Vec<RenderCell>> {
+        lines
+            .iter()
+            .map(|text| {
+                text.chars()
+                    .enumerate()
+                    .map(|(col, ch)| RenderCell {
+                        col: col as i32,
+                        cell: alacritty_terminal::term::cell::Cell {
+                            c: ch,
+                            ..Default::default()
+                        },
+                    })
+                    .collect()
+            })
+            .collect()
     }
 }

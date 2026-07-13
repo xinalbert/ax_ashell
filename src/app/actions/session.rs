@@ -3,6 +3,7 @@ use gpui::{
 };
 use gpui_component::{Theme, WindowExt as _, input::InputState};
 use rust_i18n::t;
+use std::rc::Rc;
 use uuid::Uuid;
 
 use crate::{
@@ -14,6 +15,7 @@ use crate::{
         terminal_link_activation_modifier_pressed,
     },
     backend::{local, ssh},
+    config::LocalShellProfile,
     session::{AuthMethod, Session},
     terminal::{BackendCommand, BackendTx, RenderSnapshot, TabKind, TerminalTab},
 };
@@ -23,6 +25,119 @@ pub(super) fn normalize_session_group_name(value: &str) -> String {
 }
 
 impl AxShell {
+    pub(crate) fn sync_local_shell_profile_inputs(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let profile = self.config.default_local_shell_profile();
+        Self::set_input_value(
+            &self.local_shell_profile_name_input,
+            profile.name,
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.local_shell_profile_program_input,
+            profile.program,
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.local_shell_profile_args_input,
+            profile.args.join("\n"),
+            window,
+            cx,
+        );
+    }
+
+    pub(crate) fn select_default_local_shell_profile(
+        &mut self,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.config.set_default_local_shell_profile(id) {
+            self.config.save_logged("set_default_local_shell_profile");
+            self.sync_local_shell_profile_inputs(window, cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn save_default_local_shell_profile(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let current = self.config.default_local_shell_profile();
+        let name = self
+            .local_shell_profile_name_input
+            .read(cx)
+            .text()
+            .to_string();
+        let program = self
+            .local_shell_profile_program_input
+            .read(cx)
+            .text()
+            .to_string();
+        let args = self
+            .local_shell_profile_args_input
+            .read(cx)
+            .text()
+            .to_string();
+        let profile = LocalShellProfile {
+            id: current.id,
+            name: name.trim().to_string(),
+            program: program.trim().to_string(),
+            args: args
+                .lines()
+                .filter(|line| !line.is_empty())
+                .map(str::to_string)
+                .collect(),
+        };
+        if self.config.update_local_shell_profile(profile) {
+            self.config.save_logged("save_local_shell_profile");
+            self.sync_local_shell_profile_inputs(window, cx);
+            self.status = "local shell profile saved".into();
+        } else {
+            self.status = "local shell program is required".into();
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn duplicate_local_shell_profile(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let source = self.config.default_local_shell_profile();
+        let name = format!("{} Copy", source.name);
+        if let Some(profile) =
+            self.config
+                .add_local_shell_profile(name, source.program, source.args)
+        {
+            self.config.set_default_local_shell_profile(&profile.id);
+            self.config.save_logged("duplicate_local_shell_profile");
+            self.sync_local_shell_profile_inputs(window, cx);
+            self.status = "local shell profile added".into();
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn remove_default_local_shell_profile(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let id = self.config.default_local_shell_profile().id;
+        if self.config.remove_local_shell_profile(&id) {
+            self.config.save_logged("remove_local_shell_profile");
+            self.sync_local_shell_profile_inputs(window, cx);
+            self.status = "local shell profile removed".into();
+        }
+        cx.notify();
+    }
+
     /// Stop terminal and SFTP backends without blocking the GPUI event loop.
     pub(crate) fn shutdown_all_backends(&mut self) {
         for tab in &self.tabs {
@@ -38,17 +153,19 @@ impl AxShell {
 
     pub(crate) fn open_local(&mut self, cx: &mut Context<Self>) {
         let id = Uuid::new_v4().to_string();
+        let profile = self.config.default_local_shell_profile();
         match local::spawn_local_terminal(
             id.clone(),
             DEFAULT_COLS,
             DEFAULT_ROWS,
+            &profile,
             self.runtime_state.events_tx.clone(),
         ) {
             Ok(backend) => {
-                let title = if cfg!(windows) { "PowerShell" } else { "Local" }.to_string();
                 let mut tab = TerminalTab::new_local(
                     id.clone(),
-                    title,
+                    profile.name.clone(),
+                    profile,
                     backend,
                     self.runtime_state.events_tx.clone(),
                 );
@@ -749,6 +866,7 @@ impl AxShell {
 
         let is_ssh = self.tabs[ix].session.is_some();
         let session = self.tabs[ix].session.clone();
+        let local_shell_profile = self.tabs[ix].local_shell_profile.clone();
         let new_generation = self.tabs[ix].backend_generation + 1;
         let cols = self.tabs[ix].cols;
         let rows = self.tabs[ix].rows;
@@ -798,10 +916,13 @@ impl AxShell {
             }
         } else {
             // Local tab: spawn new local shell
+            let profile =
+                local_shell_profile.unwrap_or_else(|| self.config.default_local_shell_profile());
             match local::spawn_local_terminal(
                 tab_id.to_string(),
                 cols,
                 rows,
+                &profile,
                 self.runtime_state.events_tx.clone(),
             ) {
                 Ok(backend) => {
@@ -809,6 +930,7 @@ impl AxShell {
                     self.tabs[ix].set_backend(backend);
                     self.tabs[ix].connected = true;
                     self.tabs[ix].status = "local shell".into();
+                    self.tabs[ix].local_shell_profile = Some(profile);
                     self.tabs[ix].disconnected_reason = None;
                     self.tabs[ix].backend_generation = new_generation;
                     self.tabs[ix].backend_initialized = false;
@@ -1128,8 +1250,7 @@ impl AxShell {
                     if let Some(snapshot) = self.active_snapshot() {
                         if let Some((target, _)) =
                             crate::terminal::highlight::find_terminal_target_at_cell(
-                                &snapshot.cells,
-                                snapshot.rows,
+                                &snapshot.visible_rows,
                                 row,
                                 col,
                             )
@@ -1164,11 +1285,12 @@ impl AxShell {
         cx.notify();
     }
 
-    pub(crate) fn active_snapshot(&self) -> Option<RenderSnapshot> {
+    pub(crate) fn active_snapshot(&self) -> Option<Rc<RenderSnapshot>> {
+        let keyword_highlight_enabled = self.config.keyword_highlight();
         self.active_tab
             .as_ref()
             .and_then(|id| self.tabs.iter().find(|t| &t.id == id))
-            .map(TerminalTab::render_snapshot)
+            .map(|tab| tab.render_snapshot(keyword_highlight_enabled))
     }
 
     pub(crate) fn active_kind(&self) -> Option<TabKind> {

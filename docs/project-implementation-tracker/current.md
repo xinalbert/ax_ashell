@@ -2,18 +2,18 @@
 
 ## 当前目标
 
-- 目标：修复终端 URL 识别把 URL 后的中文逗号等中文标点和后续中文文本一起纳入链接的问题。
-- 交付物：`src/terminal/highlight.rs` 中 URL token 扫描遇到中文标点边界时停止，并补充覆盖 `https://github.com/abbodi1406/vcredist，可以...` 场景的单元测试。
+- 目标：消除持续终端输出时每帧对未变 text run 调用 `shape_line_by_hash` 的主线程开销，同时保持终端文本、颜色和交互行为正确。
+- 交付物：行级 `ShapedLine` 缓存、完整失效语义、回归测试、构建验证和持续输出 sample 对比。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/terminal/highlight.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
-- 不在本轮范围内：修改 `Cargo.toml` / `Cargo.lock`、调整终端渲染布局、修改 SSH/SFTP 行为、重新打包发布产物、改动已有 Linux 窗口/SSH 弹窗修复。
+- 当前范围：`src/terminal/element.rs`，必要时 `src/terminal/tab.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 不在本轮范围内：修改 `Cargo.toml` / `Cargo.lock`、替换 GPUI / Metal renderer、缓存 GPU command buffer 或离屏纹理、降低终端文本/ANSI/cursor 的刷新频率、改变 PTY 流控或既有 SFTP 功能。
 
 ## 当前状态
 
-- 阶段：已完成
+- 阶段：实施中
 - 开工判定：允许开工
 - 是否需要联网：否
 - 多 agent：未使用
@@ -22,34 +22,32 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 定位终端 URL 识别入口和当前 token 边界规则 | 读取 `src/terminal/highlight.rs` 中 `find_url_len` / `trim_wrapped_terminal_token_len` 及现有测试 | 现有逻辑只按 ASCII 空白截断，中文标点后无空格时会继续吞后续文本 |
-| P2 | completed | URL 扫描遇到中文标点边界时停止，并保留原 trailing wrapper 修剪 | `rustfmt --edition 2024 src/terminal/highlight.rs` 和聚焦 URL 测试 | 覆盖用户截图中的中文逗号，并兼容常见中文句读标点 |
-| P3 | completed | 完成自动化验证和跟踪文档校验 | `cargo check`，`cargo test --quiet`，`git diff --check`，tracking docs validator | 真实 GUI hover/open 仍需手工确认 |
+| P1 | completed | 16:35 sample 热点、GPUI `ShapedLine` 生命周期和缓存键审查 | sample 调用树、锁定 GPUI `text_system.rs` / `line.rs` | `shape_line_by_hash` 多为 cache lookup；`ShapedLine::paint` 仍每帧提交 glyph |
+| P2 | in_progress | `RowLayout` 中预生成并保存每个 text run 的 `ShapedLine` | element focused tests、`cargo check` | 内容、字体、字号、主题/亮度和 row highlights 变化时重建；选择/IME/hover 实时绘制 |
+| P3 | pending | 格式化、完整 Rust 验证和文档收口 | `cargo test --quiet`、`cargo build`、`git diff --check`、tracking validator | 保留 dirty worktree 中无关改动 |
+| P4 | pending | 同负载持续输出 sample 对比 | macOS `sample` | 预期显著降低 `shape_line_by_hash` 样本；`paint_line` / `paint_quad` 仍会存在 |
 
 ## 已完成
 
-- 已读取项目环境记录、实施记录、项目地图和相关 tracker skill 指南。
-- 已确认本轮不需要联网、不使用多 agent、不新增依赖、不修改 `Cargo.toml` / `Cargo.lock`。
-- 已确认 `project-map.md` 已覆盖 `src/terminal/`，本轮不刷新项目地图。
-- 已定位到 URL 高亮和点击目标解析共用 `find_url_len`，现有逻辑只在 ASCII 空白处截断后再修剪尾随标点。
-- 已新增 URL token 中文句读标点边界判断，`find_url_len` 在 `，`、`。`、`；`、`：`、`！`、`？` 等标点处停止。
-- 已补充覆盖 `https://github.com/abbodi1406/vcredist，可以用这个工具` 的单元测试。
-- 已完成 Rust 格式化、聚焦测试、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator。
+- 16:35 debug sample 的 `render_snapshot` 为 36、`highlight_rows_incremental` 为 30，均显著低于早期基线；旧 `layout_grid` 已消失。
+- 16:35 的主要路径为 `TerminalElement::paint` 361 样本，其中 `BatchedTextRun::paint_with_row_offset` 187、`shape_line_by_hash` 184、`ShapedLine::paint` 173 和 `paint_quad` 184。
+- 已确认锁定 GPUI 的 `ShapedLine` 是可克隆的布局和 decoration 数据；其 `paint` 不依赖原 text 字符串。`with_element_state` 可跨帧持有此缓存。
 
 ## 验证
 
-- 已完成：环境预检；实施计划更新；终端 URL 识别入口和现有测试复核；源码修改；Rust 格式化；聚焦 URL 测试；`cargo check`；完整 `cargo test --quiet`；`git diff --check`；tracking docs validator。
-- 未完成：真实 GUI 手工验收。
+- 已完成：环境、dirty worktree、16:35 sample 和锁定 GPUI `ShapedLine` / line-layout cache API 审查。
+- 未完成：缓存实现、Rust 回归/构建、持续输出 sample 复测和 GUI 手工验收。
 
 ## 风险与阻塞
 
-- 风险：自动化测试能覆盖解析函数，不能替代真实终端 hover/open 行为的 GUI 验收。
+- 风险：缓存必须随 text run 的内容、font family / size、ANSI/主题颜色、装饰和 keyword/search 颜色失效，否则可能出现错误字形或陈旧颜色。
+- 风险：即使消除 shaping lookup，`ShapedLine::paint` 仍逐 glyph 提交 GPU primitive；本轮不能承诺消除 `paint_line` / `paint_quad` 主路径。
 - 无阻塞。
 
 ## 下一步
 
-- 无。
+- 在 `RowLayout` 构建阶段生成 `ShapedLine` 并直接绘制缓存对象，再以相同持续输出负载复测。
 
 ## 最后更新时间
 
-- 2026-07-12 16:34 +0800
+- 2026-07-13 16:47 +0800

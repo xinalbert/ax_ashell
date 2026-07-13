@@ -209,6 +209,91 @@ pub(crate) struct ThemeProfileConfig {
     pub(crate) custom_theme_save_path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct LocalShellProfile {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) program: String,
+    #[serde(default)]
+    pub(crate) args: Vec<String>,
+}
+
+fn local_shell_profile<I>(
+    id: &str,
+    name: &str,
+    program: impl Into<String>,
+    args: I,
+) -> LocalShellProfile
+where
+    I: IntoIterator,
+    I::Item: Into<String>,
+{
+    LocalShellProfile {
+        id: id.to_string(),
+        name: name.to_string(),
+        program: program.into(),
+        args: args.into_iter().map(Into::into).collect(),
+    }
+}
+
+#[cfg(windows)]
+pub(super) fn default_local_shell_profiles() -> Vec<LocalShellProfile> {
+    vec![
+        local_shell_profile(
+            "powershell",
+            "Windows PowerShell",
+            "powershell.exe",
+            Vec::<String>::new(),
+        ),
+        local_shell_profile("pwsh", "PowerShell", "pwsh.exe", Vec::<String>::new()),
+        local_shell_profile("cmd", "Command Prompt", "cmd.exe", Vec::<String>::new()),
+        local_shell_profile("git-bash", "Git Bash", "bash.exe", Vec::<String>::new()),
+        local_shell_profile("wsl", "WSL (default)", "wsl.exe", Vec::<String>::new()),
+    ]
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn default_local_shell_profiles() -> Vec<LocalShellProfile> {
+    let login_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    vec![
+        local_shell_profile("default", "Login Shell", login_shell, Vec::<String>::new()),
+        local_shell_profile("zsh", "zsh", "/bin/zsh", Vec::<String>::new()),
+        local_shell_profile("bash", "bash", "/bin/bash", Vec::<String>::new()),
+    ]
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub(super) fn default_local_shell_profiles() -> Vec<LocalShellProfile> {
+    let login_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    vec![
+        local_shell_profile("default", "Login Shell", login_shell, Vec::<String>::new()),
+        local_shell_profile("bash", "bash", "bash", Vec::<String>::new()),
+        local_shell_profile("sh", "sh", "sh", Vec::<String>::new()),
+        local_shell_profile("zsh", "zsh", "zsh", Vec::<String>::new()),
+        local_shell_profile("fish", "fish", "fish", Vec::<String>::new()),
+    ]
+}
+
+#[cfg(not(any(windows, unix)))]
+pub(super) fn default_local_shell_profiles() -> Vec<LocalShellProfile> {
+    vec![local_shell_profile(
+        "default",
+        "Default Shell",
+        "sh",
+        Vec::<String>::new(),
+    )]
+}
+
+pub(super) fn default_local_shell_profile_id() -> String {
+    default_local_shell_profiles()
+        .first()
+        .map(|profile| profile.id.clone())
+        .unwrap_or_else(|| "default".to_string())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct ConfigFile {
     #[serde(default = "default_follow_system_theme")]
@@ -250,6 +335,10 @@ pub(super) struct ConfigFile {
     pub(super) right_click_copy_paste: bool,
     #[serde(default)]
     pub(super) keyword_highlight: bool,
+    #[serde(default = "default_local_shell_profiles")]
+    pub(super) local_shell_profiles: Vec<LocalShellProfile>,
+    #[serde(default = "default_local_shell_profile_id")]
+    pub(super) default_local_shell_profile_id: String,
     #[serde(default = "default_ssh_connect_retry_count")]
     pub(super) ssh_connect_retry_count: u32,
     #[serde(default = "default_ssh_connect_retry_delays_ms")]
@@ -525,6 +614,8 @@ impl Default for ConfigFile {
             custom_theme: CustomThemeConfig::default(),
             right_click_copy_paste: false,
             keyword_highlight: false,
+            local_shell_profiles: default_local_shell_profiles(),
+            default_local_shell_profile_id: default_local_shell_profile_id(),
             ssh_connect_retry_count: default_ssh_connect_retry_count(),
             ssh_connect_retry_delays_ms: default_ssh_connect_retry_delays_ms(),
             ui_font_family: default_ui_font_family(),

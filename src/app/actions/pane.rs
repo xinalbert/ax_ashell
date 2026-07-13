@@ -23,22 +23,31 @@ impl AxShell {
             Some(id) if !id.is_empty() => id.to_string(),
             _ => return,
         };
-        let (current_kind, current_session) = match self.tabs.iter().find(|t| t.id == current_id) {
-            Some(tab) => (tab.kind, tab.session.clone()),
-            None => return,
-        };
+        let (current_kind, current_session, current_local_shell_profile) =
+            match self.tabs.iter().find(|t| t.id == current_id) {
+                Some(tab) => (
+                    tab.kind,
+                    tab.session.clone(),
+                    tab.local_shell_profile.clone(),
+                ),
+                None => return,
+            };
         let new_id = Uuid::new_v4().to_string();
         let mut tab = match current_kind {
             TabKind::Local => {
+                let profile = current_local_shell_profile
+                    .unwrap_or_else(|| self.config.default_local_shell_profile());
                 match local::spawn_local_terminal(
                     new_id.clone(),
                     DEFAULT_COLS,
                     DEFAULT_ROWS,
+                    &profile,
                     self.runtime_state.events_tx.clone(),
                 ) {
                     Ok(backend) => TerminalTab::new_local(
                         new_id.clone(),
-                        "Local".into(),
+                        profile.name.clone(),
+                        profile,
                         backend,
                         self.runtime_state.events_tx.clone(),
                     ),

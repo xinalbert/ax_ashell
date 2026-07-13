@@ -1,15 +1,22 @@
-use crate::events::{BackendEvent, BackendEventSender};
-use crate::session::Session;
+use crate::{
+    config::LocalShellProfile,
+    events::{BackendEvent, BackendEventSender},
+    session::Session,
+};
 use alacritty_terminal::{
     grid::{Dimensions, Scroll},
     index::{Column, Line, Point, Side},
     selection::{Selection, SelectionRange, SelectionType},
-    term::{Term, TermMode, cell::Cell, point_to_viewport, viewport_to_point},
-    vte::ansi::Color as AnsiColor,
+    term::{Term, TermDamage, TermMode, cell::Cell, point_to_viewport, viewport_to_point},
     vte::ansi::{CursorShape, Processor},
 };
-use std::hash::{Hash, Hasher};
-use std::ops::Range;
+use std::{
+    cell::RefCell,
+    collections::{BTreeSet, HashMap},
+    ops::Range,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use super::{
     backend::{BackendCommand, BackendTx},
@@ -38,6 +45,7 @@ pub struct TerminalTab {
     /// before the new backend has started producing output.
     pub backend_initialized: bool,
     pub session: Option<Session>,
+    pub local_shell_profile: Option<LocalShellProfile>,
     processor: Processor,
     term: Term<TerminalListener>,
     pub cols: u16,
@@ -47,13 +55,138 @@ pub struct TerminalTab {
     cwd_osc_buffer: Vec<u8>,
     events: BackendEventSender,
     pub scroll_pixel_y: f32,
-    pub(crate) highlight_cache: std::cell::RefCell<
-        Option<(
-            Vec<RenderCell>,
-            std::collections::HashMap<(i32, i32), gpui::Hsla>,
-        )>,
-    >,
-    viewport_signature: u64,
+    highlight_cache: RefCell<super::highlight::HighlightCache>,
+    highlight_refresh: RefCell<HighlightRefresh>,
+    snapshot_cache: RefCell<Option<SnapshotCache>>,
+    pending_damage: RefCell<DirtyRows>,
+    // Tracks terminal or viewport mutations without scanning every visible cell.
+    dirty_generation: u64,
+}
+
+struct SnapshotCache {
+    dirty_generation: u64,
+    keyword_highlight_enabled: bool,
+    highlight_generation: u64,
+    snapshot: Rc<RenderSnapshot>,
+}
+
+const HIGHLIGHT_REFRESH_INTERVAL: Duration = Duration::from_millis(125);
+
+struct HighlightRefresh {
+    pending_damage: DirtyRows,
+    source_rows: Option<Rc<Vec<Rc<RenderRow>>>>,
+    highlights: Rc<HashMap<(i32, i32), gpui::Hsla>>,
+    last_refresh: Option<Instant>,
+    generation: u64,
+    enabled: bool,
+    force: bool,
+}
+
+impl Default for HighlightRefresh {
+    fn default() -> Self {
+        Self {
+            pending_damage: DirtyRows::full(),
+            source_rows: None,
+            highlights: Rc::new(HashMap::new()),
+            last_refresh: None,
+            generation: 0,
+            enabled: false,
+            force: false,
+        }
+    }
+}
+
+impl HighlightRefresh {
+    fn record_damage(&mut self, damage: DirtyRows) {
+        self.pending_damage.extend(damage);
+    }
+
+    fn disable(&mut self) {
+        self.enabled = false;
+    }
+
+    fn should_refresh_at(&self, now: Instant) -> bool {
+        self.force
+            || ((self.pending_damage.full || !self.pending_damage.rows.is_empty())
+                && self.last_refresh.is_none_or(|last_refresh| {
+                    now.duration_since(last_refresh) >= HIGHLIGHT_REFRESH_INTERVAL
+                }))
+    }
+
+    fn cached_highlights_for(
+        &self,
+        rows: &Rc<Vec<Rc<RenderRow>>>,
+    ) -> Rc<HashMap<(i32, i32), gpui::Hsla>> {
+        let Some(source_rows) = &self.source_rows else {
+            return Rc::new(HashMap::new());
+        };
+        if source_rows.len() != rows.len() {
+            return Rc::new(HashMap::new());
+        }
+
+        // A row can safely keep a deferred highlight only when the current
+        // snapshot still holds the exact same verified row block. This also
+        // handles scrolling without moving a stale bottom-row highlight onto
+        // a row that was modified before the same output batch scrolled.
+        let source_to_current = source_rows
+            .iter()
+            .enumerate()
+            .filter_map(|(source_row, source)| {
+                rows.iter()
+                    .position(|current| Rc::ptr_eq(source, current))
+                    .map(|current_row| (source_row, current_row))
+            })
+            .collect::<HashMap<_, _>>();
+        if source_to_current.len() == rows.len()
+            && source_to_current
+                .iter()
+                .all(|(source_row, current_row)| source_row == current_row)
+        {
+            return self.highlights.clone();
+        }
+        if source_to_current.is_empty() {
+            return Rc::new(HashMap::new());
+        }
+
+        Rc::new(
+            self.highlights
+                .iter()
+                .filter_map(|((row, col), color)| {
+                    let source_row = usize::try_from(*row).ok()?;
+                    let current_row = source_to_current.get(&source_row)?;
+                    Some(((*current_row as i32, *col), *color))
+                })
+                .collect(),
+        )
+    }
+}
+
+#[derive(Clone, Default)]
+struct DirtyRows {
+    full: bool,
+    rows: BTreeSet<usize>,
+}
+
+impl DirtyRows {
+    fn full() -> Self {
+        Self {
+            full: true,
+            rows: BTreeSet::new(),
+        }
+    }
+
+    fn mark_full(&mut self) {
+        self.full = true;
+        self.rows.clear();
+    }
+
+    fn extend(&mut self, damage: Self) {
+        if damage.full {
+            self.mark_full();
+        } else if !self.full {
+            self.rows.extend(damage.rows);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -65,21 +198,24 @@ pub struct CursorState {
 
 #[derive(Clone, PartialEq)]
 pub struct RenderCell {
-    pub row: i32,
     pub col: i32,
     pub cell: Cell,
 }
 
+pub struct RenderRow {
+    pub cells: Vec<RenderCell>,
+}
+
 #[derive(Clone)]
 pub struct RenderSnapshot {
-    pub cells: Vec<RenderCell>,
+    pub visible_rows: Rc<Vec<Rc<RenderRow>>>,
     pub cursor: Option<CursorState>,
     pub selection: Option<ViewportSelection>,
     pub display_offset: usize,
     pub history_size: usize,
     pub rows: usize,
     pub cols: usize,
-    pub highlights: std::collections::HashMap<(i32, i32), gpui::Hsla>,
+    pub highlights: Rc<HashMap<(i32, i32), gpui::Hsla>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,11 +241,6 @@ pub struct TerminalMouseTrackingMode {
     pub sgr_mouse: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct ViewportSignature {
-    pub value: u64,
-}
-
 #[derive(Clone, Copy)]
 pub struct ViewportSelection {
     pub start_row: usize,
@@ -123,17 +254,20 @@ impl TerminalTab {
     pub fn new_local(
         id: String,
         title: String,
+        profile: LocalShellProfile,
         backend: BackendTx,
         events: BackendEventSender,
     ) -> Self {
-        Self::new(
+        let mut tab = Self::new(
             id,
             title,
             TabKind::Local,
             "local shell".into(),
             backend,
             events,
-        )
+        );
+        tab.local_shell_profile = Some(profile);
+        tab
     }
 
     pub fn new_ssh(
@@ -167,7 +301,7 @@ impl TerminalTab {
         events: BackendEventSender,
     ) -> Self {
         let shared_backend = std::sync::Arc::new(std::sync::Mutex::new(backend));
-        let mut this = Self {
+        Self {
             id: id.clone(),
             title,
             kind,
@@ -177,6 +311,7 @@ impl TerminalTab {
             backend_generation: 0,
             backend_initialized: true,
             session: None,
+            local_shell_profile: None,
             processor: Processor::new(),
             term: new_term(100, 30, shared_backend.clone(), id, events.clone()),
             cols: 100,
@@ -186,17 +321,23 @@ impl TerminalTab {
             cwd_osc_buffer: Vec::new(),
             events: events.clone(),
             scroll_pixel_y: 0.0,
-            highlight_cache: std::cell::RefCell::new(None),
-            viewport_signature: 0,
-        };
-        this.refresh_viewport_signature();
-        this
+            highlight_cache: RefCell::new(super::highlight::HighlightCache::default()),
+            highlight_refresh: RefCell::new(HighlightRefresh::default()),
+            snapshot_cache: RefCell::new(None),
+            pending_damage: RefCell::new(DirtyRows::full()),
+            dirty_generation: 0,
+        }
     }
 
     pub fn feed(&mut self, bytes: &[u8]) -> bool {
+        if bytes.is_empty() {
+            return false;
+        }
         self.capture_working_directory(bytes);
         self.processor.advance(&mut self.term, bytes);
-        self.refresh_viewport_signature()
+        self.collect_term_damage();
+        self.mark_dirty();
+        true
     }
 
     fn capture_working_directory(&mut self, bytes: &[u8]) {
@@ -262,7 +403,8 @@ impl TerminalTab {
                 "Terminal resized"
             );
             self.term.resize(TerminalSize::new(self.cols, self.rows));
-            self.refresh_viewport_signature();
+            self.collect_term_damage();
+            self.mark_dirty();
             self.send_backend(BackendCommand::Resize { cols, rows });
         }
     }
@@ -303,58 +445,53 @@ impl TerminalTab {
         }
     }
 
-    pub fn render_snapshot(&self) -> RenderSnapshot {
+    pub fn render_snapshot(&self, keyword_highlight_enabled: bool) -> Rc<RenderSnapshot> {
+        self.render_snapshot_at(keyword_highlight_enabled, Instant::now())
+    }
+
+    fn render_snapshot_at(
+        &self,
+        keyword_highlight_enabled: bool,
+        now: Instant,
+    ) -> Rc<RenderSnapshot> {
+        let highlight_generation = self.highlight_refresh.borrow().generation;
+        let highlight_due = keyword_highlight_enabled && self.highlight_refresh_due(now);
+        if let Some(snapshot) = self
+            .snapshot_cache
+            .borrow()
+            .as_ref()
+            .filter(|cache| {
+                cache.dirty_generation == self.dirty_generation
+                    && cache.keyword_highlight_enabled == keyword_highlight_enabled
+                    && cache.highlight_generation == highlight_generation
+                    && !highlight_due
+            })
+            .map(|cache| cache.snapshot.clone())
+        {
+            return snapshot;
+        }
+
         let rows = self.rows;
         let cols = self.cols;
         let content = self.term.renderable_content();
-        let display_offset = content.display_offset as i32;
-        let mut cells = Vec::with_capacity((rows as usize) * (cols as usize));
+        let dirty_rows = std::mem::take(&mut *self.pending_damage.borrow_mut());
+        let snapshot_cache = self.snapshot_cache.borrow();
+        let previous = snapshot_cache.as_ref().map(|cache| &cache.snapshot);
+        let visible_rows = build_visible_rows(
+            &self.term,
+            content.display_offset,
+            rows as usize,
+            cols as usize,
+            previous,
+            &dirty_rows,
+        );
+        drop(snapshot_cache);
 
-        for indexed in content.display_iter {
-            let line = indexed.point.line.0;
-            let row = line + display_offset;
-            if row < 0 {
-                continue;
-            }
-            if row >= rows as i32 {
-                continue;
-            }
+        let highlights = self.highlight_snapshot(&visible_rows, keyword_highlight_enabled, now);
+        let highlight_generation = self.highlight_refresh.borrow().generation;
 
-            let col = indexed.point.column.0 as i32;
-            if col >= cols as i32 {
-                continue;
-            }
-
-            cells.push(RenderCell {
-                row,
-                col,
-                cell: indexed.cell.clone(),
-            });
-        }
-
-        // Get highlights from cache or recompute, only if keyword_highlight is enabled.
-        let is_enabled = crate::config::ConfigStore::load()
-            .map(|c| c.keyword_highlight())
-            .unwrap_or(false);
-
-        let highlights = if is_enabled {
-            let mut cache = self.highlight_cache.borrow_mut();
-            let cache_valid = cache
-                .as_ref()
-                .is_some_and(|(cached_cells, _)| cached_cells == &cells);
-            if cache_valid {
-                cache.as_ref().unwrap().1.clone()
-            } else {
-                let computed = super::highlight::highlight_cells(&cells, rows as usize);
-                *cache = Some((cells.clone(), computed.clone()));
-                computed
-            }
-        } else {
-            std::collections::HashMap::new()
-        };
-
-        RenderSnapshot {
-            cells,
+        let snapshot = Rc::new(RenderSnapshot {
+            visible_rows,
             cursor: self.cursor_state(),
             selection: viewport_selection_from_range(
                 content.display_offset,
@@ -367,7 +504,14 @@ impl TerminalTab {
             rows: self.rows as usize,
             cols: self.cols as usize,
             highlights,
-        }
+        });
+        *self.snapshot_cache.borrow_mut() = Some(SnapshotCache {
+            dirty_generation: self.dirty_generation,
+            keyword_highlight_enabled,
+            highlight_generation,
+            snapshot: snapshot.clone(),
+        });
+        snapshot
     }
 
     /// Return `(grid_line_base, rows_data)` for the **entire** terminal buffer
@@ -400,28 +544,62 @@ impl TerminalTab {
 
     pub fn scroll_history(&mut self, delta: i32) {
         if delta != 0 {
+            let display_offset = self.term.grid().display_offset();
             self.term.scroll_display(Scroll::Delta(delta));
-            self.refresh_viewport_signature();
+            if self.term.grid().display_offset() != display_offset {
+                self.collect_term_damage();
+                self.force_highlight_refresh();
+                self.mark_dirty();
+            }
         }
     }
 
     pub fn scroll_up_by(&mut self, lines: usize) {
         if lines != 0 {
+            let display_offset = self.term.grid().display_offset();
             self.term.scroll_display(Scroll::Delta(lines as i32));
-            self.refresh_viewport_signature();
+            if self.term.grid().display_offset() != display_offset {
+                self.collect_term_damage();
+                self.force_highlight_refresh();
+                self.mark_dirty();
+            }
         }
     }
 
     pub fn scroll_down_by(&mut self, lines: usize) {
         if lines != 0 {
+            let display_offset = self.term.grid().display_offset();
             self.term.scroll_display(Scroll::Delta(-(lines as i32)));
-            self.refresh_viewport_signature();
+            if self.term.grid().display_offset() != display_offset {
+                self.collect_term_damage();
+                self.force_highlight_refresh();
+                self.mark_dirty();
+            }
         }
     }
 
     pub fn scroll_to_bottom(&mut self) {
+        let display_offset = self.term.grid().display_offset();
         self.term.scroll_display(Scroll::Bottom);
-        self.refresh_viewport_signature();
+        if self.term.grid().display_offset() != display_offset {
+            self.collect_term_damage();
+            self.force_highlight_refresh();
+            self.mark_dirty();
+        }
+    }
+
+    pub fn display_offset(&self) -> usize {
+        self.term.grid().display_offset()
+    }
+
+    /// Make delayed colors current before an operation that exposes terminal text.
+    pub fn force_highlight_refresh(&self) {
+        self.highlight_refresh.borrow_mut().force = true;
+    }
+
+    pub fn highlight_refresh_due(&self, now: Instant) -> bool {
+        let refresh = self.highlight_refresh.borrow();
+        refresh.enabled && refresh.should_refresh_at(now)
     }
 
     #[allow(dead_code)]
@@ -439,7 +617,9 @@ impl TerminalTab {
     }
 
     pub fn clear_selection(&mut self) {
-        self.term.selection = None;
+        if self.term.selection.take().is_some() {
+            self.mark_dirty();
+        }
     }
 
     pub fn selection_text(&self) -> Option<String> {
@@ -460,6 +640,8 @@ impl TerminalTab {
             Point::new(row, Column(col)),
         );
         self.term.selection = Some(Selection::new(selection_type, point, side));
+        self.force_highlight_refresh();
+        self.mark_dirty();
     }
 
     pub fn update_selection(&mut self, row: usize, col: usize, side: Side) {
@@ -469,6 +651,8 @@ impl TerminalTab {
         );
         if let Some(selection) = self.term.selection.as_mut() {
             selection.update(point, side);
+            self.force_highlight_refresh();
+            self.mark_dirty();
         }
     }
 
@@ -491,53 +675,162 @@ impl TerminalTab {
         self.send_backend(BackendCommand::Input(bytes));
     }
 
-    pub fn refresh_viewport_signature(&mut self) -> bool {
-        let signature = self.compute_viewport_signature().value;
-        let changed = self.viewport_signature != signature;
-        self.viewport_signature = signature;
-        changed
+    fn collect_term_damage(&mut self) {
+        let damage = match self.term.damage() {
+            TermDamage::Full => DirtyRows::full(),
+            TermDamage::Partial(lines) => DirtyRows {
+                full: false,
+                rows: lines
+                    .filter_map(|line| (line.line < self.rows as usize).then_some(line.line))
+                    .collect(),
+            },
+        };
+        self.term.reset_damage();
+        self.pending_damage.borrow_mut().extend(damage.clone());
+        self.highlight_refresh.borrow_mut().record_damage(damage);
     }
 
-    fn compute_viewport_signature(&self) -> ViewportSignature {
-        let content = self.term.renderable_content();
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-
-        self.rows.hash(&mut hasher);
-        self.cols.hash(&mut hasher);
-        content.display_offset.hash(&mut hasher);
-        self.term.grid().history_size().hash(&mut hasher);
-
-        if content.display_offset == 0 {
-            if let Some(cursor) = self.cursor_state() {
-                cursor.row.hash(&mut hasher);
-                cursor.col.hash(&mut hasher);
-                std::mem::discriminant(&cursor.shape).hash(&mut hasher);
-            } else {
-                0usize.hash(&mut hasher);
-            }
-        } else {
-            usize::MAX.hash(&mut hasher);
+    fn highlight_snapshot(
+        &self,
+        visible_rows: &Rc<Vec<Rc<RenderRow>>>,
+        keyword_highlight_enabled: bool,
+        now: Instant,
+    ) -> Rc<HashMap<(i32, i32), gpui::Hsla>> {
+        if !keyword_highlight_enabled {
+            self.highlight_refresh.borrow_mut().disable();
+            return Rc::new(HashMap::new());
         }
 
-        for indexed in content.display_iter {
-            let cell = indexed.cell;
-            let point = indexed.point;
-
-            point.line.0.hash(&mut hasher);
-            point.column.0.hash(&mut hasher);
-            cell.c.hash(&mut hasher);
-            hash_ansi_color(cell.fg, &mut hasher);
-            hash_ansi_color(cell.bg, &mut hasher);
-            cell.flags.bits().hash(&mut hasher);
-            if let Some(zerowidth) = cell.zerowidth() {
-                zerowidth.hash(&mut hasher);
-            }
+        let mut refresh = self.highlight_refresh.borrow_mut();
+        if !refresh.enabled {
+            refresh.enabled = true;
+            refresh.pending_damage.mark_full();
+            refresh.force = true;
         }
 
-        ViewportSignature {
-            value: hasher.finish(),
+        if refresh.should_refresh_at(now) {
+            let damage = std::mem::take(&mut refresh.pending_damage);
+            refresh.highlights = Rc::new(super::highlight::highlight_rows_incremental(
+                visible_rows,
+                &damage.rows,
+                damage.full,
+                &mut self.highlight_cache.borrow_mut(),
+            ));
+            refresh.source_rows = Some(visible_rows.clone());
+            refresh.last_refresh = Some(now);
+            refresh.generation = refresh.generation.wrapping_add(1);
+            refresh.force = false;
+            return refresh.highlights.clone();
+        }
+
+        refresh.cached_highlights_for(visible_rows)
+    }
+
+    fn mark_dirty(&mut self) {
+        self.dirty_generation = self.dirty_generation.wrapping_add(1);
+    }
+}
+
+fn build_visible_rows(
+    term: &Term<TerminalListener>,
+    display_offset: usize,
+    rows: usize,
+    cols: usize,
+    previous: Option<&Rc<RenderSnapshot>>,
+    damage: &DirtyRows,
+) -> Rc<Vec<Rc<RenderRow>>> {
+    let mut visible_rows = previous
+        .filter(|snapshot| snapshot.rows == rows && snapshot.cols == cols)
+        .map_or_else(
+            || {
+                (0..rows)
+                    .map(|_| Rc::new(RenderRow { cells: Vec::new() }))
+                    .collect()
+            },
+            |snapshot| snapshot.visible_rows.as_ref().clone(),
+        );
+
+    let scroll_rows = previous
+        .filter(|snapshot| snapshot.display_offset == 0 && display_offset == 0)
+        .map(|snapshot| {
+            term.grid()
+                .history_size()
+                .saturating_sub(snapshot.history_size)
+        })
+        .filter(|scroll_rows| *scroll_rows > 0 && *scroll_rows < rows);
+    let mut reused_rows = BTreeSet::new();
+    if damage.full
+        && let Some(scroll_rows) = scroll_rows
+    {
+        let previous_rows = previous
+            .expect("scroll row reuse requires a previous snapshot")
+            .visible_rows
+            .as_ref();
+        for row in 0..rows - scroll_rows {
+            let candidate = &previous_rows[row + scroll_rows];
+            if render_row_matches_term(term, candidate, display_offset, row, cols) {
+                visible_rows[row] = candidate.clone();
+                reused_rows.insert(row);
+            }
         }
     }
+
+    let rebuild_all = damage.full || previous.is_none();
+    let changed_rows = rebuild_all
+        .then(|| {
+            (0..rows)
+                .filter(|row| !reused_rows.contains(row))
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_else(|| damage.rows.clone());
+
+    if changed_rows.is_empty() {
+        return Rc::new(visible_rows);
+    }
+
+    let mut rebuilt_rows = changed_rows
+        .iter()
+        .copied()
+        .map(|row| (row, Vec::with_capacity(cols)))
+        .collect::<HashMap<_, _>>();
+    let grid = term.grid();
+    for &row in &changed_rows {
+        let grid_row = viewport_to_point(display_offset, Point::new(row, Column(0))).line;
+        let cells = rebuilt_rows
+            .get_mut(&row)
+            .expect("changed row is initialized");
+        for col in 0..cols {
+            let point = Point::new(grid_row, Column(col));
+            cells.push(RenderCell {
+                col: col as i32,
+                cell: grid[point].clone(),
+            });
+        }
+    }
+
+    for row in changed_rows {
+        let cells = rebuilt_rows.remove(&row).unwrap_or_default();
+        visible_rows[row] = Rc::new(RenderRow { cells });
+    }
+
+    Rc::new(visible_rows)
+}
+
+fn render_row_matches_term(
+    term: &Term<TerminalListener>,
+    row: &RenderRow,
+    display_offset: usize,
+    viewport_row: usize,
+    cols: usize,
+) -> bool {
+    if row.cells.len() != cols {
+        return false;
+    }
+    let grid_row = viewport_to_point(display_offset, Point::new(viewport_row, Column(0))).line;
+    let grid = term.grid();
+    row.cells.iter().enumerate().all(|(col, render_cell)| {
+        render_cell.col == col as i32 && render_cell.cell == grid[Point::new(grid_row, Column(col))]
+    })
 }
 
 fn viewport_selection_from_range(
@@ -589,28 +882,12 @@ fn viewport_selection_from_range(
     })
 }
 
-fn hash_ansi_color<H: Hasher>(color: AnsiColor, state: &mut H) {
-    match color {
-        AnsiColor::Named(named) => {
-            0u8.hash(state);
-            std::mem::discriminant(&named).hash(state);
-        }
-        AnsiColor::Spec(rgb) => {
-            1u8.hash(state);
-            rgb.r.hash(state);
-            rgb.g.hash(state);
-            rgb.b.hash(state);
-        }
-        AnsiColor::Indexed(index) => {
-            2u8.hash(state);
-            index.hash(state);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, mpsc};
+    use std::{
+        sync::{Arc, mpsc},
+        time::{Duration, Instant},
+    };
 
     use alacritty_terminal::term::TermMode;
 
@@ -619,7 +896,7 @@ mod tests {
         terminal::{BackendShutdown, BackendTx},
     };
 
-    use super::TerminalTab;
+    use super::{HIGHLIGHT_REFRESH_INTERVAL, SelectionType, Side, TerminalTab};
 
     struct NoopShutdown;
 
@@ -679,6 +956,180 @@ mod tests {
         assert_eq!(row_text(&tab, 0), "primary     ");
     }
 
+    #[test]
+    fn feed_advances_dirty_generation_once_per_nonempty_batch() {
+        let mut tab = test_tab(8, 4);
+        let initial_generation = tab.dirty_generation;
+
+        assert!(!tab.feed(b""));
+        assert_eq!(tab.dirty_generation, initial_generation);
+        assert!(tab.feed(b"first"));
+        assert_eq!(tab.dirty_generation, initial_generation.wrapping_add(1));
+        assert!(tab.feed(b"second"));
+        assert_eq!(tab.dirty_generation, initial_generation.wrapping_add(2));
+    }
+
+    #[test]
+    fn combined_output_matches_sequential_output_across_escape_boundaries() {
+        let mut sequential = test_tab(8, 4);
+        let mut combined = test_tab(8, 4);
+
+        sequential.feed(b"\x1b[31mred");
+        sequential.feed(b"\x1b[0m plain\r\n");
+        combined.feed(b"\x1b[31mred\x1b[0m plain\r\n");
+
+        let sequential_snapshot = sequential.render_snapshot(false);
+        let combined_snapshot = combined.render_snapshot(false);
+        assert!(same_visible_rows(&sequential_snapshot, &combined_snapshot));
+        assert_eq!(
+            row_text(&sequential, 0),
+            row_text(&combined, 0),
+            "combined output preserves terminal text"
+        );
+    }
+
+    #[test]
+    fn render_snapshot_reuses_generation_and_separates_keyword_setting() {
+        let mut tab = test_tab(16, 4);
+        tab.feed(b"ERROR");
+
+        let first = tab.render_snapshot(true);
+        let repeated = tab.render_snapshot(true);
+        assert!(std::rc::Rc::ptr_eq(&first, &repeated));
+        assert!(!first.highlights.is_empty());
+
+        let disabled = tab.render_snapshot(false);
+        assert!(!std::rc::Rc::ptr_eq(&first, &disabled));
+        assert!(disabled.highlights.is_empty());
+    }
+
+    #[test]
+    fn continuous_output_defers_highlight_recompute_until_interval_expires() {
+        let mut tab = test_tab(16, 4);
+        let start = Instant::now();
+        tab.feed(b"ERROR");
+        let first = tab.render_snapshot_at(true, start);
+        assert!(!first.highlights.is_empty());
+
+        tab.feed(b"\rWARN ");
+        let deferred = tab.render_snapshot_at(true, start + Duration::from_millis(1));
+        assert!(deferred.highlights.is_empty());
+        assert_eq!(tab.highlight_refresh.borrow().generation, 1);
+
+        let refreshed = tab.render_snapshot_at(true, start + HIGHLIGHT_REFRESH_INTERVAL);
+        assert!(!refreshed.highlights.is_empty());
+        assert_eq!(tab.highlight_refresh.borrow().generation, 2);
+    }
+
+    #[test]
+    fn forced_highlight_refresh_bypasses_output_interval() {
+        let mut tab = test_tab(16, 4);
+        let start = Instant::now();
+        tab.feed(b"ERROR");
+        let _ = tab.render_snapshot_at(true, start);
+
+        tab.feed(b"\rWARN ");
+        tab.force_highlight_refresh();
+        let refreshed = tab.render_snapshot_at(true, start + Duration::from_millis(1));
+
+        assert!(!refreshed.highlights.is_empty());
+        assert_eq!(tab.highlight_refresh.borrow().generation, 2);
+    }
+
+    #[test]
+    fn output_and_selection_invalidate_render_snapshot() {
+        let mut tab = test_tab(16, 4);
+        let initial = tab.render_snapshot(false);
+
+        tab.feed(b"output");
+        let after_output = tab.render_snapshot(false);
+        assert!(!std::rc::Rc::ptr_eq(&initial, &after_output));
+
+        tab.begin_selection(0, 0, Side::Left, SelectionType::Simple);
+        let after_begin_selection = tab.render_snapshot(false);
+        assert!(!std::rc::Rc::ptr_eq(&after_output, &after_begin_selection));
+
+        tab.update_selection(0, 1, Side::Right);
+        let after_update_selection = tab.render_snapshot(false);
+        assert!(!std::rc::Rc::ptr_eq(
+            &after_begin_selection,
+            &after_update_selection
+        ));
+
+        tab.clear_selection();
+        let after_clear_selection = tab.render_snapshot(false);
+        assert!(!std::rc::Rc::ptr_eq(
+            &after_update_selection,
+            &after_clear_selection
+        ));
+    }
+
+    #[test]
+    fn output_reuses_undamaged_visible_rows() {
+        let mut tab = test_tab(12, 4);
+        tab.feed(b"first\r\nsecond");
+        let before = tab.render_snapshot(false);
+        let first_row = before.visible_rows[0].clone();
+
+        tab.feed(b"\r\nthird");
+        let after = tab.render_snapshot(false);
+
+        assert!(std::rc::Rc::ptr_eq(&first_row, &after.visible_rows[0]));
+    }
+
+    #[test]
+    fn bottom_scroll_reuses_verified_shifted_rows() {
+        let mut tab = test_tab(12, 4);
+        tab.feed(b"line0\r\nline1\r\nline2\r\nline3");
+        let before = tab.render_snapshot(false);
+        let prior_second_row = before.visible_rows[1].clone();
+
+        tab.feed(b"\r\nline4");
+        let after = tab.render_snapshot(false);
+
+        assert_eq!(row_text(&tab, 0), "line1       ");
+        assert!(std::rc::Rc::ptr_eq(
+            &prior_second_row,
+            &after.visible_rows[0]
+        ));
+    }
+
+    #[test]
+    fn bottom_scroll_rebuilds_row_changed_before_same_batch_scroll() {
+        let mut tab = test_tab(12, 4);
+        tab.feed(b"line0\r\nline1\r\nline2\r\nline3");
+        let before = tab.render_snapshot(false);
+        let prior_bottom_row = before.visible_rows[3].clone();
+
+        tab.feed(b"\rCHANGED\r\nline4");
+        let after = tab.render_snapshot(false);
+
+        assert_eq!(row_text(&tab, 2), "CHANGED     ");
+        assert!(!std::rc::Rc::ptr_eq(
+            &prior_bottom_row,
+            &after.visible_rows[2]
+        ));
+    }
+
+    #[test]
+    fn deferred_highlights_follow_only_verified_scrolled_rows() {
+        let mut tab = test_tab(12, 4);
+        let start = Instant::now();
+        tab.feed(b"INFO zero\r\nINFO one\r\nINFO two\r\nERROR three");
+        let before = tab.render_snapshot_at(true, start);
+        assert!(before.highlights.contains_key(&(1, 0)));
+        assert!(before.highlights.contains_key(&(3, 0)));
+
+        tab.feed(b"\rCHANGED\r\nINFO four");
+        let after = tab.render_snapshot_at(true, start + Duration::from_millis(1));
+
+        // The old second row was verified unchanged and moved into row zero.
+        assert!(after.highlights.contains_key(&(0, 0)));
+        // The prior bottom row was overwritten before scrolling, so its ERROR
+        // color must not be reused for the new CHANGED row.
+        assert!(!after.highlights.contains_key(&(2, 0)));
+    }
+
     fn test_tab(cols: u16, rows: u16) -> TerminalTab {
         let (commands, _commands_rx) = mpsc::channel();
         let backend = BackendTx::Local {
@@ -686,9 +1137,16 @@ mod tests {
             shutdown: Arc::new(NoopShutdown),
         };
         let (events, _events_rx) = backend_event_channel();
+        let profile = crate::config::LocalShellProfile {
+            id: "test-shell".into(),
+            name: "Test shell".into(),
+            program: "test-shell".into(),
+            args: vec!["--interactive".into()],
+        };
         let mut tab = TerminalTab::new_local(
             "test-tab".to_string(),
             "test terminal".to_string(),
+            profile,
             backend,
             events,
         );
@@ -696,17 +1154,45 @@ mod tests {
         tab
     }
 
+    #[test]
+    fn local_tab_retains_its_shell_profile() {
+        let tab = test_tab(12, 4);
+
+        let profile = tab
+            .local_shell_profile
+            .as_ref()
+            .expect("local tabs retain a shell profile");
+        assert_eq!(profile.id, "test-shell");
+        assert_eq!(profile.args, vec!["--interactive"]);
+    }
+
     fn row_text(tab: &TerminalTab, row: i32) -> String {
-        let snapshot = tab.render_snapshot();
+        let snapshot = tab.render_snapshot(false);
         (0..snapshot.cols as i32)
             .map(|col| {
                 snapshot
-                    .cells
-                    .iter()
-                    .find(|cell| cell.row == row && cell.col == col)
+                    .visible_rows
+                    .get(row as usize)
+                    .and_then(|render_row| render_row.cells.iter().find(|cell| cell.col == col))
                     .map(|cell| cell.cell.c)
                     .unwrap_or(' ')
             })
             .collect()
+    }
+
+    fn same_visible_rows(left: &super::RenderSnapshot, right: &super::RenderSnapshot) -> bool {
+        left.visible_rows.len() == right.visible_rows.len()
+            && left
+                .visible_rows
+                .iter()
+                .zip(right.visible_rows.iter())
+                .all(|(left, right)| {
+                    left.cells.len() == right.cells.len()
+                        && left
+                            .cells
+                            .iter()
+                            .zip(&right.cells)
+                            .all(|(left, right)| left.col == right.col && left.cell == right.cell)
+                })
     }
 }
