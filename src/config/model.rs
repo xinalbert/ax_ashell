@@ -282,6 +282,8 @@ pub(super) struct ConfigFile {
     pub(super) settings_close_shortcut_confirms: bool,
     #[serde(default = "default_deep_sleep_after_minutes")]
     pub(super) deep_sleep_after_minutes: u32,
+    #[serde(default = "default_rayon_threads")]
+    pub(super) rayon_threads: usize,
     #[serde(default)]
     pub(super) lock_layout: bool,
     #[serde(default)]
@@ -365,6 +367,17 @@ pub(super) fn normalize_deep_sleep_after_minutes(value: u32) -> u32 {
     match value {
         0 | 1 | 5 | 15 | 30 => value,
         _ => default_deep_sleep_after_minutes(),
+    }
+}
+
+pub(super) const RAYON_THREADS_MIN: usize = 1;
+pub(super) const RAYON_THREADS_MAX: usize = 64;
+
+pub(super) fn normalize_rayon_threads(value: usize) -> usize {
+    if value < RAYON_THREADS_MIN {
+        default_rayon_threads()
+    } else {
+        value.min(RAYON_THREADS_MAX)
     }
 }
 
@@ -455,6 +468,10 @@ pub(super) fn default_deep_sleep_after_minutes() -> u32 {
     5
 }
 
+pub(super) fn default_rayon_threads() -> usize {
+    2
+}
+
 fn default_s3_region() -> String {
     "us-east-1".to_string()
 }
@@ -524,6 +541,7 @@ impl Default for ConfigFile {
             sftp_transfer_close_behavior: default_sftp_transfer_close_behavior(),
             settings_close_shortcut_confirms: default_settings_close_shortcut_confirms(),
             deep_sleep_after_minutes: default_deep_sleep_after_minutes(),
+            rayon_threads: default_rayon_threads(),
             lock_layout: false,
             color_inactive_tabs: false,
             monitoring_position: default_monitoring_position(),

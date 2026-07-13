@@ -74,6 +74,11 @@ impl AxShell {
             );
             ConfigStore::in_memory()
         });
+        let rayon_threads_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(t!("rayon_threads_input_placeholder").to_string())
+                .default_value(config.rayon_threads().to_string())
+        });
         let app_menu_bar = if cfg!(any(target_os = "windows", target_os = "linux")) {
             Some(AppMenuBar::new(cx))
         } else {
@@ -246,6 +251,7 @@ impl AxShell {
             cx.subscribe_in(&proxy_password_input, window, Self::on_input_event),
             cx.subscribe_in(&ssh_retry_count_input, window, Self::on_input_event),
             cx.subscribe_in(&ssh_retry_delays_input, window, Self::on_input_event),
+            cx.subscribe_in(&rayon_threads_input, window, Self::on_input_event),
             cx.subscribe_in(&xquartz_app_path_input, window, Self::on_input_event),
             cx.subscribe_in(&sftp_path_input, window, Self::on_input_event),
             cx.subscribe_in(&local_sftp_path_input, window, Self::on_input_event),
@@ -370,6 +376,7 @@ impl AxShell {
             global_proxy_password_input,
             ssh_retry_count_input,
             ssh_retry_delays_input,
+            rayon_threads_input,
             xquartz_app_path_input,
             sync_endpoint_input,
             sync_username_input,

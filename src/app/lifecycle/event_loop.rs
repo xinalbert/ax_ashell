@@ -26,6 +26,14 @@ struct DrainResult {
     ui_changed: bool,
 }
 
+fn parse_rayon_threads_input(value: &str) -> Option<usize> {
+    value
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .filter(|value| *value > 0)
+}
+
 impl AxShell {
     pub(crate) fn start_event_pump(&self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
@@ -219,6 +227,16 @@ impl AxShell {
                 }
                 _ => {}
             }
+        } else if input == &self.rayon_threads_input {
+            match event {
+                InputEvent::PressEnter { .. } => {
+                    self.commit_rayon_threads_input(window, cx);
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+                InputEvent::Blur => self.commit_rayon_threads_input(window, cx),
+                _ => {}
+            }
         } else if self
             .custom_theme_inputs
             .values()
@@ -243,6 +261,21 @@ impl AxShell {
             cx.stop_propagation();
         }
         cx.notify();
+    }
+
+    fn commit_rayon_threads_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let input_value = self.rayon_threads_input.read(cx).text().to_string();
+        let requested = parse_rayon_threads_input(&input_value);
+        if let Some(requested) = requested {
+            self.config.set_rayon_threads(requested);
+            self.config.save_logged("set_rayon_threads");
+        }
+        Self::set_input_value(
+            &self.rayon_threads_input,
+            self.config.rayon_threads().to_string(),
+            window,
+            cx,
+        );
     }
 
     fn drain_backend_events(&mut self, cx: &mut Context<Self>) -> DrainResult {

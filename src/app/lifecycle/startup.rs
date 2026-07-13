@@ -11,6 +11,7 @@ use crate::config::ConfigStore;
 const INSTANCE_KIND_ENV: &str = "AX_SHELL_INSTANCE_KIND";
 const INSTANCE_APP_ID_ENV: &str = "AX_SHELL_APP_ID";
 const DEV_RELOAD_INSTANCE_KIND: &str = "dev-reload";
+const RAYON_NUM_THREADS_ENV: &str = "RAYON_NUM_THREADS";
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 const DEFAULT_LINUX_APP_ID: &str = "ax_shell";
 const LOG_FILES_TO_KEEP: usize = 24 * 7;
@@ -63,6 +64,13 @@ fn should_force_app_activation() -> bool {
 pub(crate) fn bind_workspace_keys(cx: &mut gpui::App) {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
     crate::app::keybinding_recorder::bind_workspace_keys_from_config(cx, &config);
+}
+
+pub(crate) fn configure_rayon_threads() {
+    let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
+    unsafe {
+        std::env::set_var(RAYON_NUM_THREADS_ENV, config.rayon_threads().to_string());
+    }
 }
 
 fn app_config_dir() -> PathBuf {

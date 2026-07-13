@@ -30,6 +30,7 @@ pub(crate) use app::{AxShell, PaneLayout, SelectorEntry, SftpContextMenuState, T
 fn main() {
     app::startup::install_crash_hook();
     app::startup::sync_macos_launch_environment();
+    app::startup::configure_rayon_threads();
     let _log_guard = app::startup::init_logging();
 
     #[cfg(target_os = "macos")]

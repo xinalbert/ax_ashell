@@ -108,6 +108,7 @@ impl ConfigStore {
             normalize_sftp_transfer_close_behavior(&cache.sftp_transfer_close_behavior);
         cache.deep_sleep_after_minutes =
             normalize_deep_sleep_after_minutes(cache.deep_sleep_after_minutes);
+        cache.rayon_threads = normalize_rayon_threads(cache.rayon_threads);
         normalize_last_local_sftp_paths(&mut cache);
 
         let mut store = Self { path, cache };
@@ -1140,6 +1141,14 @@ impl ConfigStore {
 
     pub fn set_deep_sleep_after_minutes(&mut self, value: u32) {
         self.cache.deep_sleep_after_minutes = normalize_deep_sleep_after_minutes(value);
+    }
+
+    pub fn rayon_threads(&self) -> usize {
+        self.cache.rayon_threads
+    }
+
+    pub fn set_rayon_threads(&mut self, value: usize) {
+        self.cache.rayon_threads = normalize_rayon_threads(value);
     }
 
     pub fn lock_layout(&self) -> bool {

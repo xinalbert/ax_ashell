@@ -10,6 +10,7 @@ pub(super) fn settings_monitoring_page(
     let show_monitoring_dashboard = shell.config.show_monitoring_dashboard();
     let monitoring_position = shell.config.monitoring_position().to_string();
     let deep_sleep_after_minutes = shell.config.deep_sleep_after_minutes();
+    let rayon_threads_input = shell.rayon_threads_input.clone();
 
     SettingPage::new(t!("settings_monitoring").to_string())
         .icon(IconName::PanelLeftOpen)
@@ -128,6 +129,19 @@ pub(super) fn settings_monitoring_page(
                         }),
                     )
                     .description(t!("deep_sleep_after_unfocused_hint").to_string()),
+                )
+                .item(
+                    SettingItem::new(
+                        t!("rayon_threads").to_string(),
+                        SettingField::render({
+                            move |_, _window, _cx| {
+                                Input::new(&rayon_threads_input)
+                                    .w(px(180.))
+                                    .into_any_element()
+                            }
+                        }),
+                    )
+                    .description(t!("rayon_threads_hint").to_string()),
                 ),
         )
 }
