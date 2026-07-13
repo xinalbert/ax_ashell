@@ -1,3 +1,19 @@
+## 2026-07-13 SFTP 默认本地目录设置完成验证
+
+- 日期：2026-07-13 17:40 +0800
+- 变化摘要：SFTP 本地文件浏览器现在支持全局默认本地目录配置和 Settings 入口；新建或未保存连接会从配置值开始，留空则回退用户主目录；已保存 SSH 会话仍优先恢复各自最后本地目录。运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/config/model.rs`，`src/config/store.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/actions/sftp.rs`，`src/app/dialogs/settings/proxy.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/features/sftp.md`，`docs/features/sftp.zh.md`，`docs/project-env-audit/current.md`，`docs/project-implementation-tracker/current.md`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：`rustfmt --edition 2024` 通过；`cargo test --quiet local_sftp -- --nocapture` 5 项通过；`cargo check` 通过；`cargo test --quiet` 163 项通过；`cargo build` 通过；`git diff --check` 通过；tracking docs validator 通过。保留既有 `block v0.1.6` future-incompat warning；真实 GUI Settings 目录选择、保存、重置和 SFTP 首次打开目录仍需手工确认。
+
+## 2026-07-13 SFTP 默认本地目录设置预检
+
+- 日期：2026-07-13 17:25 +0800
+- 变化摘要：运行时、依赖、工具链和 CI 入口不变；本轮新增 SFTP 本地文件浏览器的全局默认本地目录配置和 Settings 入口，同时保留已保存 SSH 会话的每会话本地目录记忆优先级。
+- 受影响文件：`src/config/model.rs`，`src/config/store.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/actions/sftp.rs`，`src/app/dialogs/settings/proxy.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/features/sftp.md`，`docs/features/sftp.zh.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不修改 WebDAV/S3 `SyncPayload`。
+- 验证结果：相关 Rust 文件格式化通过；`cargo test --quiet local_sftp -- --nocapture` 5 项通过；`cargo check` 通过并仅保留既有 `block v0.1.6` future-incompat warning；完整测试、构建、空白检查和 tracking docs validator 待执行。
+
 ## 2026-07-12 终端 URL 中文标点边界识别预检
 
 - 日期：2026-07-12 16:28 +0800

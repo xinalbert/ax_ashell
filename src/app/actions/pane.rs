@@ -275,9 +275,12 @@ impl AxShell {
                 self.pane_root = pane_root.clone();
                 self.active_group = Some(group_id.clone());
                 let ids = pane_root.tab_ids();
-                if let Some(&first_id) = ids.first() {
+                if let Some(&first_id) = ids.iter().find(|id| !id.is_empty()) {
                     self.active_tab = Some(first_id.to_string());
                     self.focus_pane_with_id(first_id.to_string());
+                } else {
+                    self.active_tab = None;
+                    self.focused_pane_path = vec![];
                 }
             }
 

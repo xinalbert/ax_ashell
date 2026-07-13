@@ -10,6 +10,7 @@ pub(super) fn settings_connection_page(
     let sftp_transfer_close_behavior = shell.config.sftp_transfer_close_behavior().to_string();
     let ssh_retry_count_input = shell.ssh_retry_count_input.clone();
     let ssh_retry_delays_input = shell.ssh_retry_delays_input.clone();
+    let default_local_sftp_path_input = shell.default_local_sftp_path_input.clone();
     let use_proxy = shell.config.use_proxy();
     let read_env_proxy = shell.config.read_env_proxy();
     let x11_forwarding_enabled = shell.config.x11_forwarding_enabled();
@@ -91,7 +92,75 @@ pub(super) fn settings_connection_page(
         )
         .group(
             SettingGroup::new()
-                .title(t!("settings_sftp_transfers").to_string())
+                .title(t!("settings_sftp").to_string())
+                .item(SettingItem::render({
+                    let view = view.clone();
+                    move |_, window, cx| {
+                        let muted_foreground = cx.theme().muted_foreground;
+                        v_flex()
+                            .w_full()
+                            .gap_3()
+                            .child(
+                                selectable_plain_text(
+                                    "default-local-sftp-path-title",
+                                    t!("default_local_sftp_path").to_string(),
+                                )
+                                .text_sm()
+                                .font_weight(FontWeight::BOLD),
+                            )
+                            .child(
+                                div()
+                                    .w_full()
+                                    .min_w(px(320.))
+                                    .child(Input::new(&default_local_sftp_path_input).w_full()),
+                            )
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .gap_2()
+                                    .child(
+                                        Button::new("browse-default-local-sftp-path")
+                                            .small()
+                                            .label(t!("browse").to_string())
+                                            .on_click(window.listener_for(
+                                                &view,
+                                                |this, _, window, cx| {
+                                                    this.pick_default_local_sftp_path(window, cx);
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        Button::new("reset-default-local-sftp-path")
+                                            .small()
+                                            .label(t!("reset_default").to_string())
+                                            .on_click(window.listener_for(
+                                                &view,
+                                                |this, _, window, cx| {
+                                                    this.reset_default_local_sftp_path(window, cx);
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        Button::new("save-default-local-sftp-path")
+                                            .small()
+                                            .primary()
+                                            .label(t!("save").to_string())
+                                            .on_click(window.listener_for(
+                                                &view,
+                                                |this, _, _, cx| {
+                                                    this.save_default_local_sftp_path(cx);
+                                                },
+                                            )),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(muted_foreground)
+                                    .child(t!("default_local_sftp_path_hint").to_string()),
+                            )
+                    }
+                }))
                 .item(SettingItem::new(
                     t!("sftp_shortcut_confirm_behavior").to_string(),
                     SettingField::render({

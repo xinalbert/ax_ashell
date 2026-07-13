@@ -181,6 +181,7 @@ impl AxShell {
                     pane_root: PaneLayout::Single(id),
                     sftp: None,
                     sftp_page_open: false,
+                    sftp_session: None,
                 });
                 self.active_group = Some(group_id);
                 self.status = "local terminal opened".into();
@@ -733,6 +734,69 @@ impl AxShell {
         self.focus_terminal_workspace(window, cx);
     }
 
+    pub(crate) fn open_saved_session_sftp_only(
+        &mut self,
+        session_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        tracing::info!(
+            component = "sftp",
+            operation = "open_saved_sftp_only",
+            session_id,
+            "Opening saved SSH session as SFTP-only page"
+        );
+        let Some(session) = self.config.get(&session_id).cloned() else {
+            self.status = "saved session not found".into();
+            cx.notify();
+            return;
+        };
+
+        self.expanded_saved_groups
+            .insert(normalize_session_group_name(&session.group_name));
+        if let Some(active_group_id) = self.active_group.clone()
+            && let Some(group) = self
+                .tab_groups
+                .iter_mut()
+                .find(|group| group.id == active_group_id)
+        {
+            group.pane_root = self.pane_root.clone();
+        }
+
+        let group_id = Uuid::new_v4().to_string();
+        self.tab_groups.push(TabGroup {
+            id: group_id.clone(),
+            title: session.name.clone(),
+            pane_root: PaneLayout::Single(String::new()),
+            sftp: Some(crate::app::SftpUiState {
+                current_path: "/".into(),
+                status: rust_i18n::t!("sftp_connecting").to_string(),
+                entries: Vec::new(),
+                has_more_entries: false,
+                loading_more_entries: false,
+                reached_entries_limit: false,
+                selected_path: None,
+                preview: None,
+                selected_entries: std::collections::HashSet::new(),
+                home_dir: "/".into(),
+            }),
+            sftp_page_open: true,
+            sftp_session: Some(session),
+        });
+
+        self.active_group = Some(group_id.clone());
+        self.active_tab = None;
+        self.pane_root = PaneLayout::Single(String::new());
+        self.focused_pane_path = vec![];
+        self.pending_sftp_path_sync = Some("/".into());
+        self.ensure_sftp_handle_for_group(&group_id);
+        self.mark_sftp_activity_for_group(&group_id);
+        self.set_workspace_page(WorkspacePage::Sftp, cx);
+        self.focus_handle.focus(window, cx);
+        self.status = "SFTP page opened".into();
+        cx.notify();
+    }
+
     pub(crate) fn focus_terminal_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_workspace_page(WorkspacePage::Terminal, cx);
         self.focus_handle.focus(window, cx);
@@ -805,6 +869,7 @@ impl AxShell {
                 home_dir: "/".into(),
             }),
             sftp_page_open: false,
+            sftp_session: Some(session.clone()),
         });
         self.active_group = Some(group_id.clone());
         self.ensure_active_workspace_tab_visible();
@@ -1086,7 +1151,12 @@ impl AxShell {
         let was_active = self.active_tab.as_deref() == Some(id.as_str());
         let mut next_active_id = None;
         if was_active {
-            let tabs_in_group = group.pane_root.tab_ids();
+            let tabs_in_group: Vec<&str> = group
+                .pane_root
+                .tab_ids()
+                .into_iter()
+                .filter(|tab_id| !tab_id.is_empty())
+                .collect();
             if let Some(pos) = tabs_in_group.iter().position(|&s| s == id.as_str()) {
                 if pos > 0 {
                     next_active_id = Some(tabs_in_group[pos - 1].to_string());
@@ -1102,15 +1172,15 @@ impl AxShell {
                         next_active_id = all_groups[pos - 1]
                             .pane_root
                             .tab_ids()
-                            .first()
-                            .copied()
+                            .into_iter()
+                            .find(|tab_id| !tab_id.is_empty())
                             .map(String::from);
                     } else if pos + 1 < all_groups.len() {
                         next_active_id = all_groups[pos + 1]
                             .pane_root
                             .tab_ids()
-                            .first()
-                            .copied()
+                            .into_iter()
+                            .find(|tab_id| !tab_id.is_empty())
                             .map(String::from);
                     }
                 }
@@ -1122,6 +1192,7 @@ impl AxShell {
                 .pane_root
                 .tab_ids()
                 .iter()
+                .filter(|tab_id| !tab_id.is_empty())
                 .map(|s| s.to_string())
                 .collect();
             for tab_id in &tab_ids {
@@ -1152,7 +1223,7 @@ impl AxShell {
             self.sync_pane_root_to_group();
         }
 
-        if self.tabs.is_empty() || self.tab_groups.is_empty() {
+        if self.tab_groups.is_empty() {
             self.pane_root = PaneLayout::Single(String::new());
             self.focused_pane_path = vec![];
             self.active_tab = None;
@@ -1172,6 +1243,32 @@ impl AxShell {
             return;
         }
 
+        if self.tabs.is_empty() {
+            self.active_tab = None;
+            self.monitoring.system_tab_id = None;
+            self.monitoring.cpu_history.clear();
+            self.monitoring.net_rx_history.clear();
+            self.monitoring.net_tx_history.clear();
+            self.monitoring.status = None;
+            if let Some(group) = self
+                .tab_groups
+                .iter()
+                .find(|group| group.sftp.is_some() && group.sftp_page_open)
+            {
+                self.active_group = Some(group.id.clone());
+                self.pane_root = group.pane_root.clone();
+                self.focused_pane_path = vec![];
+                self.workspace_page = WorkspacePage::Sftp;
+                self.ensure_active_workspace_tab_visible();
+            } else {
+                self.active_group = None;
+                self.pane_root = PaneLayout::Single(String::new());
+                self.focused_pane_path = vec![];
+                self.workspace_page = WorkspacePage::Terminal;
+            }
+            return;
+        }
+
         if was_active
             || self
                 .active_tab
@@ -1182,8 +1279,8 @@ impl AxShell {
             let new_id = next_active_id.or_else(|| {
                 self.pane_root
                     .tab_ids()
-                    .first()
-                    .copied()
+                    .into_iter()
+                    .find(|tab_id| !tab_id.is_empty())
                     .map(String::from)
                     .or_else(|| self.tabs.first().map(|t| t.id.clone()))
             });
@@ -1305,6 +1402,13 @@ impl AxShell {
             .as_ref()
             .and_then(|id| self.tabs.iter().find(|t| &t.id == id))
             .map(|t| t.title.clone())
+            .or_else(|| {
+                self.active_group
+                    .as_ref()
+                    .and_then(|group_id| self.tab_groups.iter().find(|group| &group.id == group_id))
+                    .and_then(|group| group.sftp_session.as_ref())
+                    .map(|session| format!("sftp / {}", session.name))
+            })
             .unwrap_or_else(|| t!("idle_no_session").into())
     }
 
@@ -1323,5 +1427,12 @@ impl AxShell {
             .and_then(|id| self.tabs.iter().find(|tab| &tab.id == id))
             .and_then(|tab| tab.session.as_ref())
             .map(|session| session.id.as_str())
+            .or_else(|| {
+                self.active_group
+                    .as_ref()
+                    .and_then(|group_id| self.tab_groups.iter().find(|group| &group.id == group_id))
+                    .and_then(|group| group.sftp_session.as_ref())
+                    .map(|session| session.id.as_str())
+            })
     }
 }

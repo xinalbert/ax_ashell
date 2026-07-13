@@ -8,7 +8,9 @@ Open SFTP from an active SSH session. The page combines a remote browser, a loca
 
 ## Local Directory Memory
 
-For a saved SSH session, the local browser reopens its own last successfully opened directory. New or unsaved connections start in the user home directory and do not save a local-directory entry. If a remembered directory is deleted or unreadable, AxShell opens the user home directory without replacing the remembered value.
+Set the global default under **Settings > Connections > SFTP > Default Local Directory**. New or unsaved connections start there. Leave it empty to use the user home directory.
+
+For a saved SSH session, the local browser reopens its own last successfully opened directory instead of the global default. If a remembered directory is deleted or unreadable, AxShell opens the default local directory without replacing the remembered value.
 
 These local paths stay on the current computer and are not included in WebDAV or S3 session sync.
 

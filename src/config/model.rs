@@ -356,6 +356,8 @@ pub(super) struct ConfigFile {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(super) last_local_sftp_paths: BTreeMap<String, String>,
     #[serde(default)]
+    pub(super) default_local_sftp_path: String,
+    #[serde(default)]
     pub(super) window_bounds: Option<SavedWindowBounds>,
     #[serde(default)]
     pub(super) workspace_panels: Option<Vec<f32>>,
@@ -450,6 +452,10 @@ pub(super) fn normalize_local_x_server_app_path(value: &str) -> String {
         return value.to_string();
     }
     x_server::default_app_path()
+}
+
+pub(super) fn normalize_default_local_sftp_path(value: &str) -> String {
+    value.trim().to_string()
 }
 
 pub(super) fn normalize_deep_sleep_after_minutes(value: u32) -> u32 {
@@ -624,6 +630,7 @@ impl Default for ConfigFile {
             cursor_style: CursorStyle::default(),
             sessions: Vec::new(),
             last_local_sftp_paths: BTreeMap::new(),
+            default_local_sftp_path: String::new(),
             window_bounds: None,
             workspace_panels: None,
             body_panels: None,

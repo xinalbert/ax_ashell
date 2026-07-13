@@ -10,6 +10,7 @@ use gpui::{Context, Focusable as _, PathPromptOptions, Pixels, Point, Window};
 use crate::{
     AxShell, SftpContextMenuState,
     app::{LocalFileEntry, SftpContextMenuTarget, WorkspacePage},
+    config::ConfigStore,
     sftp::{RemoteEntry, SftpHandle},
 };
 
@@ -36,7 +37,7 @@ pub(crate) fn is_editable_text_file(filename: &str) -> bool {
 impl AxShell {
     const SFTP_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
-    pub(crate) fn default_local_browser_dir() -> String {
+    pub(crate) fn home_local_browser_dir() -> String {
         BaseDirs::new()
             .map(|dirs| dirs.home_dir().to_string_lossy().to_string())
             .or_else(|| {
@@ -45,6 +46,22 @@ impl AxShell {
                     .map(|path| path.to_string_lossy().to_string())
             })
             .unwrap_or_else(|| ".".to_string())
+    }
+
+    pub(crate) fn configured_default_local_browser_dir(config: &ConfigStore) -> String {
+        let configured = config.default_local_sftp_path().trim();
+        if configured.is_empty() {
+            return Self::home_local_browser_dir();
+        }
+
+        let resolved =
+            Self::resolve_local_browser_path(&Self::home_local_browser_dir(), configured);
+        let resolved_str = resolved.to_string_lossy().to_string();
+        if Self::read_local_browser_entries(&resolved_str).is_ok() {
+            resolved_str
+        } else {
+            Self::home_local_browser_dir()
+        }
     }
 
     fn expand_local_browser_path(value: &str) -> PathBuf {
@@ -202,12 +219,17 @@ impl AxShell {
         {
             return Some(session);
         }
-        group.pane_root.tab_ids().into_iter().find_map(|tab_id| {
-            self.tabs
-                .iter()
-                .find(|tab| tab.id == tab_id)
-                .and_then(|tab| tab.session.clone())
-        })
+        group
+            .pane_root
+            .tab_ids()
+            .into_iter()
+            .find_map(|tab_id| {
+                self.tabs
+                    .iter()
+                    .find(|tab| tab.id == tab_id)
+                    .and_then(|tab| tab.session.clone())
+            })
+            .or_else(|| group.sftp_session.clone())
     }
 
     fn active_sftp_saved_session_id(&self) -> Option<String> {
@@ -749,9 +771,10 @@ impl AxShell {
             .and_then(|session_id| self.config.last_local_sftp_path(&session_id))
             .map(str::to_string);
 
+        let default_local_dir = Self::configured_default_local_browser_dir(&self.config);
         let result = match saved_path.as_deref() {
             Some(path) => self.load_local_file_browser(path),
-            None => self.load_local_file_browser(&Self::default_local_browser_dir()),
+            None => self.load_local_file_browser(&default_local_dir),
         };
         if let Err(err) = result {
             if let Some(path) = saved_path {
@@ -760,11 +783,9 @@ impl AxShell {
                     operation = "restore_last_path",
                     local_path = %crate::diagnostics::mask_path(&path),
                     error = %crate::diagnostics::sanitize_error(&err),
-                    "Saved local SFTP directory is unavailable; falling back to the home directory"
+                    "Saved local SFTP directory is unavailable; falling back to the default local directory"
                 );
-                if let Err(fallback_err) =
-                    self.load_local_file_browser(&Self::default_local_browser_dir())
-                {
+                if let Err(fallback_err) = self.load_local_file_browser(&default_local_dir) {
                     self.local_file_browser.status = fallback_err;
                 }
             } else {
@@ -772,6 +793,71 @@ impl AxShell {
             }
         }
         cx.notify();
+    }
+
+    pub(crate) fn save_default_local_sftp_path(&mut self, cx: &mut Context<Self>) {
+        let path = self
+            .default_local_sftp_path_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
+        if self.config.set_default_local_sftp_path(&path) {
+            self.config.save_logged("set_default_local_sftp_path");
+        }
+        self.status = "default local SFTP directory saved".into();
+        cx.notify();
+    }
+
+    pub(crate) fn reset_default_local_sftp_path(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        Self::set_input_value(&self.default_local_sftp_path_input, "", window, cx);
+        if self.config.set_default_local_sftp_path("") {
+            self.config.save_logged("reset_default_local_sftp_path");
+        }
+        self.status = "default local SFTP directory reset".into();
+        cx.notify();
+    }
+
+    pub(crate) fn pick_default_local_sftp_path(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let configured = self
+            .default_local_sftp_path_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
+        let start_dir = if configured.is_empty() {
+            PathBuf::from(Self::configured_default_local_browser_dir(&self.config))
+        } else {
+            Self::resolve_local_browser_path(&Self::home_local_browser_dir(), &configured)
+        };
+        let folder_dialog = rfd::AsyncFileDialog::new()
+            .set_directory(start_dir)
+            .pick_folder();
+
+        cx.spawn_in(window, async move |this, mut cx| {
+            if let Some(folder) = folder_dialog.await {
+                let _ = gpui::AsyncWindowContext::update(&mut cx, |window, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        Self::set_input_value(
+                            &this.default_local_sftp_path_input,
+                            folder.path().to_string_lossy().to_string(),
+                            window,
+                            cx,
+                        );
+                    });
+                });
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+        .detach();
     }
 
     pub(crate) fn navigate_local_file_browser(&mut self, path: String, cx: &mut Context<Self>) {

@@ -57,9 +57,6 @@ impl AxShell {
                 .masked(true)
         });
         let sftp_path_input = cx.new(|cx| InputState::new(window, cx).default_value("/"));
-        let default_local_dir = Self::default_local_browser_dir();
-        let local_sftp_path_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(default_local_dir.clone()));
         let sftp_new_folder_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("new_folder").to_string()));
         let search_input =
@@ -73,6 +70,14 @@ impl AxShell {
             );
             ConfigStore::in_memory()
         });
+        let default_local_sftp_path_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(Self::home_local_browser_dir())
+                .default_value(config.default_local_sftp_path())
+        });
+        let default_local_dir = Self::configured_default_local_browser_dir(&config);
+        let local_sftp_path_input =
+            cx.new(|cx| InputState::new(window, cx).default_value(default_local_dir.clone()));
         let rayon_threads_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(t!("rayon_threads_input_placeholder").to_string())
@@ -269,6 +274,7 @@ impl AxShell {
             cx.subscribe_in(&ssh_retry_count_input, window, Self::on_input_event),
             cx.subscribe_in(&ssh_retry_delays_input, window, Self::on_input_event),
             cx.subscribe_in(&rayon_threads_input, window, Self::on_input_event),
+            cx.subscribe_in(&default_local_sftp_path_input, window, Self::on_input_event),
             cx.subscribe_in(&xquartz_app_path_input, window, Self::on_input_event),
             cx.subscribe_in(&sftp_path_input, window, Self::on_input_event),
             cx.subscribe_in(&local_sftp_path_input, window, Self::on_input_event),
@@ -397,6 +403,7 @@ impl AxShell {
             local_shell_profile_name_input,
             local_shell_profile_program_input,
             local_shell_profile_args_input,
+            default_local_sftp_path_input,
             xquartz_app_path_input,
             sync_endpoint_input,
             sync_username_input,

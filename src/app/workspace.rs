@@ -11,6 +11,7 @@ use crate::{
         session_ui::should_use_terminal_password_prompt,
     },
     config::ConfigStore,
+    session::Session,
     terminal::{BackendCommand, TabKind},
 };
 
@@ -21,6 +22,7 @@ pub(crate) struct TabGroup {
     pub(crate) pane_root: PaneLayout,
     pub(crate) sftp: Option<SftpUiState>,
     pub(crate) sftp_page_open: bool,
+    pub(crate) sftp_session: Option<Session>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -76,11 +78,13 @@ impl AxShell {
         let mut tabs = Vec::new();
 
         for (group_index, group) in self.tab_groups.iter().enumerate() {
-            tabs.push(WorkspaceTabDescriptor {
-                group_id: Some(group.id.clone()),
-                group_index: Some(group_index),
-                page: WorkspacePage::Terminal,
-            });
+            if self.group_has_terminal_tab(&group.id) {
+                tabs.push(WorkspaceTabDescriptor {
+                    group_id: Some(group.id.clone()),
+                    group_index: Some(group_index),
+                    page: WorkspacePage::Terminal,
+                });
+            }
 
             if group.sftp.is_some() && group.sftp_page_open {
                 tabs.push(WorkspaceTabDescriptor {
@@ -136,6 +140,17 @@ impl AxShell {
             .as_ref()
             .and_then(|group_id| self.tab_groups.iter().find(|group| &group.id == group_id))
             .is_some_and(|group| group.sftp.is_some() && group.sftp_page_open)
+    }
+
+    pub(crate) fn group_has_terminal_tab(&self, group_id: &str) -> bool {
+        let Some(group) = self.tab_groups.iter().find(|group| group.id == group_id) else {
+            return false;
+        };
+        group
+            .pane_root
+            .tab_ids()
+            .into_iter()
+            .any(|tab_id| !tab_id.is_empty() && self.tabs.iter().any(|tab| tab.id == tab_id))
     }
 
     pub(crate) fn transfer_source_title(&self, tab_id: &str) -> String {
@@ -306,6 +321,11 @@ impl AxShell {
     pub(crate) fn toggle_active_sftp_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.workspace_page == WorkspacePage::Sftp {
             if let Some(active_group_id) = self.active_group.clone() {
+                if !self.group_has_terminal_tab(&active_group_id) {
+                    self.status = t!("sftp_shortcut_requires_ssh").into();
+                    cx.notify();
+                    return;
+                }
                 if self.confirm_sftp_close_with_shortcut(&active_group_id, window, cx) {
                     return;
                 }
@@ -363,6 +383,38 @@ impl AxShell {
             self.status = t!("open_ssh_tab_sftp").into();
             cx.notify();
         }
+    }
+
+    fn activate_first_visible_group_or_home(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut next = None;
+        for group in &self.tab_groups {
+            if self.group_has_terminal_tab(&group.id) {
+                next = Some((group.id.clone(), WorkspacePage::Terminal));
+                break;
+            }
+            if group.sftp.is_some() && group.sftp_page_open {
+                next = Some((group.id.clone(), WorkspacePage::Sftp));
+                break;
+            }
+        }
+
+        if let Some((group_id, page)) = next {
+            self.active_group = None;
+            self.activate_group_page(group_id, page, window, cx);
+            return;
+        }
+
+        self.active_group = None;
+        self.active_tab = None;
+        self.pane_root = PaneLayout::Single(String::new());
+        self.focused_pane_path = vec![];
+        self.set_workspace_page(WorkspacePage::Terminal, cx);
+        self.focus_handle.focus(window, cx);
+        cx.notify();
     }
 
     pub(crate) fn close_sftp_page(
@@ -442,6 +494,8 @@ impl AxShell {
     ) {
         let was_active_sftp_page = self.workspace_page == WorkspacePage::Sftp
             && self.active_group.as_deref() == Some(group_id.as_str());
+        let has_terminal_tab = self.group_has_terminal_tab(&group_id);
+        let keep_for_transfer = self.group_has_active_sftp_transfer(&group_id);
 
         if let Some(group) = self
             .tab_groups
@@ -451,9 +505,24 @@ impl AxShell {
             group.sftp_page_open = false;
         }
 
+        if !has_terminal_tab && !keep_for_transfer {
+            self.release_sftp_handle_for_group(&group_id, false);
+            if let Some(index) = self
+                .tab_groups
+                .iter()
+                .position(|group| group.id == group_id)
+            {
+                self.tab_groups.remove(index);
+            }
+        }
+
         if was_active_sftp_page {
-            self.set_workspace_page(WorkspacePage::Terminal, cx);
-            self.focus_handle.focus(window, cx);
+            if has_terminal_tab {
+                self.set_workspace_page(WorkspacePage::Terminal, cx);
+                self.focus_handle.focus(window, cx);
+            } else {
+                self.activate_first_visible_group_or_home(window, cx);
+            }
         } else {
             cx.notify();
         }

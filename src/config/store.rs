@@ -150,6 +150,8 @@ impl ConfigStore {
         cache.deep_sleep_after_minutes =
             normalize_deep_sleep_after_minutes(cache.deep_sleep_after_minutes);
         cache.rayon_threads = normalize_rayon_threads(cache.rayon_threads);
+        cache.default_local_sftp_path =
+            normalize_default_local_sftp_path(&cache.default_local_sftp_path);
         normalize_local_shell_profiles(&mut cache);
         normalize_last_local_sftp_paths(&mut cache);
 
@@ -1314,6 +1316,19 @@ impl ConfigStore {
             .map(String::as_str)
     }
 
+    pub fn default_local_sftp_path(&self) -> &str {
+        self.cache.default_local_sftp_path.as_str()
+    }
+
+    pub fn set_default_local_sftp_path(&mut self, path: &str) -> bool {
+        let path = normalize_default_local_sftp_path(path);
+        if self.cache.default_local_sftp_path == path {
+            return false;
+        }
+        self.cache.default_local_sftp_path = path;
+        true
+    }
+
     pub fn set_last_local_sftp_path(&mut self, session_id: &str, path: &str) -> bool {
         if self.get(session_id).is_none() {
             return false;
@@ -2082,7 +2097,7 @@ mod tab_color_settings_tests {
 mod local_sftp_path_tests {
     use crate::session::Session;
 
-    use super::{ConfigFile, ConfigStore};
+    use super::{ConfigFile, ConfigStore, normalize_default_local_sftp_path};
 
     fn saved_session(id: &str) -> Session {
         let mut session = Session::password(
@@ -2100,6 +2115,23 @@ mod local_sftp_path_tests {
         let config: ConfigFile = serde_json::from_str("{}").expect("config should deserialize");
 
         assert!(config.last_local_sftp_paths.is_empty());
+        assert!(config.default_local_sftp_path.is_empty());
+    }
+
+    #[test]
+    fn default_local_sftp_path_trims_and_can_reset_to_home_fallback() {
+        let mut config = ConfigStore::in_memory();
+
+        assert_eq!(config.default_local_sftp_path(), "");
+        assert!(config.set_default_local_sftp_path("  ~/Downloads  "));
+        assert_eq!(config.default_local_sftp_path(), "~/Downloads");
+        assert!(!config.set_default_local_sftp_path("~/Downloads"));
+        assert!(config.set_default_local_sftp_path("   "));
+        assert_eq!(config.default_local_sftp_path(), "");
+        assert_eq!(
+            normalize_default_local_sftp_path(" /tmp/sftp "),
+            "/tmp/sftp"
+        );
     }
 
     #[test]

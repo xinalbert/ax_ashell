@@ -96,6 +96,7 @@ pub(crate) struct AxShell {
     pub(crate) local_shell_profile_name_input: Entity<InputState>,
     pub(crate) local_shell_profile_program_input: Entity<InputState>,
     pub(crate) local_shell_profile_args_input: Entity<InputState>,
+    pub(crate) default_local_sftp_path_input: Entity<InputState>,
     pub(crate) xquartz_app_path_input: Entity<InputState>,
     pub(crate) sync_endpoint_input: Entity<InputState>,
     pub(crate) sync_username_input: Entity<InputState>,

@@ -599,6 +599,7 @@ impl Render for AxShell {
                         .child(label)
                 };
                 let copy_value = menu.connection_info.clone();
+                let open_sftp_id = menu.session_id.clone();
                 let export_id = menu.session_id.clone();
                 let clone_id = menu.session_id.clone();
                 let edit_id = menu.session_id.clone();
@@ -616,6 +617,21 @@ impl Render for AxShell {
                                 cx.stop_propagation();
                             }),
                         ))
+                    .child(
+                        menu_item("saved-context-open-sftp", t!("open_sftp_page").to_string())
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                window.listener_for(&view, move |this, _, window, cx| {
+                                    this.dismiss_saved_session_context_menu(cx);
+                                    this.open_saved_session_sftp_only(
+                                        open_sftp_id.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                    cx.stop_propagation();
+                                }),
+                            ),
+                    )
                     .child(
                         menu_item("saved-context-export", t!("export_ssh").to_string())
                             .on_mouse_down(
