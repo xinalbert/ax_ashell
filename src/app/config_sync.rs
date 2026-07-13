@@ -135,7 +135,10 @@ impl AxShell {
             session_count = payload.sessions.len(),
             "Configuration sync started"
         );
-        self.runtime_state.runtime.spawn(async move {
+        let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
+        let task_lease = task_tracker.acquire();
+        runtime.spawn(async move {
+            let _task_lease = task_lease;
             let result = match sync::upload(credentials, payload, expected_etag).await {
                 Ok(etag) => {
                     tracing::info!(
@@ -184,7 +187,10 @@ impl AxShell {
             backend,
             "Configuration sync started"
         );
-        self.runtime_state.runtime.spawn(async move {
+        let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
+        let task_lease = task_tracker.acquire();
+        runtime.spawn(async move {
+            let _task_lease = task_lease;
             let result = match sync::download(credentials).await {
                 Ok((payload, etag)) => {
                     tracing::info!(

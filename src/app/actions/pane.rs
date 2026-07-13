@@ -55,8 +55,10 @@ impl AxShell {
                     cx.notify();
                     return;
                 };
+                let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
                 let backend = ssh::spawn_ssh_terminal(
-                    self.runtime_state.runtime.handle(),
+                    &runtime,
+                    task_tracker,
                     new_id.clone(),
                     session.clone(),
                     DEFAULT_COLS,

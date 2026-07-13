@@ -38,6 +38,8 @@ use state::{
     runtime::RuntimeState,
 };
 
+pub(crate) use state::runtime::RuntimeTaskTracker;
+
 use search::SearchState;
 
 pub(crate) use dialogs::DialogKind;

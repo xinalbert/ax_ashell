@@ -8,6 +8,7 @@ use tokio::{
 };
 
 use crate::{
+    app::RuntimeTaskTracker,
     events::{BackendEvent, BackendEventSender},
     session::Session,
 };
@@ -103,6 +104,7 @@ pub(crate) struct SftpHandle {
 
 struct SftpWorker {
     runtime: tokio::runtime::Handle,
+    task_tracker: RuntimeTaskTracker,
     join: Mutex<Option<JoinHandle<()>>>,
     closing: std::sync::atomic::AtomicBool,
     work_tracker: Arc<SftpWorkTracker>,
@@ -192,7 +194,9 @@ impl SftpHandle {
             return;
         };
 
+        let shutdown_task = self.worker.task_tracker.acquire();
         self.worker.runtime.spawn(async move {
+            let _shutdown_task = shutdown_task;
             if tokio::time::timeout(SFTP_SHUTDOWN_TIMEOUT, &mut join)
                 .await
                 .is_ok()
@@ -225,6 +229,7 @@ impl SftpHandle {
 
 pub fn spawn_sftp(
     runtime: &tokio::runtime::Handle,
+    task_tracker: RuntimeTaskTracker,
     tab_id: String,
     session: Session,
     events: BackendEventSender,
@@ -246,7 +251,9 @@ pub fn spawn_sftp(
         session.proxy_user.clone(),
         session.proxy_password.clone(),
     ];
+    let task_lease = task_tracker.acquire();
     let join = runtime.spawn(async move {
+        let _task_lease = task_lease;
         if let Err(err) = run_sftp(
             tab_id.clone(),
             session,
@@ -291,6 +298,7 @@ pub fn spawn_sftp(
         commands: cmd_tx,
         worker: Arc::new(SftpWorker {
             runtime: runtime.clone(),
+            task_tracker,
             join: Mutex::new(Some(join)),
             closing: std::sync::atomic::AtomicBool::new(false),
             work_tracker,

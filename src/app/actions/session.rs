@@ -33,6 +33,7 @@ impl AxShell {
         for group_id in group_ids {
             self.release_sftp_handle_for_group(&group_id, true);
         }
+        self.runtime_state.release_runtime_if_idle();
     }
 
     pub(crate) fn open_local(&mut self, cx: &mut Context<Self>) {
@@ -637,8 +638,10 @@ impl AxShell {
         let backend = if prompt_for_password {
             BackendTx::inactive()
         } else {
+            let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
             ssh::spawn_ssh_terminal(
-                self.runtime_state.runtime.handle(),
+                &runtime,
+                task_tracker,
                 id.clone(),
                 session.clone(),
                 DEFAULT_COLS,
@@ -755,8 +758,10 @@ impl AxShell {
 
         if let Some(session) = session {
             // SSH tab: spawn new SSH connection
+            let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
             let backend = ssh::spawn_ssh_terminal(
-                self.runtime_state.runtime.handle(),
+                &runtime,
+                task_tracker,
                 tab_id.to_string(),
                 session.clone(),
                 cols,

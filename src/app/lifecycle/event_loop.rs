@@ -53,6 +53,7 @@ impl AxShell {
                         let system_sampled =
                             this.lifecycle.is_foreground() && this.sample_system_if_due();
                         let sftp_closed = this.sweep_idle_sftp_connections_if_due(now);
+                        let runtime_released = this.runtime_state.release_runtime_if_idle();
                         if this.lifecycle.is_foreground() {
                             this.sync_theme_if_due(cx);
                         }
@@ -71,6 +72,7 @@ impl AxShell {
                             || system_sampled
                             || blink_due
                             || sftp_closed
+                            || runtime_released
                             || lifecycle_changed
                         {
                             cx.notify();
@@ -101,6 +103,7 @@ impl AxShell {
                             || system_sampled
                             || blink_due
                             || sftp_closed
+                            || runtime_released
                             || lifecycle_changed
                         {
                             idle_ticks = 0;

@@ -708,8 +708,10 @@ impl AxShell {
         let rows = self.tabs[ix].rows;
 
         self.tabs[ix].send_backend(BackendCommand::Close);
+        let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
         let backend = crate::backend::ssh::spawn_ssh_terminal(
-            self.runtime_state.runtime.handle(),
+            &runtime,
+            task_tracker,
             tab_id.to_string(),
             session.clone(),
             cols,
@@ -773,8 +775,10 @@ impl AxShell {
         for (ix, tab_id, session) in retry_tabs {
             self.tabs[ix].send_backend(crate::terminal::BackendCommand::Close);
 
+            let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
             let backend = crate::backend::ssh::spawn_ssh_terminal(
-                self.runtime_state.runtime.handle(),
+                &runtime,
+                task_tracker,
                 tab_id.clone(),
                 session.clone(),
                 self.tabs[ix].cols,

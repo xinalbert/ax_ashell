@@ -243,8 +243,10 @@ impl AxShell {
             .filter(|sftp| !sftp.current_path.is_empty())
             .filter(|sftp| sftp.current_path != "/" || sftp.home_dir != "/")
             .map(|sftp| sftp.current_path.clone());
+        let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
         let handle = crate::sftp::spawn_sftp(
-            self.runtime_state.runtime.handle(),
+            &runtime,
+            task_tracker,
             group_id.to_string(),
             session,
             self.runtime_state.events_tx.clone(),
@@ -357,6 +359,7 @@ impl AxShell {
             handle.close();
         }
         self.sftp_last_activity.remove(group_id);
+        self.runtime_state.release_runtime_if_idle();
     }
 
     pub(crate) fn sweep_idle_sftp_connections(&mut self) -> bool {

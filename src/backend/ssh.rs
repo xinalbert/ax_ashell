@@ -17,6 +17,7 @@ use tokio::{
 };
 
 use crate::{
+    app::RuntimeTaskTracker,
     config::ConfigStore,
     diagnostics::{mask_host, mask_value, sanitize_error, sanitize_error_with_values},
     events::{BackendEvent, BackendEventSender},
@@ -42,6 +43,7 @@ struct SshBackendShutdown {
     commands: mpsc::UnboundedSender<BackendCommand>,
     join: Mutex<Option<JoinHandle<()>>>,
     runtime: tokio::runtime::Handle,
+    task_tracker: RuntimeTaskTracker,
     shutdown_requested: Arc<AtomicBool>,
 }
 
@@ -61,7 +63,9 @@ impl BackendShutdown for SshBackendShutdown {
             return;
         };
 
+        let shutdown_task = self.task_tracker.acquire();
         self.runtime.spawn(async move {
+            let _shutdown_task = shutdown_task;
             if tokio::time::timeout(SSH_SHUTDOWN_TIMEOUT, &mut join)
                 .await
                 .is_ok()
@@ -83,6 +87,7 @@ impl BackendShutdown for SshBackendShutdown {
 
 pub fn spawn_ssh_terminal(
     runtime: &tokio::runtime::Handle,
+    task_tracker: RuntimeTaskTracker,
     tab_id: String,
     session: Session,
     cols: u16,
@@ -106,7 +111,10 @@ pub fn spawn_ssh_terminal(
         session.proxy_user.clone(),
         session.proxy_password.clone(),
     ];
+    let task_lease = task_tracker.acquire();
+    let task_tracker_for_ssh = task_tracker.clone();
     let join = runtime.spawn(async move {
+        let _task_lease = task_lease;
         if let Err(err) = run_ssh(
             task_tab.clone(),
             session,
@@ -115,6 +123,7 @@ pub fn spawn_ssh_terminal(
             cmd_rx,
             events.clone(),
             task_shutdown_requested.clone(),
+            task_tracker_for_ssh,
         )
         .await
         {
@@ -147,6 +156,7 @@ pub fn spawn_ssh_terminal(
             commands: cmd_tx,
             join: Mutex::new(Some(join)),
             runtime: runtime.clone(),
+            task_tracker,
             shutdown_requested,
         }),
     }
@@ -160,9 +170,10 @@ async fn run_ssh(
     mut commands: mpsc::UnboundedReceiver<BackendCommand>,
     events: BackendEventSender,
     shutdown_requested: Arc<AtomicBool>,
+    task_tracker: RuntimeTaskTracker,
 ) -> Result<()> {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
-    let x11 = X11ForwardingState::from_config(&config);
+    let x11 = X11ForwardingState::from_config(&config, task_tracker);
     let _ = events
         .send(BackendEvent::Status {
             tab_id: tab_id.clone(),
@@ -554,7 +565,10 @@ mod lifecycle_tests {
 
     use tokio::{sync::mpsc, task::JoinSet};
 
-    use crate::terminal::{BackendCommand, BackendShutdown};
+    use crate::{
+        app::RuntimeTaskTracker,
+        terminal::{BackendCommand, BackendShutdown},
+    };
 
     use super::{SshBackendShutdown, cancel_ssh_child_tasks};
 
@@ -577,6 +591,7 @@ mod lifecycle_tests {
             commands,
             join: Mutex::new(Some(tokio::spawn(async {}))),
             runtime: tokio::runtime::Handle::current(),
+            task_tracker: RuntimeTaskTracker::new(),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
         };
 

@@ -15,6 +15,7 @@ use tokio::{
 };
 
 use crate::{
+    app::RuntimeTaskTracker,
     config::ConfigStore,
     diagnostics::{mask_host, mask_value, sanitize_error},
 };
@@ -36,10 +37,14 @@ pub(super) struct X11ForwardingState {
     pub(super) screen_number: u32,
     launch_local_x_server: bool,
     local_x_server_app_path: String,
+    task_tracker: RuntimeTaskTracker,
 }
 
 impl X11ForwardingState {
-    pub(super) fn from_config(config: &ConfigStore) -> Option<Arc<Self>> {
+    pub(super) fn from_config(
+        config: &ConfigStore,
+        task_tracker: RuntimeTaskTracker,
+    ) -> Option<Arc<Self>> {
         if !config.x11_forwarding_enabled() {
             return None;
         }
@@ -59,6 +64,7 @@ impl X11ForwardingState {
             screen_number: X11_DEFAULT_SCREEN,
             launch_local_x_server: config.x11_launch_local_x_server(),
             local_x_server_app_path: config.local_x_server_app_path().to_string(),
+            task_tracker,
         }))
     }
 
@@ -105,7 +111,9 @@ pub(super) async fn handle_x11_channel(
                 "Accepting SSH X11 channel"
             );
             reply.accept().await;
+            let relay_task = x11.task_tracker.acquire();
             tokio::spawn(async move {
+                let _relay_task = relay_task;
                 if let Err(err) = relay_x11_channel(channel, local_x, real_cookie, x11).await {
                     tracing::warn!(
                         component = "ssh_x11",

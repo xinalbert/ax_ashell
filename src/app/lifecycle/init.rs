@@ -3,7 +3,6 @@ use std::{collections::HashSet, time::Instant};
 use gpui::{AppContext as _, Context, SharedString, Window, px};
 use gpui_component::{ThemeMode, ThemeRegistry, input::InputState, menu::AppMenuBar};
 use rust_i18n::t;
-use tokio::runtime::Runtime;
 
 use crate::{
     AxShell, PaneLayout,
@@ -517,16 +516,7 @@ impl AxShell {
             },
             sftp_handles: std::collections::HashMap::new(),
             sftp_last_activity: std::collections::HashMap::new(),
-            runtime_state: RuntimeState {
-                runtime: Runtime::new().expect("create tokio runtime"),
-                events_rx,
-                events_tx,
-                pending_terminal_refresh: false,
-                last_terminal_refresh: Instant::now(),
-                pending_ui_refresh: false,
-                last_ui_refresh: Instant::now(),
-                last_sftp_idle_sweep: Instant::now(),
-            },
+            runtime_state: RuntimeState::new(events_rx, events_tx),
             last_window_size: None,
             last_sidebar_width,
             should_move_window: false,
