@@ -10,6 +10,35 @@ struct RemoteSftpDrag {
     paths: Vec<String>,
 }
 
+fn sftp_file_icon(
+    icon: Option<std::sync::Arc<gpui::Image>>,
+    is_dir: bool,
+    width: Pixels,
+    fallback_color: Hsla,
+) -> AnyElement {
+    let content = if let Some(icon) = icon {
+        img(icon).size(px(18.)).into_any_element()
+    } else {
+        Icon::new(if is_dir {
+            IconName::Folder
+        } else {
+            IconName::File
+        })
+        .with_size(Size::Small)
+        .text_color(fallback_color)
+        .into_any_element()
+    };
+
+    div()
+        .w(width)
+        .h(px(18.))
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .child(content)
+        .into_any_element()
+}
+
 impl Render for RemoteSftpDrag {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let label = if self.paths.len() == 1 {
@@ -140,6 +169,7 @@ impl AxShell {
         let remote_sort_direction = self.remote_sftp_sort_direction;
         let local_sort_column = self.local_sftp_sort_column;
         let local_sort_direction = self.local_sftp_sort_direction;
+        let file_icons = self.file_icons.clone();
 
         let remote_pane = v_flex()
             .flex_1()
@@ -439,6 +469,7 @@ impl AxShell {
                             let selected_path = remote_selected_path.clone();
                             let view = view.clone();
                             let theme = cx.theme().clone();
+                            let file_icons = file_icons.clone();
                             uniform_list(
                                 "sftp-entries-list",
                                 entries.len(),
@@ -472,6 +503,7 @@ impl AxShell {
                                                 format_bytes(entry.size)
                                             };
                                             let entry_modified = format_mtime(entry.modified);
+                                            let icon = file_icons.remote_icon(&entry.name, entry.is_dir);
                                             Some(
                                                 h_flex()
                                                     .id(ElementId::Name(
@@ -568,12 +600,12 @@ impl AxShell {
                                                             .items_center()
                                                             .gap_2()
                                                             .child(
-                                                                div()
-                                                                    .w(icon_col_width)
-                                                                    .flex_none()
-                                                                    .text_size(rems(1.0))
-                                                                    .text_color(name_color)
-                                                                    .child(if entry.is_dir { "📁" } else { "📄" }),
+                                                                sftp_file_icon(
+                                                                    icon,
+                                                                    entry.is_dir,
+                                                                    icon_col_width,
+                                                                    name_color,
+                                                                ),
                                                             )
                                                             .child(
                                                                 selectable_plain_text(
@@ -964,10 +996,11 @@ impl AxShell {
                     .child({
                         let entries = local_entries.clone();
                         let selected_entries = local_selected_entries.clone();
-                        let selected_path = local_selected_path.clone();
-                        let view = view.clone();
-                        let theme = cx.theme().clone();
-                        uniform_list(
+                            let selected_path = local_selected_path.clone();
+                            let view = view.clone();
+                            let theme = cx.theme().clone();
+                            let file_icons = file_icons.clone();
+                            uniform_list(
                             "local-entries-list",
                             entries.len(),
                             move |range, list_window, _cx| {

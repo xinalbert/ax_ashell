@@ -72,6 +72,8 @@ impl AxShell {
             );
             ConfigStore::in_memory()
         });
+        let file_icons =
+            crate::platform::file_icons::FileIconCache::load(ConfigStore::file_icons_path().ok());
         let default_local_sftp_path_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(Self::home_local_browser_dir())
@@ -482,6 +484,7 @@ impl AxShell {
                 selected_path: None,
                 selected_entries: HashSet::new(),
             },
+            file_icons,
             sftp_context_menu: None,
             saved_group_context_menu: None,
             saved_session_context_menu: None,
@@ -568,6 +571,7 @@ impl AxShell {
 
         this.sync_custom_theme_inputs_from_draft(window, cx);
         this.apply_theme_preferences(window, cx);
+        this.start_file_icon_cache_refresh(cx);
         this.start_event_pump(cx);
         this
     }

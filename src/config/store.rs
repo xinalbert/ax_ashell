@@ -243,6 +243,12 @@ impl ConfigStore {
         Ok(Self::config_root_dir()?.join("themes"))
     }
 
+    /// Stores locally generated system file type icons outside session settings
+    /// so they do not affect sync payloads or `sessions.json` load time.
+    pub fn file_icons_path() -> Result<PathBuf> {
+        Ok(Self::config_root_dir()?.join("file-icons.json"))
+    }
+
     fn config_path() -> Result<PathBuf> {
         Ok(Self::config_root_dir()?.join("sessions.json"))
     }
