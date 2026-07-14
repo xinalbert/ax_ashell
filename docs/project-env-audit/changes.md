@@ -2329,3 +2329,18 @@
 - 受影响文件：`src/app/views/sftp_panel.rs`，`docs/features/sftp.md`，`docs/features/sftp.zh.md`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo 和锁定 GPUI；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不联网或使用多 agent。跨应用外拖需未来扩展平台层。
 - 验证结果：撤回无效接线后，`rustfmt --edition 2024 src/app/views/sftp_panel.rs`、`cargo check`、完整 `cargo test --quiet`（168 项）、`git diff --check` 和 tracking validator 通过。仅保留既有 `block v0.1.6` future-incompat warning。
+## 2026-07-14 完成 SFTP 递归下载与覆盖确认环境验证
+
+- 时间：2026-07-14 13:55 +0800
+- 变化摘要：目录下载改为通过 SFTP 递归列出目录并逐文件写入，保留嵌套相对路径，不再创建远端 tar 或本地解压。已有本地文件时，后台传输通过有界事件与 one-shot 响应暂停，界面提供跳过、替换、本次全部替换和本次启动全部替换；最后一种只保留在 `AxShell` 运行期状态，重启自动重置。
+- 受影响文件：`src/sftp.rs`，`src/sftp/archive.rs`（删除），`src/sftp/model.rs`，`src/sftp/path.rs`，`src/sftp/transfer.rs`，`src/sftp/worker/runtime.rs`，`src/events.rs`，`src/app.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/lifecycle/init.rs`，`src/app/dialogs.rs`，`src/app/dialogs/sftp_overwrite_confirm.rs`，`src/app/views/layout.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`，未联网或使用多 agent。
+- 验证结果：`rustfmt --edition 2024` 通过；覆盖路径安全与任务内全部替换定向测试各 1 项通过；`cargo check` 通过；完整 `cargo test --quiet` 173 项通过；`git diff --check` 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning；真实 SFTP 服务器和 GUI 交互仍待手工验收。
+
+## 2026-07-14 完成终端链接快捷键视觉环境验证
+
+- 时间：2026-07-14 14:34 +0800
+- 变化摘要：终端 URL 和路径在普通鼠标悬停时不再显示下划线或手型指针；仅在 macOS 按下 Command、其他平台按下 Ctrl 时显示可激活视觉。GPUI `on_modifiers_changed` 使按键按下/松开时即时更新，无需移动鼠标；URL/path hover 从行布局缓存键移除，避免普通 hover 重建文本行。
+- 受影响文件：`src/app.rs`，`src/app/terminal.rs`，`src/app/actions/terminal.rs`，`src/app/views/terminal_panel.rs`，`src/terminal/element.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`，未联网或使用多 agent。
+- 验证结果：`rustfmt --edition 2024` 通过；终端链接修饰键测试 3 项和布局缓存测试 1 项通过；`cargo check` 通过；完整 `cargo test --quiet` 174 项通过；hover 静态审计、`git diff --check` 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning；真实 GUI 下 Command/Ctrl 按下和松开时的视觉切换仍待手工验收。

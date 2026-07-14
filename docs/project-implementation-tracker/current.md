@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：将 SSH X11 forwarding 改为每个会话独立控制，未发现本机 X server 时在 SSH 新建/编辑窗口给出简短安装提示。
-- 交付物：会话级 `x11_forwarding` 持久化、默认开启的表单开关、非阻塞安装提示、VcXsrv/Xming 分类与无自动启动 relay、由 `sshd` 分配远端 `DISPLAY` 的连接路径、双语说明和自动化验证。
+- 目标：让终端 URL 和路径只在对应激活快捷键按下时显示下划线和手型指针。
+- 交付物：修饰键驱动的终端链接视觉状态、即时按键切换、缓存失效优化、回归测试和验证记录。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/session.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/actions/session.rs`，`src/app/actions/saved_sessions.rs`，`src/app/dialogs/ssh.rs`，`src/app/dialogs/settings/proxy.rs`，`src/backend/ssh.rs`，`src/backend/ssh/x11.rs`，`src/platform/x_server.rs`，`src/config/model.rs`，`src/config/store.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/features/proxy-x11.md`，`docs/features/proxy-x11.zh.md`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
-- 不在本轮范围内：修改 `Cargo.toml` / `Cargo.lock`、启动或安装第三方本地 X server、修改远端 `sshd` 配置、改变 SSH/SFTP 认证协议、引入新的 X11 crate。
+- 当前范围：`src/app/terminal.rs`，`src/app/actions/terminal.rs`，`src/app/views/terminal_panel.rs`，`src/terminal/element.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 不在本轮范围内：修改 `Cargo.toml` / `Cargo.lock`、修改 URL/路径检测或 Command/Ctrl+单击打开行为、引入新的 hover 或终端渲染依赖。
 
 ## 当前状态
 
@@ -22,30 +22,32 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 会话级 X11 配置和 SSH 表单开关 | Session serde 与表单数据流审查 | 新建和旧会话默认开启，可在编辑窗口单独关闭 |
-| P2 | completed | 本机 X server 检测、Windows 分类和无自动启动 relay | `cargo check` | VcXsrv/Xming 独立识别；仅用户手动按钮能启动本机服务 |
-| P3 | completed | 双语说明、回归测试与收口记录 | `cargo test --quiet`、`git diff --check`、tracking validator | Windows 和真实远端 `sshd` 仍需手工验收 |
+| P1 | completed | URL/路径 hover、修饰键状态和绘制缓存诊断 | 源码与 GPUI modifier-change API 审查 | 当前无条件显示下划线和手型 |
+| P2 | completed | 修饰键触发的下划线与手型、缓存键收敛 | 终端链接聚焦测试、`cargo check` | Command 对应 macOS，Ctrl 对应其他平台 |
+| P3 | completed | 自动化验证与记录收口 | `rustfmt`、完整测试、hover 审计、tracking validator | 已完成 |
 
 ## 已完成
 
-- `Session.x11_forwarding` 使用 serde 默认值 `true`，旧保存会话和分享文件缺失字段时保持默认开启。
-- SSH 新建、编辑和复制会话均显示会话级 X11 开关；开启且未发现 `DISPLAY` 或配置的本机 X server 时，仅显示安装提示，不阻止保存或连接。
-- SSH 连接只在该会话开启时发送 `request_x11`；不再硬编码远端 `DISPLAY`，由 `sshd` 分配实际值。
-- X11 relay 不再自动启动本地 X server；Settings 仅保留路径配置和用户主动的“打开 X server”操作。
+- 已确认 URL/路径命中信息、Command/Ctrl+单击激活逻辑与修饰键状态已存在。
+- 已确认绘制层的下划线和 pane 层的手型仅检查 hover，未检查激活修饰键；GPUI `on_modifiers_changed` 可在不移动鼠标时刷新状态。
+- URL/路径命中后仅在激活修饰键按下时显示下划线和手型；普通 hover 保持终端文本视觉。
+- 修饰键按下/松开由 `on_modifiers_changed` 即时通知；链接 hover 从文本行布局缓存键移除，避免光标移动重建行布局。
 
 ## 验证
 
-- 已完成：相关 Rust 文件 `rustfmt --edition 2024`、3 项会话/X11 聚焦测试、`cargo check`、完整 `cargo test --quiet`（171 项）、`git diff --check` 和 tracking docs validator。
-- 未完成：Windows VcXsrv/Xming 和远端 GUI 的手工验收。
+- 已完成：终端 hover、修饰键状态、绘制缓存和 GPUI modifier-change API 审查；`rustfmt`、链接聚焦测试 3 项、缓存键测试 1 项、`cargo check`、完整 `cargo test --quiet`（174 项）、hover 静态审计和 `git diff --check`。
+- 已完成：tracking docs validator。
+- 未完成：真实 GUI 下 macOS Command / 非 macOS Ctrl 按下和松开时的下划线、手型和单击打开验收。
 
 ## 风险与阻塞
 
-- 无阻塞；`DISPLAY` 存在只能证明可尝试连接，实际 X server 监听、xauth、远端 `X11Forwarding yes` 和 `sudo` 环境策略仍须实际环境验证。
+- 风险：必须在真实 GUI 确认修饰键按下和松开时无需移动鼠标就能准确切换下划线与指针。
+- 无阻塞。
 
 ## 下一步
 
-- 在 Windows 分别验证 VcXsrv 和 Xming、远端 `sshd` 的 `X11Forwarding yes`、`echo $DISPLAY` 和图形程序启动；必要时检查 `sudo` 是否清除了 `DISPLAY` / `XAUTHORITY`。
+- 在真实 GUI 中验证 macOS Command / 非 macOS Ctrl 按下和松开时的下划线、手型与既有单击打开行为。
 
 ## 最后更新时间
 
-- 2026-07-14 10:57 +0800
+- 2026-07-14 14:34 +0800

@@ -36,7 +36,7 @@
 | `src/backend.rs` | backend 领域入口 | 改 backend 模块导出时 | 子模块为 `auth`、`local`、`proxy`、`ssh` |
 | `src/backend/` | 本地/SSH 后端、共享认证、proxy transport、远程系统采样和 PTY/SSH 事件桥接 | 改 SSH 连接、private key、proxy、legacy fallback、本地 shell、后台事件或 backend shutdown 时 | `proxy.rs` 负责 session/env/global proxy 解析和网络连接；config 不再执行 transport |
 | `src/sftp.rs` | SFTP 模块入口和兼容 re-export | 改 SFTP 子模块声明、`RemoteEntry` / `PreviewData` / `SftpHandle` / path helper 出口时 | 现代 Rust 具名入口；真实实现位于 `src/sftp/`，UI action 位于 `src/app/actions/sftp.rs` |
-| `src/sftp/` | SFTP auth、model、session、browse、preview、transfer、archive、operations 和 worker 实现 | 改 SFTP 连接、分页 cursor、预览、传输、归档、删除或 worker 生命周期时 | `worker.rs` 管 handle/command/pin，`worker/runtime.rs` 单一持有 cursor、active transfer 和 `JoinSet` |
+| `src/sftp/` | SFTP auth、model、session、browse、preview、transfer、operations 和 worker 实现 | 改 SFTP 连接、分页 cursor、预览、传输、删除或 worker 生命周期时 | `worker.rs` 管 handle/command/pin，`worker/runtime.rs` 单一持有 cursor、active transfer 和 `JoinSet` |
 | `src/terminal/` | terminal backend、tab、listener、按键、CWD、transfer、渲染和高亮实现 | 改 backend 协议、terminal tab、输入编码、OSC/CWD、传输模型、render 或 highlight 时 | `src/terminal.rs` 只做入口/re-export；输入 action 仍位于 `src/app/actions/terminal.rs` |
 | `src/sync/` | 会话配置加密同步 payload | 判断新增会话字段是否会自动进入同步上传/下载时 | 本轮预计不改传输逻辑，只依赖 `Session` 序列化扩展 |
 | `src/main.rs` | 应用初始化入口 | `main`，crash hook，macOS 环境同步，Rayon worker 配置 | 改全局初始化或必须在 GPUI 前生效的进程环境变量时 |
@@ -69,7 +69,7 @@
 | `src/app/actions/pane.rs` | pane tree 操作和 group activation action | `split_current_pane`，`focus_adjacent_pane`，`activate_group_page`，`focus_pane_with_id`，`sync_system_tab_to_active_group` | Local split 必须复制 source tab 的 `LocalShellProfile`；改 split pane、pane focus、splitter drag、active group + 页面联动切换时 |
 | `src/app/actions/saved_sessions.rs` | session selector、saved group、saved session 菜单和 share 导入/导出 action | `selector_entries`，`on_selector_key_down`，`saved_session_groups`，`export_saved_sessions_share_file`，`export_saved_group_share_file`，`export_saved_session_share_file`，`import_saved_sessions_share_file`，`open_saved_session_context_menu`，`commit_saved_group_rename` | 改选择器键盘行为、saved session 分组、无凭据导入/导出、组名展示、右键菜单或重命名时 |
 | `src/app/actions/sftp.rs` | UI 侧 SFTP 与本地文件浏览 action | `ensure_sftp_handle_for_group`，`release_sftp_handle_for_group`，`active_sftp_has_configured_path`，`configured_default_local_browser_dir`，`restore_active_local_sftp_path`，`navigate_local_file_browser`，`load_more_sftp_entries`，`download_sftp_entries`，`download_targets_for_context`，`sweep_idle_sftp_connections` | 改按需建连、SFTP-only group session fallback、会话 `sftp_path` 与 shell CWD 同步优先级、全局本机目录、分页加载、远端批量下载、右键选择集下载、pin-aware group worker 回收或深睡断连时 |
-| `src/app/actions/terminal.rs` | terminal 键盘、鼠标、滚动和 IME action | `on_terminal_key_down`，`terminal_grid_point_and_side`，`on_terminal_scroll`，IME helpers | 鼠标命中、选择、滚动行高、快捷键、粘贴或 IME 候选框位置与终端网格不一致时 |
+| `src/app/actions/terminal.rs` | terminal 键盘、鼠标、修饰键、滚动和 IME action | `on_terminal_modifiers_changed`，`on_terminal_key_down`，`terminal_grid_point_and_side`，`on_terminal_scroll` | 改 URL/路径激活快捷键、鼠标命中、选择、滚动、快捷键、粘贴或 IME 候选框位置时 |
 | `src/app/theme.rs` | 主题、内置字体注册、当前 theme profile 和 custom theme 逻辑 | `EMBEDDED_FONT_FAMILIES`，`BUILT_IN_FONT_FAMILIES`，`load_fonts`，`load_embedded_themes`，`apply_theme_profile` | app 视觉系统入口；增删字体需同步 `assets/fonts/README.md` 与 Settings 字体排序 |
 | `assets/fonts/README.md` | 内置字体 family、版本、样式和用途清单 | Bundled Fonts 表、排除范围、授权入口 | 判断字体包中哪些文件需要编译进应用或核对内部 family 名时 |
 | `src/app/lifecycle/startup.rs` | 启动辅助、进程环境、日志 writer/轮转、crash hook 和窗口打开 | `configure_rayon_threads`，`init_logging`，`runtime_log_dir`，`crash_report_dir`，`open_main_window` | 启动期配置必须在 GPUI 初始化前应用；日志 writer 必须保留进程期 guard |
@@ -82,7 +82,7 @@
 | `src/app/pane.rs` | pane tree 数据模型 | `PaneLayout` | 改 split tree、tab 查找、替换、删除或 pane 统计时 |
 | `src/app/workspace.rs` | 工作区页面、tab/group 模型、连接进度、远程采样和布局持久化 | `TabGroup`，`WorkspacePage`，`workspace_tabs`，`set_workspace_page`，`open_settings_page` | 改 terminal/SFTP/settings tab、SFTP-only group 可见性和关闭回退、当前 tab 可见性、Settings 重开状态重置、页面关闭、连接重试或监控采样时 |
 | `src/app/sftp.rs` | app 层 SFTP 页面、本地浏览、排序和右键菜单状态 | `SftpUiState`，`LocalFileBrowserState`，`SftpSortColumn`，`SftpContextMenuState` | 改 SFTP UI 状态模型而非协议 worker 时 |
-| `src/app/terminal.rs` | app 层 terminal 字体/滚动条/hover 状态 | `TerminalFontMetrics`，`TerminalScrollbarHandle`，`HoveredUrl` | 改 terminal UI metrics、scrollbar adapter 或 URL/path hover 时 |
+| `src/app/terminal.rs` | app 层 terminal 字体/滚动条/链接视觉状态 | `TerminalFontMetrics`，`TerminalScrollbarHandle`，`HoveredUrl`，`terminal_link_visual_active` | 改 terminal UI metrics、scrollbar adapter、URL/path hover 或 Command/Ctrl 激活提示时 |
 | `src/app/session_ui.rs` | session selector 与连接进度 UI 模型 | `SelectorEntry`，`ConnectionProgress` | 改 session selector 条目或连接进度遮罩状态时 |
 | `src/app/search.rs` | terminal 搜索状态与行为 | `SearchState`，`perform_search`，`search_highlight_map` | 改搜索输入、全缓冲区匹配、跳转或高亮时 |
 | `src/app/config_sync.rs` | app 层配置同步动作 | sync credentials，upload/download action，`SyncFinished` | 改 WebDAV/S3 表单取值、同步触发或状态接线时 |
@@ -95,6 +95,7 @@
 | `src/app/dialogs/settings/fast_menu.rs` | Settings 专用轻量下拉菜单 helper | `FastMenuItem`，`fast_settings_menu`，`fast_settings_menu_lazy`，`fast_settings_menu_disabled` | 改 Settings 内下拉 hover 反馈、避免 `PopupMenu` hover selected-state 重绘、延迟构建昂贵菜单候选或新增简单 Settings 菜单时 |
 | `src/app/dialogs/settings/terminal.rs` | Settings 终端行为与 local shell profile 页 | `settings_terminal_page`，shared `fast_settings_menu` | 改右键复制/粘贴、关键词高亮、默认 shell 选择、profile 程序/逐行 argv 编辑时；不得绕过 shared fast menu |
 | `src/app/dialogs/sftp_close_confirm.rs` | 活跃 SFTP 传输的页面关闭确认弹窗 | `show_sftp_transfer_close_dialog` | 改首次确认、group 绑定、二次快捷键、保持页面、后台继续、取消断开或记住动作时 |
+| `src/app/dialogs/sftp_overwrite_confirm.rs` | SFTP 本地同名文件覆盖确认弹窗 | `show_next_sftp_overwrite_dialog`，`approve_queued_sftp_overwrites` | 改跳过、替换、任务内全部替换、进程内全部替换、排队或失效请求处理时 |
 | `src/app/dialogs/settings_close_confirm.rs` | Settings 页面关闭确认弹窗 | `show_settings_close_confirm_dialog` | 改确认关闭、保持页面、记住第二次快捷键动作或关闭提示文案时 |
 | `src/app/dialogs/settings/workspace.rs` | Settings 工作区布局页 | `settings_workspace_page` | 改布局锁定、非激活标签状态色或 reset layout 入口时 |
 | `src/app/dialogs/settings/monitoring.rs` | Settings 监控与资源页 | `settings_monitoring_page`，deep sleep，Rayon worker numeric input | 改监控仪表盘、资源策略、Rayon worker 或监控位置设置时 |
@@ -110,7 +111,7 @@
 | `src/app/views/sidebar.rs` | 展开/收起侧栏和 saved session entry 渲染 | `sidebar`，`render_collapsed_sidebar`，saved sidebar row renderers | 改 SAVED 列表、`uniform_list` 可见行、分组展开/重命名、分组/单条 SSH 右键入口、折叠态入口或本地终端固定入口时 |
 | `src/app/views/monitoring.rs` | 底部/侧栏监控面板 | `render_monitoring_panel`，`render_sidebar_monitoring_panel` | 改 CPU/MEM/NET/DISK 展示、sparkline、监控位置或滚动条时 |
 | `src/app/views/tab_bar.rs` | 顶部 tab bar 和 split/search 操作按钮 | `render_tab_bar`，`tabs_scroll_handle` | 改编号 terminal/SFTP 标签、当前 tab 自动可见、SFTP 标签关闭、tab 选择/关闭、settings tab、split pane 按钮或 tab bar 搜索按钮时 |
-| `src/app/views/terminal_panel.rs` | 终端工作区、SFTP 页面、settings 页面承载和 pane tree 渲染 | `render_terminal_panel`，`render_pane_tree`，terminal scrollbar gutter | 改终端 focus/key/mouse、右侧滚动槽、pane splitter、disconnect overlay、SFTP 页面挂载或 settings 页面承载时 |
+| `src/app/views/terminal_panel.rs` | 终端工作区、SFTP 页面、settings 页面承载和 pane tree 渲染 | `render_terminal_panel`，`render_pane_tree`，terminal link cursor gate | 改终端 focus/key/mouse、Command/Ctrl 链接手型、右侧滚动槽、pane splitter、disconnect overlay、SFTP 页面挂载或 settings 页面承载时 |
 | `src/app/views/helpers.rs` | views 内部小 helper | `bind_titlebar_drag`，`collapsed_sidebar_abbrev`，`render_home_page` | 改集成标题栏拖动、折叠侧栏简称或空首页时 |
 | `src/backend/auth.rs` | SSH / SFTP 共用私钥解析和 public key 算法 fallback helper | `load_session_private_key`，`private_keys_with_algs` | 改 inline key、key path、passphrase 或 RSA SHA512/SHA256/none fallback 顺序时 |
 | `src/backend/local.rs` | 本地 PTY 后端 | `LocalBackendShutdown`，`spawn_local_terminal`，`local_shell_command` | 使用 `LocalShellProfile` 的程序与逐项 argv 启动；Unix 设置 `SHELL` 为目标程序，Windows 不覆盖以兼容 WSL；改本地 shell、PTY resize、child kill、reader/writer reaper 或 backend event 输出时 |
@@ -121,17 +122,16 @@
 | `src/backend/ssh/x11.rs` | SSH X11 forwarding 状态、cookie 校验、本地 relay 和脱敏诊断 | `X11ForwardingState::for_session`，`handle_x11_channel` | 改会话级 X11 开关、DISPLAY 选择、cookie 替换、本地 Unix/TCP 连接、来源地址脱敏或 X11 channel relay 时 |
 | `src/sftp.rs` | SFTP 模块入口和兼容出口 | module declarations，`RemoteEntry`，`PreviewData`，`SftpHandle`，path re-export | 改 SFTP 模块树或既有 `crate::sftp::*` 路径时 |
 | `src/sftp/auth.rs` | SFTP 连接认证 | `connect_and_authenticate`，`SftpClientHandler` | 改 SFTP SSH 认证主流程或 server key 策略时；private key 解析改 `src/backend/auth.rs` |
-| `src/sftp/model.rs` | SFTP 公共数据与持久化传输模型 | `RemoteEntry`，`PreviewData`，`Transfer`，`TransferState` | 改目录条目、预览载荷、传输序列化或旧 `Cancelled` 兼容时 |
-| `src/sftp/path.rs` | SFTP 远程路径和格式化 helper | `join_remote`，`parent_dir`，`format_mtime`，`shell_quote` | 改远程路径拼接、父目录解析、mtime 展示、shell quote 或文件大小格式化时 |
+| `src/sftp/model.rs` | SFTP 公共数据、覆盖决策与持久化传输模型 | `RemoteEntry`，`SftpOverwriteRequest`，`Transfer`，`TransferState` | 改目录条目、覆盖请求/响应、传输序列化或旧 `Cancelled` 兼容时 |
+| `src/sftp/path.rs` | SFTP 远程路径和格式化 helper | `join_remote`，`parent_dir`，`format_mtime` | 改远程路径拼接、父目录解析、mtime 展示或文件大小格式化时 |
 | `src/sftp/session.rs` | SFTP channel/session 构造和 timeout 常量 | `open_sftp_session`，`open_browse_sftp_session`，`open_transfer_sftp_session` | 改普通、raw browse 或 transfer SFTP channel 建立时 |
 | `src/sftp/browse.rs` | 目录 cursor、分页预算、reveal 和目录事件 | `BrowseCursor`，`DirectoryPage`，`open_and_emit_browser_page`，`read_next_browser_page` | 改分页、EOF、目录上限、cursor 关闭或 reveal path 时 |
 | `src/sftp/preview.rs` | 文件与受限目录预览 | `preview_impl`，`directory_preview_body` | 改二进制判断、预览字节预算或目录截断提示时 |
-| `src/sftp/transfer.rs` | 传输 flag、进度事件和上传/下载实现 | `TransferStateFlag`，`download_path_impl`，`download_file_impl`，`upload_paths_impl`，`upload_file_impl` | 改暂停/恢复/取消、单项或批量下载完成事件、传输进度、并发上传或目录下载时 |
-| `src/sftp/archive.rs` | 远端临时归档和本地解压 | `create_remote_archive`，`remove_remote_path`，`extract_archive_to` | 改目录打包下载、远端清理或 zip/tar 解压时 |
+| `src/sftp/transfer.rs` | 传输 flag、递归下载、覆盖决策和上传实现 | `TransferStateFlag`，`DownloadOverwritePolicy`，`download_path_impl`，`download_file_impl`，`upload_paths_impl` | 改暂停/恢复/取消、递归目录下载、冲突响应、批量完成事件、进度或并发上传时 |
 | `src/sftp/operations.rs` | SFTP 通用远程操作 | `recursive_delete` | 改递归删除行为时 |
 | `src/sftp/worker.rs` | SFTP handle、command、work pin 和 shutdown controller | `SftpHandle`，`SftpCommand::DownloadPaths`，`SftpWorkPin`，`spawn_sftp` | 改批量下载 command API、pin 计数、worker 创建或有界关闭时 |
 | `src/sftp/worker/runtime.rs` | SFTP 单一命令循环和 child task 所有权 | `run_sftp`，`SftpCommand::DownloadPaths`，`cancel_sftp_child_tasks` | 改服务器 home 获取、会话默认远端目录的首次列目录、单 session 批量下载调度、cursor/transfer state、remote edit watcher 或 child task 回收时 |
-| `src/terminal/element.rs` | terminal 行级 `ShapedLine` 缓存、字体 metrics、等宽保护与实时覆盖层绘制 | `TerminalElement`，`GridLayoutCache`，`GridLayoutKey`，`RowLayout`，`ShapedTextRun`，`cell_run_style`，`cursor_layout` | 改终端 text/background/block 准备缓存、搜索/keyword 色彩失效键、光标/选择/IME/URL hover 绘制或字体间距问题时 |
+| `src/terminal/element.rs` | terminal 行级 `ShapedLine` 缓存、字体 metrics、等宽保护与实时覆盖层绘制 | `TerminalElement`，`GridLayoutCache`，`GridLayoutKey`，`hovered_url_underlines`，`RowLayout` | 改终端 text/background/block 准备缓存、搜索/keyword 色彩失效键、Command/Ctrl 下的 URL/path 下划线、光标/选择/IME 或字体间距问题时 |
 | `src/terminal.rs` | terminal 模块入口和公开出口 | module declarations，backend/tab/input exports | 改 terminal 模块树或既有 `crate::terminal::*` 路径时 |
 | `src/terminal/backend.rs` | terminal backend command、sender 和 shutdown controller | `BackendCommand`，`BackendTx`，`BackendShutdown` | 改本地/SSH terminal 命令协议或关闭控制时；全应用事件在 `src/events.rs` |
 | `src/terminal/tab.rs` | terminal tab、共享行块 snapshot、滚屏复用、selection 和高亮节流 | `TerminalTab`，`RenderSnapshot`，`RenderRow`，`build_visible_rows`，`render_row_matches_term`，`SnapshotCache`，`HighlightRefresh`，`TermDamage` | `feed` / resize / scroll 累积并 reset damage；底部滚屏仅在逐 cell 对照当前 grid 后复用行；关键词颜色最多每 125ms 刷新且只随已验证行移动 |
@@ -182,9 +182,9 @@
 
 ## 刷新规则
 
-- 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、启动初始化、local shell profile/PTY argv、Rayon worker 配置或自定义值范围、日志/crash hook、Tokio runtime 生命周期、terminal Output batching / dirty generation / `TermDamage` / snapshot / highlight cache、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、内置字体 family/字重/授权/排序、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、内置 theme JSON、设置页字段分组、Settings 下拉菜单、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、workspace page / tab 模型、terminal backend shutdown controller、会话 `sftp_path` / `x11_forwarding`、本机 X server 检测、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 列表排序/传输标签面板、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`AGENTS.md`，`Cargo.toml`，`src/session.rs`，`src/app/dialogs/ssh.rs`，`src/backend/ssh/x11.rs`，`src/platform/x_server.rs`，`docs/project-env-audit/current.md`
+- 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、启动初始化、local shell profile/PTY argv、Rayon worker 配置或自定义值范围、日志/crash hook、Tokio runtime 生命周期、terminal Output batching / dirty generation / `TermDamage` / snapshot / highlight cache / URL-path modifier visuals、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、内置字体 family/字重/授权/排序、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、内置 theme JSON、设置页字段分组、Settings 下拉菜单、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、workspace page / tab 模型、terminal backend shutdown controller、会话 `sftp_path` / `x11_forwarding`、本机 X server 检测、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 递归下载/覆盖确认/传输标签面板、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
+- 最近依据：`AGENTS.md`，`.agents/skills/ax-ashell-fast-hover/SKILL.md`，`src/app/terminal.rs`，`src/app/actions/terminal.rs`，`src/app/views/terminal_panel.rs`，`src/terminal/element.rs`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-14 10:53 +0800
+- 2026-07-14 14:34 +0800
