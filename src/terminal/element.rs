@@ -15,7 +15,10 @@ use crate::terminal::custom_blocks::{is_custom_block_supported, paint_custom_blo
 use crate::terminal::{
     RenderSnapshot, TerminalComposition, TerminalFrozenSelection, ViewportSelection,
 };
-use crate::{AxShell, app::HoveredUrl};
+use crate::{
+    AxShell,
+    app::{HoveredUrl, terminal_link_visual_active},
+};
 
 #[derive(Clone, Copy)]
 struct TerminalMetrics {
@@ -299,7 +302,6 @@ struct GridLayoutKey {
     style: GridStyleKey,
     selection: Option<SelectionKey>,
     composition: Option<TerminalComposition>,
-    hovered_url: Option<HoveredUrl>,
 }
 
 #[derive(Clone, Default)]
@@ -657,7 +659,6 @@ impl TerminalElement {
             style: style.clone(),
             selection: self.selection_key(),
             composition: self.composition.clone(),
-            hovered_url: self.hovered_url_for_tab(cx),
         };
         let previous = cache.filter(|cache| cache.key == key);
         let highlights = self.row_highlights();
@@ -830,6 +831,9 @@ impl TerminalElement {
             return Vec::new();
         };
         let view_read = self.view.read(cx);
+        if !terminal_link_visual_active(true, view_read.cmd_ctrl_pressed) {
+            return Vec::new();
+        }
         let font_brightness = view_read.appearance.terminal_font_brightness;
         let mut underlines = Vec::with_capacity(hovered_url.cells.len());
         for &(row, col) in &hovered_url.cells {
@@ -1634,7 +1638,6 @@ mod tests {
         fnv1a_update, high_contrast_cursor_color, keyword_highlight_allowed,
         remap_frozen_selection, selection_background_rects,
     };
-    use crate::app::{HoverTargetKind, HoveredUrl};
     use crate::terminal::{RenderSnapshot, TerminalFrozenSelection, ViewportSelection};
     use alacritty_terminal::{
         term::cell::{Cell, Flags},
@@ -1744,7 +1747,6 @@ mod tests {
             style: style_key(8.0),
             selection: None,
             composition: None,
-            hovered_url: None,
         };
 
         let selection = GridLayoutKey {
@@ -1767,14 +1769,6 @@ mod tests {
             }),
             ..base.clone()
         };
-        let hover = GridLayoutKey {
-            hovered_url: Some(HoveredUrl {
-                target: HoverTargetKind::Url("https://example.test".to_string()),
-                tab_id: "tab".to_string(),
-                cells: vec![(0, 1)],
-            }),
-            ..base.clone()
-        };
         let cell_width = GridLayoutKey {
             style: style_key(9.0),
             ..base.clone()
@@ -1782,7 +1776,6 @@ mod tests {
 
         assert!(base != selection);
         assert!(base != composition);
-        assert!(base != hover);
         assert!(base != cell_width);
     }
 

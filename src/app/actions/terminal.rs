@@ -3,8 +3,9 @@ use std::ops::Range;
 use alacritty_terminal::index::Side;
 use alacritty_terminal::selection::SelectionType;
 use gpui::{
-    ClipboardItem, Context, Focusable as _, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Window, px,
+    ClipboardItem, Context, Focusable as _, KeyDownEvent, Modifiers, ModifiersChangedEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta,
+    ScrollWheelEvent, Window, px,
 };
 
 use crate::{
@@ -18,6 +19,27 @@ thread_local! {
 }
 
 impl AxShell {
+    fn set_terminal_link_activation_modifier(
+        &mut self,
+        modifiers: &Modifiers,
+        cx: &mut Context<Self>,
+    ) {
+        let pressed = terminal_link_activation_modifier_pressed(modifiers);
+        if self.cmd_ctrl_pressed != pressed {
+            self.cmd_ctrl_pressed = pressed;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn on_terminal_modifiers_changed(
+        &mut self,
+        event: &ModifiersChangedEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_terminal_link_activation_modifier(&event.modifiers, cx);
+    }
+
     fn terminal_password_prompt_active_for(&self, tab_id: &str) -> bool {
         self.terminal_password_prompt
             .as_ref()
@@ -142,8 +164,7 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.cmd_ctrl_pressed =
-            terminal_link_activation_modifier_pressed(&event.keystroke.modifiers);
+        self.set_terminal_link_activation_modifier(&event.keystroke.modifiers, cx);
         // If the search input is focused, skip terminal key processing
         // so the input can handle text entry, paste, etc. normally.
         if self

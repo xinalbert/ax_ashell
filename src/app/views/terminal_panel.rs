@@ -39,6 +39,7 @@ impl AxShell {
                             )
                             .on_mouse_move(cx.listener(Self::on_terminal_mouse_move))
                             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_terminal_mouse_up))
+                            .on_modifiers_changed(cx.listener(Self::on_terminal_modifiers_changed))
                             .on_key_down(cx.listener(Self::on_terminal_key_down))
                             .on_action(cx.listener(Self::on_terminal_tab_action))
                             .on_action(cx.listener(Self::on_terminal_backtab_action))
@@ -102,15 +103,17 @@ impl AxShell {
                 let line_height = px(this.terminal_line_height());
                 let cell_width = px(this.terminal_cell_width());
                 let terminal_left_inset = cell_width / 2.;
-                let is_url_hovered = this
-                    .hovered_url
-                    .as_ref()
-                    .map_or(false, |hu| hu.tab_id == *tab_id);
+                let terminal_link_is_activatable = crate::app::terminal_link_visual_active(
+                    this.hovered_url
+                        .as_ref()
+                        .is_some_and(|hovered| hovered.tab_id == *tab_id),
+                    this.cmd_ctrl_pressed,
+                );
                 let terminal = div()
                     .size_full()
                     .pl(terminal_left_inset)
                     .overflow_hidden()
-                    .when(is_url_hovered, |d| d.cursor_pointer())
+                    .when(terminal_link_is_activatable, |d| d.cursor_pointer())
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {

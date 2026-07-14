@@ -51,7 +51,7 @@ pub(crate) use sftp::{
 };
 pub(crate) use terminal::{
     HoverTargetKind, HoveredUrl, TerminalFontMetrics, TerminalScrollbarHandle,
-    terminal_link_activation_modifier_pressed,
+    terminal_link_activation_modifier_pressed, terminal_link_visual_active,
 };
 pub(crate) use workspace::{TabGroup, WorkspacePage};
 

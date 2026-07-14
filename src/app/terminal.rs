@@ -53,6 +53,13 @@ pub(crate) fn terminal_link_activation_modifier_pressed(modifiers: &Modifiers) -
     )
 }
 
+pub(crate) fn terminal_link_visual_active(
+    has_hovered_target: bool,
+    activation_modifier_pressed: bool,
+) -> bool {
+    has_hovered_target && activation_modifier_pressed
+}
+
 fn terminal_link_activation_modifier_pressed_for_platform(
     modifiers: &Modifiers,
     platform: TerminalLinkActivationPlatform,
@@ -136,6 +143,7 @@ mod tests {
 
     use super::{
         TerminalLinkActivationPlatform, terminal_link_activation_modifier_pressed_for_platform,
+        terminal_link_visual_active,
     };
 
     #[test]
@@ -172,5 +180,13 @@ mod tests {
             },
             TerminalLinkActivationPlatform::Other,
         ));
+    }
+
+    #[test]
+    fn terminal_link_visual_requires_hover_and_activation_modifier() {
+        assert!(!terminal_link_visual_active(false, false));
+        assert!(!terminal_link_visual_active(true, false));
+        assert!(!terminal_link_visual_active(false, true));
+        assert!(terminal_link_visual_active(true, true));
     }
 }
