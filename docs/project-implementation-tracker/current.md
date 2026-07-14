@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：修复终端重连状态持续刷新时，未变化的关键词 / URL 彩色高亮在 125ms 延迟高亮窗口内短暂消失导致的闪烁。
-- 交付物：full damage 下未变行的安全 `RenderRow` 复用、回归测试、自动化验证和 GUI 复测边界说明。
+- 目标：将 SSH X11 forwarding 改为每个会话独立控制，未发现本机 X server 时在 SSH 新建/编辑窗口给出简短安装提示。
+- 交付物：会话级 `x11_forwarding` 持久化、默认开启的表单开关、非阻塞安装提示、VcXsrv/Xming 分类与无自动启动 relay、由 `sshd` 分配远端 `DISPLAY` 的连接路径、双语说明和自动化验证。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/terminal/tab.rs`，必要时 `src/terminal/highlight.rs` / `src/terminal/element.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
-- 不在本轮范围内：修改 `Cargo.toml` / `Cargo.lock`、取消高亮限频、改变外部 Codex 请求重连行为、替换 GPUI / Metal renderer、改变 PTY 流控或 SSH/SFTP 功能。
+- 当前范围：`src/session.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/actions/session.rs`，`src/app/actions/saved_sessions.rs`，`src/app/dialogs/ssh.rs`，`src/app/dialogs/settings/proxy.rs`，`src/backend/ssh.rs`，`src/backend/ssh/x11.rs`，`src/platform/x_server.rs`，`src/config/model.rs`，`src/config/store.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/features/proxy-x11.md`，`docs/features/proxy-x11.zh.md`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 不在本轮范围内：修改 `Cargo.toml` / `Cargo.lock`、启动或安装第三方本地 X server、修改远端 `sshd` 配置、改变 SSH/SFTP 认证协议、引入新的 X11 crate。
 
 ## 当前状态
 
@@ -22,34 +22,30 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 截图输出来源、重连刷新与高亮闪烁机制定位 | 源码审查、字符串搜索 | `Reconnecting...` 来自外部 Codex 流式请求；AxShell 负责终端渲染和关键词 / URL 高亮 |
-| P2 | completed | full damage / dirty damage 下内容未变行继续复用旧 `RenderRow` | 聚焦单元测试、`cargo check` | 让延迟高亮能通过行块身份保留未变行颜色 |
-| P3 | completed | 格式化、自动化验证和文档收口 | `rustfmt`、聚焦测试、`cargo check`、`cargo test --quiet`、`git diff --check`、tracking validator | 已通过 |
-| P4 | completed | GUI 复测边界说明 | 真实 AxShell 里运行同类重连状态输出 | 自动化无法复现外部请求重连；保留为手工验收项 |
+| P1 | completed | 会话级 X11 配置和 SSH 表单开关 | Session serde 与表单数据流审查 | 新建和旧会话默认开启，可在编辑窗口单独关闭 |
+| P2 | completed | 本机 X server 检测、Windows 分类和无自动启动 relay | `cargo check` | VcXsrv/Xming 独立识别；仅用户手动按钮能启动本机服务 |
+| P3 | completed | 双语说明、回归测试与收口记录 | `cargo test --quiet`、`git diff --check`、tracking validator | Windows 和真实远端 `sshd` 仍需手工验收 |
 
 ## 已完成
 
-- 已确认截图中的 `Reconnecting... 1/5`、`Stream disconnected before completion` 和 `https://aixj.vip/responses` 不是 AxShell 自身文案，而是终端内运行的外部 Codex/请求流输出。
-- 已确认 AxShell 的关键词 / URL 高亮最多每 125ms 重算一次；延迟窗口内只复用能通过 `Rc<RenderRow>` 身份证明未变的高亮。
-- 已定位闪烁原因：持续重连状态可能让 terminal damage 退化为 full damage，`build_visible_rows` 会重建未变行，导致旧高亮无法映射到新行块，在下一次高亮刷新前短暂消失。
-- 已修改 `build_visible_rows`：对 full damage 和 dirty rows 先逐 cell 对照当前 terminal grid，内容未变的行继续复用旧 `Rc<RenderRow>`；已新增回归测试覆盖 full damage 下未变 `ERROR` / URL 行保留延迟高亮。
-- 已完成格式化、聚焦测试、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator。
+- `Session.x11_forwarding` 使用 serde 默认值 `true`，旧保存会话和分享文件缺失字段时保持默认开启。
+- SSH 新建、编辑和复制会话均显示会话级 X11 开关；开启且未发现 `DISPLAY` 或配置的本机 X server 时，仅显示安装提示，不阻止保存或连接。
+- SSH 连接只在该会话开启时发送 `request_x11`；不再硬编码远端 `DISPLAY`，由 `sshd` 分配实际值。
+- X11 relay 不再自动启动本地 X server；Settings 仅保留路径配置和用户主动的“打开 X server”操作。
 
 ## 验证
 
-- 已完成：`rustfmt --edition 2024 src/terminal/tab.rs`；`cargo test --quiet unchanged_rows_keep_deferred_highlights_across_full_damage` 1 项通过；`cargo test --quiet terminal::tab::tests` 16 项通过；`cargo check` 通过；完整 `cargo test --quiet` 165 项通过；`git diff --check` 通过；tracking docs validator 通过。
-- 未完成：真实 GUI 中外部 Codex 请求重连场景手工观察未执行。
+- 已完成：相关 Rust 文件 `rustfmt --edition 2024`、3 项会话/X11 聚焦测试、`cargo check`、完整 `cargo test --quiet`（171 项）、`git diff --check` 和 tracking docs validator。
+- 未完成：Windows VcXsrv/Xming 和远端 GUI 的手工验收。
 
 ## 风险与阻塞
 
-- 风险：保留未变行高亮会在相邻行变化影响跨行 URL 时最多保留 125ms 旧颜色；这比当前闪烁更可接受，下一次高亮刷新会纠正。
-- 风险：如果外部程序实际反复改写包含彩色关键词的同一行，该行仍会等到下一次高亮刷新才重新上色；本轮目标是修复未变化行被 full damage 误清空。
-- 无阻塞。
+- 无阻塞；`DISPLAY` 存在只能证明可尝试连接，实际 X server 监听、xauth、远端 `X11Forwarding yes` 和 `sudo` 环境策略仍须实际环境验证。
 
 ## 下一步
 
-- 在真实 AxShell 里复现同类 `Reconnecting...` 输出，确认状态行刷新时下方红色关键词和 URL 高亮不再闪烁。
+- 在 Windows 分别验证 VcXsrv 和 Xming、远端 `sshd` 的 `X11Forwarding yes`、`echo $DISPLAY` 和图形程序启动；必要时检查 `sudo` 是否清除了 `DISPLAY` / `XAUTHORITY`。
 
 ## 最后更新时间
 
-- 2026-07-13 23:09 +0800
+- 2026-07-14 10:57 +0800

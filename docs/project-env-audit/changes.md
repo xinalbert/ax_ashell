@@ -2291,3 +2291,41 @@
 - 受影响文件：`src/terminal/tab.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`；高亮限频和终端刷新语义保持不变。
 - 验证结果：`rustfmt --edition 2024 src/terminal/tab.rs` 通过；新增回归测试 1 项、terminal tab 聚焦测试 16 项、`cargo check`、完整 `cargo test --quiet` 165 项、`git diff --check` 和 tracking validator 均通过。`cargo check` 仅保留既有 `block v0.1.6` future-incompat warning；真实 GUI 外部请求重连场景尚未手工观察。
+## 2026-07-14 完成 SFTP 批量下载与远端拖放验证
+
+- 日期：2026-07-14 08:56 +0800
+- 变化摘要：远端多选下载现在作为单个 `DownloadPaths` 命令处理，只创建一个传输 SFTP session 并顺序处理全部项目；普通失败不阻断其余项目，取消中断整批。右键下载复用已选择集合；远端列表支持拖至本地文件面板后下载。运行时、依赖、manifest/lock 和 CI 配置不变。
+- 受影响文件：`src/app/actions/sftp.rs`，`src/app/views.rs`，`src/app/views/sftp_panel.rs`，`src/sftp/transfer.rs`，`src/sftp/worker.rs`，`src/sftp/worker/runtime.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`，未联网，未使用多 agent。
+- 验证结果：相关 `rustfmt`、右键选择集测试、worker lifecycle 测试、`cargo check`、完整 `cargo test --quiet`（166 项）、`git diff --check` 和 tracking validator 均通过。仅保留既有 `block v0.1.6` future-incompat warning；真实 SFTP 服务端和应用内拖放仍需手工确认。
+## 2026-07-14 会话 SFTP Path 环境验证
+
+- 时间：2026-07-14 09:23 +0800
+- 变化摘要：保存 SSH 会话新增可选 `sftp_path`；SSH 新建/编辑和保存会话导入导出都会保留该非敏感字段。SFTP 认证成功后，以服务器 home 解析路径并直接读取该目录；空值保持服务器 home。全局及最近本地目录设置未改变。
+- 受影响文件：`src/session.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/actions/session.rs`，`src/app/actions/saved_sessions.rs`，`src/app/actions/sftp.rs`，`src/app/workspace.rs`，`src/app/dialogs/ssh.rs`，`src/sftp/worker/runtime.rs`，`locales/en.yml`，`locales/zh-CN.yml`，`docs/features/sftp.md`，`docs/features/sftp.zh.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不联网或使用多 agent。
+- 验证结果：`rustfmt --edition 2024`、会话 serde 兼容测试、保存会话导入导出测试、SFTP 首目录解析测试、`cargo check`、完整 `cargo test --quiet`（168 项）、`git diff --check` 和 tracking docs validator 均通过。仅保留既有 `block v0.1.6` future-incompat warning；GUI 首目录行为仍需手工确认。
+
+## 2026-07-14 会话级 X11 forwarding 与本机 X server 提示环境验证
+
+- 日期：2026-07-14 10:57 +0800
+- 变化摘要：X11 forwarding 从全局配置迁至保存的 `Session.x11_forwarding`，新建会话默认开启；SSH 表单在未发现 `DISPLAY` 或配置路径的本机 X server 时显示安装提示，但不自动安装或启动服务。Windows VcXsrv/Xming 识别分支、远端 `DISPLAY` 分配和本机 relay 仍使用现有 Rust / Tokio / russh 组件。
+- 受影响文件：`src/session.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/actions/session.rs`，`src/app/actions/saved_sessions.rs`，`src/app/dialogs/ssh.rs`，`src/app/dialogs/settings/proxy.rs`，`src/backend/ssh.rs`，`src/backend/ssh/x11.rs`，`src/platform/x_server.rs`，`src/config/model.rs`，`src/config/store.rs`，`locales/`，`docs/features/proxy-x11*.md`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`，未联网或使用多 agent。
+- 验证结果：相关 `rustfmt`、3 项聚焦测试、`cargo check`、完整 `cargo test --quiet`（171 项）、`git diff --check` 和 tracking docs validator 均通过。仅保留既有 `block v0.1.6` future-incompat warning；Windows X server 和远端 GUI 需手工验证。
+
+## 2026-07-14 SFTP 本地文件外拖环境验证
+
+- 时间：2026-07-14 09:51 +0800
+- 变化摘要：右侧本地文件列表支持将已有本机文件或文件夹原生拖到 Finder / Explorer。拖动已勾选项目会携带完整勾选集合；拖动未勾选项目只携带当前项目。远端项目继续只能拖入本地面板触发下载，未落盘前不对外伪造本机路径。
+- 受影响文件：`src/app/views/sftp_panel.rs`，`docs/features/sftp.md`，`docs/features/sftp.zh.md`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo 和已有 GPUI 拖放接口；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不联网或使用多 agent。
+- 验证结果：`rustfmt --edition 2024 src/app/views/sftp_panel.rs`、`cargo check`、完整 `cargo test --quiet`（168 项）和 `git diff --check` 通过。仅保留既有 `block v0.1.6` future-incompat warning；真实 Finder / Explorer 拖放和远端拖入本地下载需要手工确认。
+
+## 2026-07-14 SFTP 本地文件外拖结论更正
+
+- 时间：2026-07-14 09:58 +0800
+- 变化摘要：继续审查锁定 GPUI 的平台层后确认，`ExternalPaths` 支持操作系统文件拖入应用，`.on_drag` 仅维护 GPUI 窗口内拖放；没有应用向 Finder / Explorer 发起文件拖放的 macOS `NSDraggingSession`、Windows OLE 或 Linux 等价实现。已撤回无法跨应用放下的本地列表接线，远端拖入本地面板下载保持不变。
+- 受影响文件：`src/app/views/sftp_panel.rs`，`docs/features/sftp.md`，`docs/features/sftp.zh.md`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo 和锁定 GPUI；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不联网或使用多 agent。跨应用外拖需未来扩展平台层。
+- 验证结果：撤回无效接线后，`rustfmt --edition 2024 src/app/views/sftp_panel.rs`、`cargo check`、完整 `cargo test --quiet`（168 项）、`git diff --check` 和 tracking validator 通过。仅保留既有 `block v0.1.6` future-incompat warning。
