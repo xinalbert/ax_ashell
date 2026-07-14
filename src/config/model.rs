@@ -423,10 +423,6 @@ pub(super) struct ConfigFile {
     pub(super) global_proxy_user: String,
     #[serde(default)]
     pub(super) global_proxy_password: String,
-    #[serde(default)]
-    pub(super) x11_forwarding_enabled: bool,
-    #[serde(default = "default_x11_launch_xquartz")]
-    pub(super) x11_launch_xquartz: bool,
     #[serde(default = "default_xquartz_app_path")]
     pub(super) xquartz_app_path: String,
 }
@@ -537,10 +533,6 @@ pub(super) fn default_global_proxy_type() -> String {
 
 fn default_xquartz_app_path() -> String {
     x_server::default_app_path()
-}
-
-fn default_x11_launch_xquartz() -> bool {
-    x_server::should_launch_by_default()
 }
 
 pub(super) fn default_monitoring_position() -> String {
@@ -664,8 +656,6 @@ impl Default for ConfigFile {
             global_proxy_port: None,
             global_proxy_user: String::new(),
             global_proxy_password: String::new(),
-            x11_forwarding_enabled: false,
-            x11_launch_xquartz: default_x11_launch_xquartz(),
             xquartz_app_path: default_xquartz_app_path(),
         }
     }

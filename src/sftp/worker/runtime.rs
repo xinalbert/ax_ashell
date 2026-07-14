@@ -1,6 +1,9 @@
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicU64},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use anyhow::Result;
@@ -29,7 +32,8 @@ use crate::sftp::{
     session::{open_sftp_session, open_transfer_sftp_session},
     transfer::{
         TransferStateFlag, download_file_impl, download_path_impl, fail_transfer_start,
-        send_sftp_status, send_transfer_error, upload_file_impl, upload_paths_impl,
+        send_sftp_status, send_transfer_error, send_transfer_progress, upload_file_impl,
+        upload_paths_impl,
     },
 };
 
@@ -72,9 +76,11 @@ pub(super) async fn run_sftp(
         })
         .await;
 
+    let initial_path = sftp_initial_path(&session, &home);
     let mut browse_cursor = None;
-    open_and_emit_browser_page(&events, &tab_id, &handle, &home, &mut browse_cursor).await?;
-    let mut browse_path = home.clone();
+    open_and_emit_browser_page(&events, &tab_id, &handle, &initial_path, &mut browse_cursor)
+        .await?;
+    let mut browse_path = initial_path;
     drop(initial_pin);
 
     let mut active_transfers: std::collections::HashMap<String, TransferStateFlag> =
@@ -248,8 +254,8 @@ pub(super) async fn run_sftp(
                     }
                 }
             }
-            SftpCommand::Download {
-                remote,
+            SftpCommand::DownloadPaths {
+                remotes,
                 local_dir,
                 pin,
             } => {
@@ -257,10 +263,16 @@ pub(super) async fn run_sftp(
                 let flag = TransferStateFlag::new();
                 active_transfers.insert(id.clone(), TransferStateFlag(flag.0.clone()));
 
+                let item_count = remotes.len();
+                let name = if item_count == 1 {
+                    base_name(&remotes[0]).to_string()
+                } else {
+                    t!("n_files", files = item_count).to_string()
+                };
                 let info = crate::sftp::TransferInfo {
                     id: id.clone(),
-                    name: base_name(&remote).to_string(),
-                    source: remote.clone(),
+                    name,
+                    source: "remote".to_string(),
                     target: local_dir.clone(),
                     kind: crate::sftp::TransferType::Download,
                     total_bytes: None,
@@ -289,39 +301,62 @@ pub(super) async fn run_sftp(
                         }
                     };
 
-                    send_sftp_status(
-                        &events_clone,
-                        &tab_id_clone,
-                        t!("downloading_file", base = base_name(&remote)).to_string(),
-                    )
-                    .await;
+                    let local_dir = PathBuf::from(local_dir);
+                    let mut failures = Vec::new();
+                    for remote in remotes {
+                        if flag.0.load(Ordering::SeqCst) == 2 {
+                            failures.clear();
+                            failures.push("transfer cancelled".to_string());
+                            break;
+                        }
+                        send_sftp_status(
+                            &events_clone,
+                            &tab_id_clone,
+                            t!("downloading_file", base = base_name(&remote)).to_string(),
+                        )
+                        .await;
 
-                    match download_path_impl(
-                        &handle_clone,
-                        &sftp_session,
-                        &remote,
-                        Path::new(&local_dir),
-                        flag,
-                        &events_clone,
-                        &tab_id_clone,
-                        &id,
-                    )
-                    .await
-                    {
-                        Ok(summary) => {
-                            send_sftp_status(&events_clone, &tab_id_clone, summary).await;
+                        if let Err(err) = download_path_impl(
+                            &handle_clone,
+                            &sftp_session,
+                            &remote,
+                            &local_dir,
+                            TransferStateFlag(Arc::clone(&flag.0)),
+                            &events_clone,
+                            &tab_id_clone,
+                            &id,
+                            false,
+                        )
+                        .await
+                        {
+                            failures.push(format!("{}: {err:#}", base_name(&remote)));
+                            if flag.0.load(Ordering::SeqCst) == 2 {
+                                failures.clear();
+                                failures.push("transfer cancelled".to_string());
+                                break;
+                            }
                         }
-                        Err(err) => {
-                            let err_msg = format!("{err:#}");
-                            send_transfer_error(
-                                &events_clone,
-                                &tab_id_clone,
-                                &id,
-                                err_msg.clone(),
-                                t!("download_failed", err = err_msg).to_string(),
-                            )
-                            .await;
-                        }
+                    }
+                    if failures.is_empty() {
+                        send_transfer_progress(
+                            &events_clone,
+                            &tab_id_clone,
+                            &id,
+                            0,
+                            None,
+                            crate::sftp::TransferState::Completed,
+                        )
+                        .await;
+                    } else {
+                        let err_msg = failures.join("; ");
+                        send_transfer_error(
+                            &events_clone,
+                            &tab_id_clone,
+                            &id,
+                            err_msg.clone(),
+                            t!("download_failed", err = err_msg).to_string(),
+                        )
+                        .await;
                     }
                     let _ = commands_tx_clone.send(SftpCommand::TransferFinished(id));
                 });
@@ -473,6 +508,7 @@ pub(super) async fn run_sftp(
                         &events_clone,
                         &tab_id_clone,
                         "edit-download",
+                        true,
                     )
                     .await
                     {
@@ -768,6 +804,10 @@ fn queue_list_dir(
     let _ = commands.send(SftpCommand::ListDir { path, pin });
 }
 
+fn sftp_initial_path(session: &Session, home: &str) -> String {
+    crate::sftp::resolve_remote_path(home, &session.sftp_path, home)
+}
+
 async fn cancel_sftp_child_tasks(
     active_transfers: &mut std::collections::HashMap<String, TransferStateFlag>,
     child_tasks: &mut JoinSet<()>,
@@ -786,7 +826,31 @@ mod lifecycle_tests {
 
     use tokio::task::JoinSet;
 
-    use super::{SftpWorkTracker, TransferStateFlag, cancel_sftp_child_tasks};
+    use crate::session::Session;
+
+    use super::{SftpWorkTracker, TransferStateFlag, cancel_sftp_child_tasks, sftp_initial_path};
+
+    #[test]
+    fn sftp_initial_path_uses_the_session_path_or_server_home() {
+        let mut session = Session::password(
+            "example.com".into(),
+            22,
+            "administrator".into(),
+            "password".into(),
+        );
+        let home = "/C:/Users/Administrator";
+
+        assert_eq!(sftp_initial_path(&session, home), home);
+
+        session.sftp_path = "~/2026".into();
+        assert_eq!(
+            sftp_initial_path(&session, home),
+            "/C:/Users/Administrator/2026"
+        );
+
+        session.sftp_path = "/G:/albertxin/2026".into();
+        assert_eq!(sftp_initial_path(&session, home), "/G:/albertxin/2026");
+    }
 
     #[tokio::test]
     async fn closing_worker_cancels_transfers_and_aborts_child_tasks() {

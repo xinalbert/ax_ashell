@@ -32,6 +32,10 @@ fn default_share_proxy_type() -> String {
     "none".to_string()
 }
 
+fn default_share_x11_forwarding() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SavedSessionsShareFile {
     format: String,
@@ -64,6 +68,10 @@ struct SavedSessionShareEntry {
     proxy_port: Option<u16>,
     #[serde(default)]
     proxy_user: String,
+    #[serde(default)]
+    sftp_path: String,
+    #[serde(default = "default_share_x11_forwarding")]
+    x11_forwarding: bool,
 }
 
 #[derive(Debug)]
@@ -101,6 +109,8 @@ impl SavedSessionShareEntry {
             proxy_host: session.proxy_host.trim().to_string(),
             proxy_port: session.proxy_port,
             proxy_user: session.proxy_user.trim().to_string(),
+            sftp_path: session.sftp_path.trim().to_string(),
+            x11_forwarding: session.x11_forwarding,
         }
     }
 
@@ -132,6 +142,8 @@ impl SavedSessionShareEntry {
             self.name.trim().to_string()
         };
         session.group_name = normalize_session_group_name(&self.group_name);
+        session.sftp_path = self.sftp_path.trim().to_string();
+        session.x11_forwarding = self.x11_forwarding;
 
         session.proxy_type = normalize_share_proxy_type(&self.proxy_type);
         if session.proxy_type == "none" {
@@ -236,6 +248,8 @@ fn session_share_fingerprint(session: &Session) -> String {
             .map(|port| port.to_string())
             .unwrap_or_default(),
         session.proxy_user.trim().to_string(),
+        session.sftp_path.trim().to_string(),
+        session.x11_forwarding.to_string(),
     ]
     .join("\0")
 }
@@ -803,6 +817,8 @@ mod tests {
         session.id = "session-1".into();
         session.name = "Example".into();
         session.group_name = "Shared".into();
+        session.sftp_path = "/srv/example".into();
+        session.x11_forwarding = false;
         session.password = "password-secret".into();
         session.proxy_password = "proxy-secret".into();
 
@@ -810,6 +826,8 @@ mod tests {
 
         assert!(json.contains("example.com"));
         assert!(json.contains("\"auth\": \"key\""));
+        assert!(json.contains("\"sftp_path\": \"/srv/example\""));
+        assert!(json.contains("\"x11_forwarding\": false"));
         assert!(!json.contains("password-secret"));
         assert!(!json.contains("PRIVATE KEY DATA"));
         assert!(!json.contains("key-passphrase"));
@@ -818,6 +836,46 @@ mod tests {
         assert!(!json.contains("private_key"));
         assert!(!json.contains("passphrase"));
         assert!(!json.contains("proxy_password"));
+    }
+
+    #[test]
+    fn saved_sessions_share_x11_forwarding_defaults_to_enabled() {
+        let entry = SavedSessionShareEntry::from_session(&sample_password_session(
+            "session-1",
+            "Example",
+            "example.com",
+        ));
+        let mut value = serde_json::to_value(entry).expect("share entry serializes");
+        value
+            .as_object_mut()
+            .expect("share entry is an object")
+            .remove("x11_forwarding");
+
+        let entry: SavedSessionShareEntry =
+            serde_json::from_value(value).expect("older share entry deserializes");
+        assert!(
+            entry
+                .into_session()
+                .expect("share entry is valid")
+                .x11_forwarding
+        );
+    }
+
+    #[test]
+    fn saved_sessions_share_preserves_disabled_x11_forwarding() {
+        let mut entry = SavedSessionShareEntry::from_session(&sample_password_session(
+            "session-1",
+            "Example",
+            "example.com",
+        ));
+        entry.x11_forwarding = false;
+
+        assert!(
+            !entry
+                .into_session()
+                .expect("share entry is valid")
+                .x11_forwarding
+        );
     }
 
     #[test]
@@ -855,6 +913,7 @@ mod tests {
         assert!(imported.private_key_inline.is_empty());
         assert!(imported.passphrase.is_empty());
         assert!(imported.proxy_password.is_empty());
+        assert_eq!(imported.sftp_path, existing.sftp_path);
     }
 
     #[test]

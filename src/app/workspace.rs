@@ -554,7 +554,7 @@ impl AxShell {
     }
 
     pub(crate) fn sync_active_sftp_to_shell_working_dir(&mut self, cx: &mut Context<Self>) {
-        if self.pending_sftp_selection_path.is_some() {
+        if self.pending_sftp_selection_path.is_some() || self.active_sftp_has_configured_path() {
             return;
         }
         if self.workspace_page != WorkspacePage::Sftp {
@@ -589,7 +589,7 @@ impl AxShell {
         path: &str,
         cx: &mut Context<Self>,
     ) {
-        if self.pending_sftp_selection_path.is_some() {
+        if self.pending_sftp_selection_path.is_some() || self.active_sftp_has_configured_path() {
             return;
         }
         if self.workspace_page != WorkspacePage::Sftp {

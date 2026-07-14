@@ -193,6 +193,7 @@ pub(super) async fn download_path_impl(
     events: &BackendEventSender,
     tab_id: &str,
     id: &str,
+    report_completion: bool,
 ) -> Result<String> {
     tokio::fs::create_dir_all(local_dir)
         .await
@@ -228,13 +229,24 @@ pub(super) async fn download_path_impl(
             events,
             tab_id,
             id,
+            report_completion,
         )
         .await?;
         return Ok(t!("downloaded_folder", path = extracted_to.display()).to_string());
     }
 
     let local_path = local_dir.join(base_name(remote));
-    download_file_impl(sftp, remote, &local_path, &flag, events, tab_id, id).await?;
+    download_file_impl(
+        sftp,
+        remote,
+        &local_path,
+        &flag,
+        events,
+        tab_id,
+        id,
+        report_completion,
+    )
+    .await?;
     Ok(t!("downloaded_file", path = local_path.display()).to_string())
 }
 
@@ -274,6 +286,7 @@ async fn download_dir_recursive(
                 events,
                 tab_id,
                 id,
+                true,
             )
             .await?;
             let _ = maybe_extract_archive(&local_path).await;
@@ -291,6 +304,7 @@ async fn download_remote_directory_archive(
     events: &BackendEventSender,
     tab_id: &str,
     id: &str,
+    report_completion: bool,
 ) -> Result<PathBuf> {
     let remote_archive = format!(
         "/tmp/ax_shell-{}-{}.tar.gz",
@@ -320,6 +334,7 @@ async fn download_remote_directory_archive(
             events,
             tab_id,
             id,
+            report_completion,
         )
         .await?;
         extract_archive_to(
@@ -358,6 +373,7 @@ pub(super) async fn download_file_impl(
     events: &BackendEventSender,
     tab_id: &str,
     id: &str,
+    report_completion: bool,
 ) -> Result<()> {
     let mut remote_file = sftp
         .open(remote)
@@ -399,15 +415,17 @@ pub(super) async fn download_file_impl(
     }
     local_file.flush().await.context("flush local file")?;
 
-    send_transfer_progress(
-        events,
-        tab_id,
-        id,
-        transferred,
-        total,
-        TransferState::Completed,
-    )
-    .await;
+    if report_completion {
+        send_transfer_progress(
+            events,
+            tab_id,
+            id,
+            transferred,
+            total,
+            TransferState::Completed,
+        )
+        .await;
+    }
 
     Ok(())
 }

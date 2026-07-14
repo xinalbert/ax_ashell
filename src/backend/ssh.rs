@@ -173,7 +173,7 @@ async fn run_ssh(
     task_tracker: RuntimeTaskTracker,
 ) -> Result<()> {
     let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
-    let x11 = X11ForwardingState::from_config(&config, task_tracker);
+    let x11 = X11ForwardingState::for_session(&session, &config, task_tracker);
     let _ = events
         .send(BackendEvent::Status {
             tab_id: tab_id.clone(),
@@ -211,21 +211,10 @@ async fn run_ssh(
             .await
         {
             Ok(()) => {
-                if let Err(err) = channel
-                    .set_env(false, "DISPLAY", x11.remote_display.clone())
-                    .await
-                {
-                    tracing::warn!(
-                        component = "ssh",
-                        operation = "set_x11_display",
-                        error = %sanitize_error(&err.to_string()),
-                        "SSH server rejected the X11 DISPLAY environment"
-                    );
-                }
                 let _ = events
                     .send(BackendEvent::Status {
                         tab_id: tab_id.clone(),
-                        text: format!("X11 forwarding requested, DISPLAY={}", x11.remote_display),
+                        text: "X11 forwarding requested; waiting for sshd to assign DISPLAY".into(),
                     })
                     .await;
             }

@@ -1,7 +1,4 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result, anyhow};
 use rand::RngCore;
@@ -18,10 +15,10 @@ use crate::{
     app::RuntimeTaskTracker,
     config::ConfigStore,
     diagnostics::{mask_host, mask_value, sanitize_error},
+    session::Session,
 };
 
 const X11_AUTH_PROTOCOL: &str = "MIT-MAGIC-COOKIE-1";
-const X11_REMOTE_DISPLAY: &str = "localhost:10.0";
 const X11_DEFAULT_SCREEN: u32 = 0;
 const X11_MAX_AUTH_FIELD_LEN: usize = 4096;
 
@@ -32,54 +29,37 @@ impl<T> AsyncReadWrite for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 pub(super) struct X11ForwardingState {
     fake_cookie: [u8; 16],
     pub(super) fake_cookie_hex: String,
-    local_display: Mutex<String>,
-    pub(super) remote_display: String,
+    local_display: String,
     pub(super) screen_number: u32,
-    launch_local_x_server: bool,
-    local_x_server_app_path: String,
     task_tracker: RuntimeTaskTracker,
 }
 
 impl X11ForwardingState {
-    pub(super) fn from_config(
+    pub(super) fn for_session(
+        session: &Session,
         config: &ConfigStore,
         task_tracker: RuntimeTaskTracker,
     ) -> Option<Arc<Self>> {
-        if !config.x11_forwarding_enabled() {
+        if !session.x11_forwarding {
             return None;
         }
 
         let mut fake_cookie = [0u8; 16];
         rand::rngs::OsRng.fill_bytes(&mut fake_cookie);
-        let local_display = crate::platform::x_server::resolve_display(
-            config.local_x_server_app_path(),
-            config.x11_launch_local_x_server(),
-        );
+        let local_display =
+            crate::platform::x_server::resolve_display(config.local_x_server_app_path(), false);
 
         Some(Arc::new(Self {
             fake_cookie,
             fake_cookie_hex: hex::encode(fake_cookie),
-            local_display: Mutex::new(local_display),
-            remote_display: X11_REMOTE_DISPLAY.to_string(),
+            local_display,
             screen_number: X11_DEFAULT_SCREEN,
-            launch_local_x_server: config.x11_launch_local_x_server(),
-            local_x_server_app_path: config.local_x_server_app_path().to_string(),
             task_tracker,
         }))
     }
 
     fn local_display(&self) -> String {
-        self.local_display
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-    }
-
-    fn set_local_display(&self, display: String) {
-        *self
-            .local_display
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = display;
+        self.local_display.clone()
     }
 }
 
@@ -142,24 +122,7 @@ pub(super) async fn handle_x11_channel(
 async fn prepare_x11_relay(
     x11: &X11ForwardingState,
 ) -> Result<(LocalX11Auth, Box<dyn AsyncReadWrite>)> {
-    let mut local_display = x11.local_display();
-    if x11.launch_local_x_server {
-        match crate::app::startup::launch_local_x_server_app(&x11.local_x_server_app_path) {
-            Ok(display) => {
-                if display != local_display {
-                    x11.set_local_display(display.clone());
-                    local_display = display;
-                }
-                sleep(Duration::from_millis(700)).await;
-            }
-            Err(err) => tracing::warn!(
-                component = "ssh_x11",
-                operation = "launch_local_server",
-                error = %sanitize_error(&format!("{err:#}")),
-                "Failed to launch configured local X server"
-            ),
-        }
-    }
+    let local_display = x11.local_display();
 
     let auth = match load_local_x11_cookie(&local_display) {
         Ok(cookie) => LocalX11Auth {
@@ -529,4 +492,28 @@ fn put_x11_u16(byte_order: u8, out: &mut [u8], value: u16) {
 
 fn pad4(len: usize) -> usize {
     (len + 3) & !3
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{app::RuntimeTaskTracker, config::ConfigStore, session::Session};
+
+    use super::X11ForwardingState;
+
+    #[test]
+    fn x11_state_is_created_only_for_enabled_sessions() {
+        let config = ConfigStore::in_memory();
+        let mut session = Session::password(
+            "example.com".to_string(),
+            22,
+            "user".to_string(),
+            "password".to_string(),
+        );
+        let tracker = RuntimeTaskTracker::new();
+
+        assert!(X11ForwardingState::for_session(&session, &config, tracker.clone()).is_some());
+
+        session.x11_forwarding = false;
+        assert!(X11ForwardingState::for_session(&session, &config, tracker).is_none());
+    }
 }

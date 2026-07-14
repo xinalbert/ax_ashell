@@ -85,6 +85,8 @@ pub(crate) struct AxShell {
     pub(crate) proxy_port_input: Entity<InputState>,
     pub(crate) proxy_user_input: Entity<InputState>,
     pub(crate) proxy_password_input: Entity<InputState>,
+    pub(crate) session_sftp_path_input: Entity<InputState>,
+    pub(crate) session_x11_forwarding: bool,
     pub(crate) global_proxy_type: String,
     pub(crate) global_proxy_host_input: Entity<InputState>,
     pub(crate) global_proxy_port_input: Entity<InputState>,

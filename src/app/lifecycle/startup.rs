@@ -566,7 +566,17 @@ pub(crate) fn launch_local_x_server_app(path: &str) -> Result<String> {
     }
     let display = crate::platform::x_server::resolve_display(path, true);
     let mut command = std::process::Command::new(app_path);
-    for arg in crate::platform::x_server::launch_args(path, &display) {
+    let server_kind = crate::platform::x_server::windows_x_server_kind(path);
+    let args = crate::platform::x_server::launch_args(path, &display);
+    tracing::info!(
+        component = "x11",
+        operation = "launch_local_server",
+        server = server_kind.label(),
+        display = %display,
+        configured_args = ?args,
+        "Launching configured Windows X server"
+    );
+    for arg in args {
         command.arg(arg);
     }
     command

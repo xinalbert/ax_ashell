@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     path::{Component, Path, PathBuf},
     time::UNIX_EPOCH,
@@ -32,6 +33,19 @@ pub(crate) fn is_editable_text_file(filename: &str) -> bool {
         return true;
     }
     false
+}
+
+pub(crate) fn download_targets_for_context(
+    selected_paths: &HashSet<String>,
+    context_path: &str,
+) -> Vec<String> {
+    if !selected_paths.contains(context_path) {
+        return vec![context_path.to_string()];
+    }
+
+    let mut paths: Vec<String> = selected_paths.iter().cloned().collect();
+    paths.sort_unstable();
+    paths
 }
 
 impl AxShell {
@@ -201,7 +215,15 @@ impl AxShell {
                 && sftp.entries.is_empty()
                 && sftp.selected_path.is_none()
                 && sftp.selected_entries.is_empty()
-        })
+        }) && !self.active_sftp_has_configured_path()
+    }
+
+    pub(crate) fn active_sftp_has_configured_path(&self) -> bool {
+        let Some(group_id) = self.active_group.as_deref() else {
+            return false;
+        };
+        self.session_for_sftp_group(group_id)
+            .is_some_and(|session| !session.sftp_path.trim().is_empty())
     }
 
     fn session_for_sftp_group(&self, group_id: &str) -> Option<crate::session::Session> {
@@ -1069,7 +1091,16 @@ impl AxShell {
             return;
         };
         if let SftpContextMenuTarget::Remote { path, .. } = menu.target {
-            self.download_sftp_entry(path, window, cx);
+            let selected = self
+                .active_sftp()
+                .map(|sftp| download_targets_for_context(&sftp.selected_entries, &path))
+                .unwrap_or_else(|| vec![path]);
+            if self.download_sftp_entries(selected, window, cx)
+                && let Some(sftp) = self.active_sftp_mut()
+            {
+                sftp.selected_entries.clear();
+                cx.notify();
+            }
         }
         cx.notify();
     }
@@ -1196,28 +1227,36 @@ impl AxShell {
         cx.notify();
     }
 
-    pub(crate) fn download_sftp_entry(
+    pub(crate) fn download_sftp_entries(
         &mut self,
-        remote_path: String,
+        remotes: Vec<String>,
         _window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
+        if remotes.is_empty() {
+            return false;
+        }
         let Some(handle) = self.ensure_active_sftp_handle() else {
-            return;
+            return false;
         };
         self.mark_active_sftp_activity();
         let local_dir = self.local_file_browser.current_path.clone();
         tracing::info!(
             component = "sftp",
-            operation = "download",
-            remote_path = %crate::diagnostics::mask_path(&remote_path),
+            operation = "download_batch",
+            item_count = remotes.len(),
             local_path = %crate::diagnostics::mask_path(&local_dir),
-            "Starting SFTP download"
+            "Starting SFTP batch download"
         );
-        handle.download(remote_path, local_dir.clone());
+        if !handle.download_paths(remotes, local_dir.clone()) {
+            self.local_file_browser.status = "download could not be queued".to_string();
+            cx.notify();
+            return false;
+        }
         self.sftp_transfer_tab = crate::app::SftpTransferTab::Active;
         self.local_file_browser.status = format!("downloading to {local_dir}");
         cx.notify();
+        true
     }
 
     pub(crate) fn upload_sftp_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1346,7 +1385,7 @@ impl AxShell {
 
     pub(crate) fn download_selected_sftp_entries(
         &mut self,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(sftp) = self.active_sftp() else {
@@ -1357,27 +1396,12 @@ impl AxShell {
             return;
         }
 
-        let Some(handle) = self.ensure_active_sftp_handle() else {
-            return;
-        };
-        self.mark_active_sftp_activity();
-        let local_dir = self.local_file_browser.current_path.clone();
-        tracing::info!(
-            component = "sftp",
-            operation = "download_batch",
-            item_count = selected.len(),
-            local_path = %crate::diagnostics::mask_path(&local_dir),
-            "Starting SFTP batch download"
-        );
-        for remote in selected {
-            let _ = handle.download(remote, local_dir.clone());
+        if self.download_sftp_entries(selected, window, cx)
+            && let Some(sftp) = self.active_sftp_mut()
+        {
+            sftp.selected_entries.clear();
+            cx.notify();
         }
-        if let Some(sftp_mut) = self.active_sftp_mut() {
-            sftp_mut.selected_entries.clear();
-        }
-        self.sftp_transfer_tab = crate::app::SftpTransferTab::Active;
-        self.local_file_browser.status = format!("downloading to {local_dir}");
-        cx.notify();
     }
 
     pub(crate) fn upload_sftp_files_batch(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
@@ -1422,9 +1446,26 @@ fn should_reclaim_sftp_worker(
 
 #[cfg(test)]
 mod idle_reclaim_tests {
-    use std::time::{Duration, Instant};
+    use std::{
+        collections::HashSet,
+        time::{Duration, Instant},
+    };
 
-    use super::should_reclaim_sftp_worker;
+    use super::{download_targets_for_context, should_reclaim_sftp_worker};
+
+    #[test]
+    fn context_download_uses_the_selected_group_only_for_a_selected_item() {
+        let selected = HashSet::from(["/alpha".to_string(), "/beta".to_string()]);
+
+        assert_eq!(
+            download_targets_for_context(&selected, "/beta"),
+            ["/alpha".to_string(), "/beta".to_string()],
+        );
+        assert_eq!(
+            download_targets_for_context(&selected, "/gamma"),
+            ["/gamma".to_string()],
+        );
+    }
 
     #[test]
     fn deep_sleep_reclaims_only_unpinned_workers() {

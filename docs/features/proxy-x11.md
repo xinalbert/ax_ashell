@@ -24,7 +24,7 @@ Platform expectations:
 
 ## Local X Server Downloads
 
-AxShell does not bundle a local X server. Install and start one before using SSH X11 forwarding, or enable AxShell's local X server launch option and point it at the installed app.
+AxShell does not bundle or automatically start a local X server. Install and start one before using SSH X11 forwarding. The SSH new/edit form enables X11 forwarding per session by default and shows a short installation reminder when no local X server is found.
 
 | Platform | X server | Where to get it | Notes |
 | --- | --- | --- | --- |
@@ -34,15 +34,16 @@ AxShell does not bundle a local X server. Install and start one before using SSH
 | Windows | Xming | [SourceForge archive](https://sourceforge.net/projects/xming/) or [Straight Running](https://www.straightrunning.com/XmingNotes/) | Legacy Windows alternative. Some current downloads may follow the Straight Running license/download flow. |
 | Linux / Wayland | X.Org / Xwayland | Install from your distribution package manager; see [X.Org](https://xorg.freedesktop.org/wiki/) and [Wayland](https://wayland.freedesktop.org/) for project context. | Prefer distro packages such as `xwayland` or the distro's X.Org server package instead of downloading standalone binaries. |
 
-Before connecting, confirm that the local X server is running, remote `sshd` allows `X11Forwarding yes`, and the remote application supports X11.
+Before connecting, confirm that the local X server is running, the session's **X11 forwarding** checkbox is enabled, remote `sshd` allows `X11Forwarding yes`, and the remote application supports X11.
 
-On Windows, the built-in launch helper prefers display `:0` and tries later displays when the corresponding port is occupied.
+On Windows, AxShell identifies `vcxsrv.exe` and `Xming.exe` separately. Both use their compatible XWin startup arguments, start at display `:0`, and try later displays when the corresponding port is occupied. A custom X server executable receives no inferred arguments.
 
 ## Troubleshooting
 
 - Confirm the proxy host and port are reachable without AxShell.
 - Check whether a per-session proxy overrides global settings.
-- Verify `DISPLAY` and the local X server before diagnosing the remote application.
+- Verify `DISPLAY` and the local X server before diagnosing the remote application. AxShell lets `sshd` assign the remote display after accepting the X11 request; do not force a remote `DISPLAY` value.
+- If a remote program reports `unable to open X server ''`, its `DISPLAY` is empty. Confirm the session's **X11 forwarding** checkbox in the SSH new/edit form, reconnect after changing it, confirm the server has `X11Forwarding yes`, then run `echo $DISPLAY` in the remote shell. If `echo $DISPLAY` is non-empty but a command run through `sudo` fails, preserve `DISPLAY`/`XAUTHORITY` according to the server policy or run the GUI command as the logged-in user.
 - Review runtime logs for proxy negotiation or X11 relay errors.
 
 ### Windows Visual C++ Runtime Missing

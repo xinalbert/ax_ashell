@@ -1212,26 +1212,6 @@ impl ConfigStore {
         self.cache.global_proxy_password = val;
     }
 
-    pub fn x11_forwarding_enabled(&self) -> bool {
-        self.cache.x11_forwarding_enabled
-    }
-
-    pub fn set_x11_forwarding_enabled(&mut self, val: bool) {
-        self.cache.x11_forwarding_enabled = val;
-    }
-
-    pub fn x11_launch_xquartz(&self) -> bool {
-        self.cache.x11_launch_xquartz
-    }
-
-    pub fn x11_launch_local_x_server(&self) -> bool {
-        self.cache.x11_launch_xquartz
-    }
-
-    pub fn set_x11_launch_xquartz(&mut self, val: bool) {
-        self.cache.x11_launch_xquartz = val;
-    }
-
     pub fn local_x_server_app_path(&self) -> &str {
         self.cache.xquartz_app_path.trim()
     }

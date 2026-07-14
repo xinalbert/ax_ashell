@@ -5,6 +5,29 @@ mod transfer_panel;
 
 use sort::sort_sftp_entries;
 
+#[derive(Clone)]
+struct RemoteSftpDrag {
+    paths: Vec<String>,
+}
+
+impl Render for RemoteSftpDrag {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let label = if self.paths.len() == 1 {
+            self.paths[0].clone()
+        } else {
+            format!("{} items", self.paths.len())
+        };
+        div()
+            .px_2()
+            .py_1()
+            .rounded_sm()
+            .bg(gpui::black().opacity(0.75))
+            .text_size(rems(0.833))
+            .text_color(gpui::white())
+            .child(label)
+    }
+}
+
 impl AxShell {
     fn set_remote_sftp_sort(&mut self, column: SftpSortColumn, cx: &mut Context<Self>) {
         if self.remote_sftp_sort_column == column {
@@ -495,6 +518,17 @@ impl AxShell {
                                                             }
                                                         }),
                                                     )
+                                                    .on_drag(
+                                                        RemoteSftpDrag {
+                                                            paths: crate::app::actions::sftp::download_targets_for_context(
+                                                                &selected_entries,
+                                                                &entry.full_path,
+                                                            ),
+                                                        },
+                                                        |drag, _, _, cx| {
+                                                            cx.new(|_| drag.clone())
+                                                        },
+                                                    )
                                                     .child(
                                                         h_flex()
                                                             .w(px(24.))
@@ -701,6 +735,14 @@ impl AxShell {
             .min_w(px(0.))
             .min_h(px(0.))
             .overflow_hidden()
+            .drag_over::<RemoteSftpDrag>(|mut style, _, _, cx| {
+                style.border_color = Some(cx.theme().primary.into());
+                style.background = Some(cx.theme().primary.opacity(0.08).into());
+                style
+            })
+            .on_drop(cx.listener(|this, drag: &RemoteSftpDrag, window, cx| {
+                this.download_sftp_entries(drag.paths.clone(), window, cx);
+            }))
             .child(
                 h_flex()
                     .flex_none()
@@ -958,8 +1000,8 @@ impl AxShell {
                                             format_bytes(entry.size)
                                         };
                                         let entry_modified = format_mtime(entry.modified);
-                                        Some(
-                                            h_flex()
+                                            Some(
+                                                h_flex()
                                                 .id(ElementId::Name(
                                                     format!("local-file-row-{entry_id}").into(),
                                                 ))
@@ -975,7 +1017,7 @@ impl AxShell {
                                                 )
                                                 .border_b_1()
                                                 .border_color(theme.border.opacity(0.35))
-                                                .on_mouse_down(
+                                                    .on_mouse_down(
                                                     MouseButton::Left,
                                                     list_window.listener_for(&view, {
                                                         let entry = entry.clone();
@@ -1001,12 +1043,12 @@ impl AxShell {
                                                                 event.position,
                                                                 cx,
                                                             );
-                                                        }
-                                                    }),
-                                                )
-                                                .child(
-                                                    h_flex()
-                                                        .w(px(24.))
+                                                            }
+                                                        }),
+                                                    )
+                                                    .child(
+                                                        h_flex()
+                                                            .w(px(24.))
                                                         .flex_none()
                                                         .items_center()
                                                         .justify_center()

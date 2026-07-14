@@ -205,8 +205,7 @@ impl AxShell {
         self.focus_terminal_workspace(window, cx);
     }
 
-    pub(crate) fn connect_ssh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        tracing::info!("[ui] user initiating new ssh connection from form");
+    fn save_ssh_session_from_form(&mut self, cx: &mut Context<Self>) -> Option<Session> {
         let session_name = self.session_name_input.read(cx).value().trim().to_string();
         let group_name = normalize_session_group_name(&self.session_group_input.read(cx).value());
         let host = self.host_input.read(cx).value().trim().to_string();
@@ -222,11 +221,17 @@ impl AxShell {
         let key_path = self.key_path_input.read(cx).value().trim().to_string();
         let key_inline = self.key_inline_input.read(cx).value().to_string();
         let passphrase = self.passphrase_input.read(cx).value().to_string();
+        let sftp_path = self
+            .session_sftp_path_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
 
         if host.is_empty() || user.is_empty() {
             self.status = t!("host_and_user_required").into();
             cx.notify();
-            return;
+            return None;
         }
 
         if self.ssh_proxy_type != "none" {
@@ -236,7 +241,7 @@ impl AxShell {
             if proxy_host.is_empty() || proxy_port.is_none() {
                 self.status = "Proxy host and port are required".into();
                 cx.notify();
-                return;
+                return None;
             }
         }
 
@@ -264,7 +269,7 @@ impl AxShell {
                 if key_path.is_empty() && key_inline.trim().is_empty() {
                     self.status = "private key path or content is required".into();
                     cx.notify();
-                    return;
+                    return None;
                 }
                 Session::key(host, port, user, key_path, key_inline, passphrase)
             }
@@ -287,8 +292,31 @@ impl AxShell {
             .ok();
         session.proxy_user = self.proxy_user_input.read(cx).value().trim().to_string();
         session.proxy_password = self.proxy_password_input.read(cx).value().to_string();
+        session.sftp_path = sftp_path;
+        session.x11_forwarding = self.session_x11_forwarding;
         self.config.upsert(session.clone());
         self.config.save_logged("save_ssh_session");
+
+        Some(session)
+    }
+
+    pub(crate) fn save_ssh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.save_ssh_session_from_form(cx).is_none() {
+            return;
+        }
+
+        self.editing_session_id = None;
+        self.active_dialog = None;
+        self.status = "ssh session saved".into();
+        window.close_dialog(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn connect_ssh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        tracing::info!("[ui] user saving and connecting SSH session from form");
+        let Some(session) = self.save_ssh_session_from_form(cx) else {
+            return;
+        };
 
         self.open_ssh_session(session, cx);
         self.editing_session_id = None;
@@ -324,6 +352,8 @@ impl AxShell {
         Self::set_input_value(&self.proxy_port_input, "", window, cx);
         Self::set_input_value(&self.proxy_user_input, "", window, cx);
         Self::set_input_value(&self.proxy_password_input, "", window, cx);
+        Self::set_input_value(&self.session_sftp_path_input, "", window, cx);
+        self.session_x11_forwarding = true;
     }
 
     pub(crate) fn load_session_into_form(
@@ -395,6 +425,13 @@ impl AxShell {
             window,
             cx,
         );
+        Self::set_input_value(
+            &self.session_sftp_path_input,
+            session.sftp_path.clone(),
+            window,
+            cx,
+        );
+        self.session_x11_forwarding = session.x11_forwarding;
     }
 
     pub(crate) fn pick_ssh_key_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {

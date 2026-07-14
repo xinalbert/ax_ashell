@@ -22,6 +22,7 @@ impl AxShell {
         let proxy_port_input = self.proxy_port_input.clone();
         let proxy_user_input = self.proxy_user_input.clone();
         let proxy_password_input = self.proxy_password_input.clone();
+        let session_sftp_path_input = self.session_sftp_path_input.clone();
 
         window.open_dialog(cx, move |dialog: Dialog, _window, _cx| {
             dialog
@@ -61,11 +62,16 @@ impl AxShell {
                     let proxy_port_input = proxy_port_input.clone();
                     let proxy_user_input = proxy_user_input.clone();
                     let proxy_password_input = proxy_password_input.clone();
+                    let session_sftp_path_input = session_sftp_path_input.clone();
                     move |content, window, cx| {
                         let is_password = view.read(cx).ssh_auth_method == AuthMethod::Password;
-                        let is_editing = view.read(cx).editing_session_id.is_some();
                         let proxy_type = view.read(cx).ssh_proxy_type.clone();
                         let show_proxy_fields = proxy_type != "none";
+                        let session_x11_forwarding = view.read(cx).session_x11_forwarding;
+                        let x11_server_missing = session_x11_forwarding
+                            && !crate::platform::x_server::local_x_server_available(
+                                view.read(cx).config.local_x_server_app_path(),
+                            );
                         let saved_group_names = view.read(cx).saved_group_names();
                         let current_group_name =
                             session_group_input.read(cx).value().trim().to_string();
@@ -293,6 +299,33 @@ impl AxShell {
                                     )
                                 })
                                 .child(
+                                    div()
+                                        .text_sm()
+                                        .font_weight(FontWeight::BOLD)
+                                        .child(t!("settings_sftp").to_string()),
+                                )
+                                .child(Input::new(&session_sftp_path_input).tab_index(8))
+                                .child(
+                                    Checkbox::new("ssh-session-x11-forwarding")
+                                        .checked(session_x11_forwarding)
+                                        .label(t!("x11_forwarding").to_string())
+                                        .on_click(window.listener_for(
+                                            &view,
+                                            |this, checked, _, cx| {
+                                                this.session_x11_forwarding = *checked;
+                                                cx.notify();
+                                            },
+                                        )),
+                                )
+                                .when(x11_server_missing, |this| {
+                                    this.child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(t!("x11_server_install_hint").to_string()),
+                                    )
+                                })
+                                .child(
                                     h_flex()
                                         .justify_end()
                                         .gap_2()
@@ -309,13 +342,19 @@ impl AxShell {
                                                 )),
                                         )
                                         .child(
-                                            Button::new("connect-ssh-confirm")
+                                            Button::new("save-ssh-session")
+                                                .label(t!("save").to_string())
+                                                .on_click(window.listener_for(
+                                                    &view,
+                                                    |this, _, window, cx| {
+                                                        this.save_ssh(window, cx)
+                                                    },
+                                                )),
+                                        )
+                                        .child(
+                                            Button::new("save-and-connect-ssh-session")
                                                 .primary()
-                                                .label(if is_editing {
-                                                    t!("save")
-                                                } else {
-                                                    t!("connect")
-                                                })
+                                                .label(t!("save_and_connect").to_string())
                                                 .on_click(window.listener_for(
                                                     &view,
                                                     |this, _, window, cx| {

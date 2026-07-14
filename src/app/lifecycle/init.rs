@@ -56,6 +56,8 @@ impl AxShell {
                 .placeholder(t!("proxy_password").to_string())
                 .masked(true)
         });
+        let session_sftp_path_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("sftp_path").to_string()));
         let sftp_path_input = cx.new(|cx| InputState::new(window, cx).default_value("/"));
         let sftp_new_folder_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("new_folder").to_string()));
@@ -271,6 +273,7 @@ impl AxShell {
             cx.subscribe_in(&proxy_port_input, window, Self::on_input_event),
             cx.subscribe_in(&proxy_user_input, window, Self::on_input_event),
             cx.subscribe_in(&proxy_password_input, window, Self::on_input_event),
+            cx.subscribe_in(&session_sftp_path_input, window, Self::on_input_event),
             cx.subscribe_in(&ssh_retry_count_input, window, Self::on_input_event),
             cx.subscribe_in(&ssh_retry_delays_input, window, Self::on_input_event),
             cx.subscribe_in(&rayon_threads_input, window, Self::on_input_event),
@@ -392,6 +395,8 @@ impl AxShell {
             proxy_port_input,
             proxy_user_input,
             proxy_password_input,
+            session_sftp_path_input,
+            session_x11_forwarding: true,
             global_proxy_type: config.global_proxy_type().to_string(),
             global_proxy_host_input,
             global_proxy_port_input,

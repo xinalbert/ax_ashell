@@ -43,6 +43,26 @@ pub(crate) fn default_app_path() -> String {
     }
 }
 
+pub(crate) fn local_x_server_available(path: &str) -> bool {
+    if display_from_env().is_some() {
+        return true;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return std::path::Path::new(path.trim()).exists();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return std::path::Path::new(path.trim()).exists();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 #[cfg(target_os = "macos")]
 const MACOS_MACXSERVER_APP_PATH: &str = "/Applications/MacXServer.app";
 #[cfg(target_os = "macos")]
@@ -98,7 +118,9 @@ pub(crate) fn resolve_display(_path: &str, _launch_local_x_server: bool) -> Stri
 
     #[cfg(target_os = "windows")]
     {
-        if _launch_local_x_server && windows_server_supports_display_arg(_path) {
+        if _launch_local_x_server
+            && !matches!(windows_x_server_kind(_path), WindowsXServerKind::Other)
+        {
             return select_available_windows_display(&display);
         }
     }
@@ -107,27 +129,57 @@ pub(crate) fn resolve_display(_path: &str, _launch_local_x_server: bool) -> Stri
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn launch_args(path: &str, display: &str) -> Vec<String> {
-    if windows_server_supports_display_arg(path) {
-        vec![
-            windows_display_arg(display),
-            "-multiwindow".to_string(),
-            "-clipboard".to_string(),
-            "-ac".to_string(),
-        ]
-    } else {
-        Vec::new()
-    }
-}
-
-pub(crate) fn should_launch_by_default() -> bool {
-    cfg!(any(target_os = "macos", target_os = "windows"))
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WindowsXServerKind {
+    VcXsrv,
+    Xming,
+    Other,
 }
 
 #[cfg(target_os = "windows")]
-fn windows_server_supports_display_arg(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    lower.ends_with("vcxsrv.exe") || lower.ends_with("xming.exe")
+impl WindowsXServerKind {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::VcXsrv => "VcXsrv",
+            Self::Xming => "Xming",
+            Self::Other => "custom X server",
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn windows_x_server_kind(path: &str) -> WindowsXServerKind {
+    let file_name = std::path::Path::new(path.trim())
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if file_name.eq_ignore_ascii_case("vcxsrv.exe") {
+        WindowsXServerKind::VcXsrv
+    } else if file_name.eq_ignore_ascii_case("xming.exe") {
+        WindowsXServerKind::Xming
+    } else {
+        WindowsXServerKind::Other
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn launch_args(path: &str, display: &str) -> Vec<String> {
+    let display = windows_display_arg(display);
+    match windows_x_server_kind(path) {
+        WindowsXServerKind::VcXsrv => vec![
+            display,
+            "-multiwindow".to_string(),
+            "-clipboard".to_string(),
+            "-ac".to_string(),
+        ],
+        WindowsXServerKind::Xming => vec![
+            display,
+            "-multiwindow".to_string(),
+            "-clipboard".to_string(),
+            "-ac".to_string(),
+        ],
+        WindowsXServerKind::Other => Vec::new(),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -203,8 +255,8 @@ fn display_with_number(display: &str, display_number: u16) -> String {
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::{
-        display_number, display_with_number, launch_args, windows_display_arg,
-        windows_server_supports_display_arg,
+        WindowsXServerKind, display_number, display_with_number, launch_args, windows_display_arg,
+        windows_x_server_kind,
     };
 
     #[test]
@@ -217,10 +269,19 @@ mod tests {
     }
 
     #[test]
-    fn windows_launch_args_follow_selected_display() {
-        assert!(windows_server_supports_display_arg(
-            r"C:\Program Files\VcXsrv\vcxsrv.exe"
-        ));
+    fn windows_server_kind_and_launch_args_follow_selected_display() {
+        assert_eq!(
+            windows_x_server_kind(r"C:\Program Files\VcXsrv\vcxsrv.exe"),
+            WindowsXServerKind::VcXsrv
+        );
+        assert_eq!(
+            windows_x_server_kind(r"C:\Program Files (x86)\Xming\Xming.exe"),
+            WindowsXServerKind::Xming
+        );
+        assert_eq!(
+            windows_x_server_kind(r"C:\Tools\other-x-server.exe"),
+            WindowsXServerKind::Other
+        );
         assert_eq!(
             launch_args(r"C:\Program Files\VcXsrv\vcxsrv.exe", "127.0.0.1:2",),
             vec![
@@ -230,6 +291,16 @@ mod tests {
                 "-ac".to_string(),
             ]
         );
+        assert_eq!(
+            launch_args(r"C:\Program Files (x86)\Xming\Xming.exe", "127.0.0.1:3",),
+            vec![
+                ":3".to_string(),
+                "-multiwindow".to_string(),
+                "-clipboard".to_string(),
+                "-ac".to_string(),
+            ]
+        );
+        assert!(launch_args(r"C:\Tools\other-x-server.exe", "127.0.0.1:0").is_empty());
     }
 }
 

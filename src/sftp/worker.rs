@@ -33,8 +33,8 @@ enum SftpCommand {
         path: String,
         pin: SftpWorkPin,
     },
-    Download {
-        remote: String,
+    DownloadPaths {
+        remotes: Vec<String>,
         local_dir: String,
         pin: SftpWorkPin,
     },
@@ -150,9 +150,9 @@ impl SftpHandle {
         self.send_work_command(|pin| SftpCommand::Preview { path, pin })
     }
 
-    pub(crate) fn download(&self, remote: String, local_dir: String) -> bool {
-        self.send_work_command(|pin| SftpCommand::Download {
-            remote,
+    pub(crate) fn download_paths(&self, remotes: Vec<String>, local_dir: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::DownloadPaths {
+            remotes,
             local_dir,
             pin,
         })

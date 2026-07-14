@@ -5,6 +5,10 @@ fn default_global_proxy_type() -> String {
     "socks5".to_string()
 }
 
+fn default_x11_forwarding() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum AuthMethod {
@@ -75,6 +79,10 @@ pub(crate) struct Session {
     pub(crate) proxy_user: String,
     #[serde(default)]
     pub(crate) proxy_password: String,
+    #[serde(default)]
+    pub(crate) sftp_path: String,
+    #[serde(default = "default_x11_forwarding")]
+    pub(crate) x11_forwarding: bool,
 }
 
 impl Session {
@@ -99,6 +107,8 @@ impl Session {
             proxy_port: None,
             proxy_user: String::new(),
             proxy_password: String::new(),
+            sftp_path: String::new(),
+            x11_forwarding: default_x11_forwarding(),
         }
     }
 
@@ -130,6 +140,8 @@ impl Session {
             proxy_port: None,
             proxy_user: String::new(),
             proxy_password: String::new(),
+            sftp_path: String::new(),
+            x11_forwarding: default_x11_forwarding(),
         }
     }
 }
@@ -156,5 +168,26 @@ mod tests {
             ordered_ssh_connection_modes(Some(SshConnectionMode::Default)),
             vec![SshConnectionMode::Default, SshConnectionMode::Legacy]
         );
+    }
+
+    #[test]
+    fn new_session_fields_default_when_loading_existing_sessions() {
+        let session =
+            super::Session::password("example.com".into(), 22, "root".into(), "password".into());
+        let mut value = serde_json::to_value(session).expect("session serializes");
+        value
+            .as_object_mut()
+            .expect("session is an object")
+            .remove("sftp_path");
+        value
+            .as_object_mut()
+            .expect("session is an object")
+            .remove("x11_forwarding");
+
+        let session: super::Session =
+            serde_json::from_value(value).expect("existing session deserializes");
+
+        assert!(session.sftp_path.is_empty());
+        assert!(session.x11_forwarding);
     }
 }

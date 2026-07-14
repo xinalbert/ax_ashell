@@ -1,6 +1,6 @@
 use crate::app::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui::{
-    AnyElement, Context, Decorations, ElementId, Focusable as _, FontWeight, Hsla,
+    AnyElement, AppContext as _, Context, Decorations, ElementId, Focusable as _, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _,
     PathBuilder, Pixels, Render, StatefulInteractiveElement as _, Styled as _, Window, canvas, div,
     point, prelude::FluentBuilder as _, px, rems, uniform_list,

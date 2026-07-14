@@ -24,7 +24,7 @@ X11 转发可以让远端 SSH 主机启动的兼容图形程序通过本地 X se
 
 ## 本地 X Server 下载地址
 
-AxShell 不内置本地 X server。使用 SSH X11 转发前，需要先安装并启动一个本地 X server；也可以打开 AxShell 的本地 X server 启动选项，并把路径指向已安装的应用。
+AxShell 不内置也不会自动启动本地 X server。使用 SSH X11 转发前，需要先安装并启动一个本地 X server。新建或编辑 SSH 时，每个会话默认勾选 X11 转发；未检测到本机 X server 时会显示简短安装提示。
 
 | 平台 | X server | 获取地址 | 说明 |
 | --- | --- | --- | --- |
@@ -34,15 +34,16 @@ AxShell 不内置本地 X server。使用 SSH X11 转发前，需要先安装并
 | Windows | Xming | [SourceForge archive](https://sourceforge.net/projects/xming/) 或 [Straight Running](https://www.straightrunning.com/XmingNotes/) | Windows 上的旧牌替代方案；较新的下载可能需要按 Straight Running 的授权/下载流程获取。 |
 | Linux / Wayland | X.Org / Xwayland | 通过发行版包管理器安装；项目背景可见 [X.Org](https://xorg.freedesktop.org/wiki/) 和 [Wayland](https://wayland.freedesktop.org/)。 | 优先安装发行版提供的 `xwayland` 或 X.Org server 包，不建议随意下载独立二进制。 |
 
-连接前需要确认本地 X server 已运行、远端 `sshd` 允许 `X11Forwarding yes`，并且远端程序支持 X11。
+连接前需要确认本地 X server 已运行、该 SSH 会话已勾选“启用 X11 转发”、远端 `sshd` 允许 `X11Forwarding yes`，并且远端程序支持 X11。
 
-Windows 内置启动辅助会优先使用 display `:0`，对应端口被占用时继续尝试后续 display。
+Windows 会分别识别 `vcxsrv.exe` 和 `Xming.exe`。两者均使用兼容的 XWin 启动参数，从 display `:0` 开始；对应端口被占用时继续尝试后续 display。自定义 X server EXE 不会被推断参数。
 
 ## 故障排查
 
 - 先确认代理主机和端口在 AxShell 之外可以访问。
 - 检查单会话代理是否覆盖了全局设置。
-- 排查远端程序前，先确认 `DISPLAY` 和本地 X server。
+- 排查远端程序前，先确认 `DISPLAY` 和本地 X server。AxShell 在 X11 request 被服务器接受后交由 `sshd` 分配远端 display，不会强制写死远端 `DISPLAY`。
+- 如果远端程序报 `unable to open X server ''`，表示它拿到的 `DISPLAY` 是空的。确认 SSH 新建/编辑窗口中该会话已勾选“启用 X11 转发”，修改后重新连接；确认服务器 `sshd` 配置了 `X11Forwarding yes`，再在远端 shell 中执行 `echo $DISPLAY`。如果 `echo $DISPLAY` 非空但通过 `sudo` 运行失败，请按服务器策略保留 `DISPLAY` / `XAUTHORITY`，或以登录用户执行图形命令。
 - 从运行日志中查找代理协商或 X11 relay 错误。
 
 ### Windows 缺少 Visual C++ 运行库

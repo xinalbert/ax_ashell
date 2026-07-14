@@ -6,6 +6,10 @@
 
 Open SFTP from an active SSH session. The page combines a remote browser, a local browser, and transfer state for that session.
 
+## Session SFTP Path
+
+When creating or editing a saved SSH session, set **SFTP Path (optional)** to choose the remote directory opened by that session's SFTP page. An absolute path is used directly; `~` and relative paths are resolved from the server's home directory. Leave it empty to open the server home directory.
+
 ## Local Directory Memory
 
 Set the global default under **Settings > Connections > SFTP > Default Local Directory**. New or unsaved connections start there. Leave it empty to use the user home directory.
@@ -20,6 +24,7 @@ These local paths stay on the current computer and are not included in WebDAV or
 - Sort loaded entries and navigate by path.
 - Upload files or folders.
 - Download files or folders; directory downloads use a temporary archive when appropriate.
+- Drag remote files into the local pane to download them first. The current GPUI runtime does not support dragging files out of AxShell to Finder or Explorer, including files that already exist locally.
 - Create folders and recursively delete selected paths.
 - Open a remote file in the system editor and upload changes after save.
 - Preview supported files and bounded directory contents.

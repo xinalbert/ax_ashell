@@ -13,8 +13,6 @@ pub(super) fn settings_connection_page(
     let default_local_sftp_path_input = shell.default_local_sftp_path_input.clone();
     let use_proxy = shell.config.use_proxy();
     let read_env_proxy = shell.config.read_env_proxy();
-    let x11_forwarding_enabled = shell.config.x11_forwarding_enabled();
-    let x11_launch_xquartz = shell.config.x11_launch_xquartz();
     let xquartz_app_path_input = shell.xquartz_app_path_input.clone();
     let global_proxy_host_input = shell.global_proxy_host_input.clone();
     let global_proxy_port_input = shell.global_proxy_port_input.clone();
@@ -372,47 +370,7 @@ pub(super) fn settings_connection_page(
         )
         .group(
             SettingGroup::new()
-                .title(t!("settings_x11").to_string())
-                .item(
-                    SettingItem::new(
-                        t!("enable_x11_forwarding").to_string(),
-                        SettingField::render({
-                            let view = view.clone();
-                            move |_, window, _cx| {
-                                Switch::new("x11-forwarding-enabled")
-                                    .small()
-                                    .checked(x11_forwarding_enabled)
-                                    .on_click(window.listener_for(&view, |this, checked, _, cx| {
-                                        this.config.set_x11_forwarding_enabled(*checked);
-                                        this.config.save_logged("set_x11_forwarding");
-                                        cx.notify();
-                                    }))
-                                    .into_any_element()
-                            }
-                        }),
-                    )
-                    .description(t!("enable_x11_forwarding_desc").to_string()),
-                )
-                .item(
-                    SettingItem::new(
-                        t!("x11_launch_xquartz").to_string(),
-                        SettingField::render({
-                            let view = view.clone();
-                            move |_, window, _cx| {
-                                Switch::new("x11-launch-xquartz")
-                                    .small()
-                                    .checked(x11_launch_xquartz)
-                                    .on_click(window.listener_for(&view, |this, checked, _, cx| {
-                                        this.config.set_x11_launch_xquartz(*checked);
-                                        this.config.save_logged("set_x11_auto_launch");
-                                        cx.notify();
-                                    }))
-                                    .into_any_element()
-                            }
-                        }),
-                    )
-                    .description(t!("x11_launch_xquartz_desc").to_string()),
-                )
+                .title(t!("local_x_server").to_string())
                 .item(SettingItem::render({
                     let view = view.clone();
                     move |_, window, cx| {
