@@ -14,7 +14,9 @@ use walkdir::WalkDir;
 
 use crate::events::{BackendEvent, BackendEventSender};
 
-use super::model::{SftpOverwriteDecision, SftpOverwriteRequest, TransferState};
+use super::model::{
+    SftpOverwriteDecision, SftpOverwriteRequest, TransferFile, TransferFileState, TransferState,
+};
 
 pub(super) struct TransferStateFlag(pub(super) Arc<AtomicU8>);
 
@@ -174,6 +176,38 @@ pub(super) async fn fail_transfer_start(
     .await;
 }
 
+async fn send_transfer_file_started(
+    events: &BackendEventSender,
+    tab_id: &str,
+    transfer_id: &str,
+    file: TransferFile,
+) {
+    let _ = events
+        .send(BackendEvent::TransferFileStarted {
+            tab_id: tab_id.to_string(),
+            transfer_id: transfer_id.to_string(),
+            file,
+        })
+        .await;
+}
+
+async fn send_transfer_file_finished(
+    events: &BackendEventSender,
+    tab_id: &str,
+    transfer_id: &str,
+    file_id: &str,
+    state: TransferFileState,
+) {
+    let _ = events
+        .send(BackendEvent::TransferFileFinished {
+            tab_id: tab_id.to_string(),
+            transfer_id: transfer_id.to_string(),
+            file_id: file_id.to_string(),
+            state,
+        })
+        .await;
+}
+
 use super::{
     browse::list_dir_impl,
     path::{base_name, join_remote},
@@ -253,6 +287,7 @@ pub(super) async fn download_path_impl(
         tab_id,
         id,
         report_completion,
+        true,
     )
     .await?;
     if !downloaded {
@@ -307,6 +342,7 @@ async fn download_dir_recursive(
                 tab_id,
                 id,
                 false,
+                true,
             )
             .await?;
             if !downloaded {
@@ -332,64 +368,104 @@ pub(super) async fn download_file_impl(
     tab_id: &str,
     id: &str,
     report_completion: bool,
+    report_file_details: bool,
 ) -> Result<bool> {
-    if !confirm_local_overwrite(local, remote, flag, overwrite_policy, events, tab_id, id).await? {
-        return Ok(false);
-    }
-
-    let mut remote_file = sftp
-        .open(remote)
-        .await
-        .with_context(|| format!("open remote {remote}"))?;
-    let mut local_file = tokio::fs::File::create(local)
-        .await
-        .with_context(|| format!("create local {}", local.display()))?;
-
     let total = sftp.metadata(remote).await.ok().and_then(|m| m.size);
-    let mut transferred = 0u64;
+    let file_id = remote.to_string();
+    if report_file_details {
+        send_transfer_file_started(
+            events,
+            tab_id,
+            id,
+            TransferFile {
+                id: file_id.clone(),
+                source: remote.to_string(),
+                target: local.display().to_string(),
+                total_bytes: total,
+                state: TransferFileState::Running,
+            },
+        )
+        .await;
+    }
 
-    let mut buffer = vec![0u8; 128 * 1024];
-    loop {
-        flag.yield_if_paused(events, tab_id, id, transferred, total)
-            .await?;
-        let read = remote_file
-            .read(&mut buffer)
-            .await
-            .context("read remote file")?;
-        if read == 0 {
-            break;
+    let result = async {
+        if !confirm_local_overwrite(local, remote, flag, overwrite_policy, events, tab_id, id)
+            .await?
+        {
+            return Ok(false);
         }
-        local_file
-            .write_all(&buffer[..read])
+
+        let mut remote_file = sftp
+            .open(remote)
             .await
-            .with_context(|| format!("write {}", local.display()))?;
+            .with_context(|| format!("open remote {remote}"))?;
+        let mut local_file = tokio::fs::File::create(local)
+            .await
+            .with_context(|| format!("create local {}", local.display()))?;
+        let mut transferred = 0u64;
 
-        transferred += read as u64;
-        send_transfer_progress(
-            events,
-            tab_id,
-            id,
-            transferred,
-            total,
-            TransferState::Running,
-        )
-        .await;
+        let mut buffer = vec![0u8; 128 * 1024];
+        loop {
+            flag.yield_if_paused(events, tab_id, id, transferred, total)
+                .await?;
+            let read = remote_file
+                .read(&mut buffer)
+                .await
+                .context("read remote file")?;
+            if read == 0 {
+                break;
+            }
+            local_file
+                .write_all(&buffer[..read])
+                .await
+                .with_context(|| format!("write {}", local.display()))?;
+
+            transferred += read as u64;
+            send_transfer_progress(
+                events,
+                tab_id,
+                id,
+                transferred,
+                total,
+                TransferState::Running,
+            )
+            .await;
+        }
+        local_file.flush().await.context("flush local file")?;
+
+        if report_completion {
+            send_transfer_progress(
+                events,
+                tab_id,
+                id,
+                transferred,
+                total,
+                TransferState::Completed,
+            )
+            .await;
+        }
+
+        Ok(true)
     }
-    local_file.flush().await.context("flush local file")?;
+    .await;
 
-    if report_completion {
-        send_transfer_progress(
-            events,
-            tab_id,
-            id,
-            transferred,
-            total,
-            TransferState::Completed,
-        )
-        .await;
+    if report_file_details {
+        let state = match &result {
+            Ok(true) => TransferFileState::Completed,
+            Ok(false) => TransferFileState::Skipped,
+            Err(error) => {
+                let message = format!("{error:#}");
+                if message.contains("transfer cancelled") {
+                    TransferFileState::Interrupted("User cancelled".to_string())
+                } else {
+                    TransferFileState::Failed(message)
+                }
+            }
+        };
+        send_transfer_file_finished(events, tab_id, id, &file_id, state).await;
     }
 
-    Ok(true)
+    result
 }
 
 fn local_path_for_remote_entry(parent: &Path, name: &str) -> Result<PathBuf> {

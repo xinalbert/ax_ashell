@@ -1,3 +1,35 @@
+## 2026-07-14 SFTP 下载任务文件明细预检
+
+- 日期：2026-07-14 19:42 +0800
+- 变化摘要：运行时、依赖、manifest/lock 与 CI 配置不变；本轮为 SFTP 下载任务增加可持久化的文件明细和文件清单界面，采用 WinSCP 的批量任务为顶层、文件信息为次级的模型。
+- 受影响文件：`src/sftp/model.rs`，`src/events.rs`，`src/sftp/transfer.rs`，`src/sftp/worker/runtime.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/dialogs/transfers.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`。
+- 验证结果：已确认 WinSCP 官方文档将队列行定义为后台操作而非单文件，并为运行中的多文件任务提供总体进度、当前文件行和完整文件清单；待执行 Rust 格式化、聚焦测试、`cargo check`、完整测试、空白检查和 tracking docs validator。
+
+## 2026-07-14 完成 SFTP 下载任务文件明细环境验证
+
+- 日期：2026-07-14 20:09 +0800
+- 变化摘要：SFTP 下载任务现在保留任务级进度、当前文件/已发现文件概览和可虚拟滚动的文件清单；下载文件状态覆盖完成、跳过、失败、取消、重启恢复和 SFTP 断连中断。运行时、依赖、manifest/lock 与 CI 配置不变。
+- 受影响文件：`src/sftp/model.rs`，`src/events.rs`，`src/sftp/transfer.rs`，`src/sftp/worker/runtime.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/actions/sftp.rs`，`src/app/dialogs.rs`，`src/app/dialogs/transfers.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`locales/en.yml`，`locales/zh-CN.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：受影响 Rust 文件格式化通过；`cargo check` 通过；`cargo test --quiet` 185 项全部通过；SFTP hover/list 静态审计确认文件清单使用 `uniform_list` 和共享 `list_fast_hover_options`；`git diff --check`、tracking docs validator 待本轮最终文档写入后复跑。保留既有 `block v0.1.6` future-incompat warning；真实 SFTP 多选和目录递归下载仍需 GUI 手工确认。
+
+## 2026-07-14 Windows CI tracing 编译修复预检
+
+- 日期：2026-07-14 18:47 +0800
+- 变化摘要：运行时、依赖、manifest/lock 和 CI 配置不变；本轮修复 Windows-only 本地 X server 启动日志中 `display = %display` 触发的 `tracing::field::display` 命名冲突。
+- 受影响文件：`src/app/lifecycle/startup.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`。
+- 验证结果：计划执行 `rustfmt --edition 2024 src/app/lifecycle/startup.rs`、`cargo check`、可用时运行 Windows target check、`git diff --check` 和 tracking docs validator；真实 Windows CI 需由 CI 复跑确认。
+
+## 2026-07-14 完成 Windows CI tracing 编译修复环境验证
+
+- 日期：2026-07-14 18:54 +0800
+- 变化摘要：Windows-only 本地 X server 启动日志中用于 display 值的局部变量已从 `display` 改为 `resolved_display`，避免 `tracing::info!` 的 `%display` 路径把 formatter 函数本身当成待显示值；运行时、依赖、manifest/lock 和 CI 配置不变。
+- 受影响文件：`src/app/lifecycle/startup.rs`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：`rustfmt --edition 2024 src/app/lifecycle/startup.rs` 通过；`cargo check` 通过并仅保留既有 `block v0.1.6` future-incompat warning；`git diff --check` 通过；tracking docs validator 通过。`cargo check --target x86_64-pc-windows-msvc` 因本机未安装目标标准库失败，Windows CI 真实编译需由 CI 复跑确认。
+
 ## 2026-07-13 SFTP 默认本地目录设置完成验证
 
 - 日期：2026-07-13 17:40 +0800

@@ -266,6 +266,9 @@ impl AxShell {
         let status_text = sftp_transfer_status_text(&transfer);
         let transfer_id = transfer.info.id.clone();
         let transfer_group_id = transfer.tab_id.clone();
+        let show_file_list = matches!(transfer.info.kind, crate::sftp::TransferType::Download);
+        let file_list_transfer_id = transfer.info.id.clone();
+        let file_list_group_id = transfer.tab_id.clone();
         let action_transfer_id = transfer.info.id.clone();
         let action_group_id = transfer.tab_id.clone();
         let right_click_transfer_id = transfer.info.id.clone();
@@ -358,11 +361,34 @@ impl AxShell {
                 .text_color(cx.theme().muted_foreground),
             )
             .child(
-                div()
+                h_flex()
                     .w(px(TRANSFER_ACTIONS_COLUMN_WIDTH))
                     .flex_none()
                     .items_center()
                     .justify_end()
+                    .gap_1()
+                    .when(show_file_list, |this| {
+                        this.child(
+                            Button::new(ElementId::Name(
+                                format!("sftp-transfer-files-{file_list_transfer_id}").into(),
+                            ))
+                            .ghost()
+                            .small()
+                            .icon(IconName::File)
+                            .tooltip(t!("sftp_transfer_files").to_string())
+                            .on_click(window.listener_for(
+                                &view,
+                                move |this, _, window, cx| {
+                                    this.show_sftp_transfer_files_dialog(
+                                        file_list_group_id.clone(),
+                                        file_list_transfer_id.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                },
+                            )),
+                        )
+                    })
                     .child(
                         Button::new(ElementId::Name(
                             format!("sftp-transfer-actions-{transfer_id}").into(),
@@ -422,6 +448,33 @@ fn sftp_transfer_percent(transfer: &crate::sftp::Transfer) -> f32 {
 }
 
 fn sftp_transfer_status_text(transfer: &crate::sftp::Transfer) -> String {
+    if matches!(transfer.info.kind, crate::sftp::TransferType::Download)
+        && !transfer.files.is_empty()
+        && matches!(
+            transfer.state,
+            crate::sftp::TransferState::Running
+                | crate::sftp::TransferState::Paused
+                | crate::sftp::TransferState::Completed
+        )
+    {
+        let total = transfer.files.len();
+        let completed = transfer
+            .files
+            .iter()
+            .filter(|file| file.state.is_terminal())
+            .count();
+        let summary = format!("{completed}/{}", t!("n_files", files = total));
+        if let Some(file) = transfer.files.iter().rev().find(|file| {
+            matches!(
+                file.state,
+                crate::sftp::TransferFileState::Running | crate::sftp::TransferFileState::Paused
+            )
+        }) {
+            return format!("{summary} - {}", transfer_file_name(&file.source));
+        }
+        return summary;
+    }
+
     match &transfer.state {
         crate::sftp::TransferState::Running => {
             if let Some(total) = transfer.total.filter(|total| *total > 0) {
@@ -448,6 +501,12 @@ fn sftp_transfer_status_text(transfer: &crate::sftp::Transfer) -> String {
         }
         crate::sftp::TransferState::Zombie(reason) => format!("{}: {reason}", t!("zombie")),
     }
+}
+
+fn transfer_file_name(path: &str) -> &str {
+    path.rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or(path)
 }
 
 fn sftp_transfer_time_text(transfer: &crate::sftp::Transfer) -> String {
@@ -518,6 +577,7 @@ mod tests {
             state,
             started_at: 100,
             finished_at: None,
+            files: Vec::new(),
         }
     }
 

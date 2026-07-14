@@ -393,6 +393,13 @@ impl AxShell {
                         transfer.state = crate::sftp::TransferState::Interrupted(
                             "SFTP connection closed".to_string(),
                         );
+                        for file in &mut transfer.files {
+                            if !file.state.is_terminal() {
+                                file.state = crate::sftp::TransferFileState::Interrupted(
+                                    "SFTP connection closed".to_string(),
+                                );
+                            }
+                        }
                         if transfer.finished_at.is_none() {
                             transfer.finished_at = Some(crate::sftp::unix_timestamp_secs());
                         }

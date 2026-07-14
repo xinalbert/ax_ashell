@@ -1,5 +1,15 @@
 # 外部检索记录
 
+## 2026-07-14 WinSCP 多文件传输队列模型
+
+- 时间：2026-07-14 19:42 +0800
+- 检索问题：主流 SFTP 客户端在多选或目录递归下载时，传输列表应按批量任务还是单文件呈现，如何同时保留总进度和完整文件明细。
+- 检索原因：用户要求检索其他软件的处理方式，并确认以 WinSCP 为参考实现 AxShell 的下载记录体验。
+- 来源列表：WinSCP 官方 Transfer Queue / Background Operations <https://winscp.net/eng/docs/transfer_queue>；WinSCP 官方 Background Operations Queue List <https://winscp.net/eng/docs/ui_queue>；FileZilla 官方 usage guide <https://wiki.filezilla-project.org/Using#Transferring_files>。
+- 关键结论：WinSCP 明确规定顶层队列条目是后台操作而非单文件；运行中的多文件任务首行显示批量总体进度，后续行显示当前传输文件；用户可打开任务的完整文件清单，已传输、跳过和当前文件均保留状态。FileZilla 也支持将单文件、目录和多选文件加入队列，但公开文档未明确其队列的行粒度。WinSCP 的两层模型同时避免目录任务淹没主队列，并满足文件级追踪。
+- 对实施计划的影响：AxShell 保持现有 `Transfer` 为任务级暂停、恢复、取消和历史单位；下载 worker 为每个实际文件上报明细，SFTP 面板显示当前文件/已发现文件数，并以单独文件清单对话框展示所有文件。目录不预扫描，明细随递归下载动态累积。
+- 未解决问题：递归目录的总文件数在完成扫描前不可知；本轮不预计算总数，也不为上传任务建立文件级清单。
+
 ## 2026-07-13 GPUI 持续输出的终端网格布局缓存
 
 - 时间：2026-07-13 13:18 +0800

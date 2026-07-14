@@ -1,7 +1,9 @@
 use crate::{
     monitoring::SystemSnapshot,
     session::SshConnectionMode,
-    sftp::{PreviewData, RemoteEntry, TransferInfo, TransferState},
+    sftp::{
+        PreviewData, RemoteEntry, TransferFile, TransferFileState, TransferInfo, TransferState,
+    },
 };
 
 pub(crate) const BACKEND_EVENT_QUEUE_CAPACITY: usize = 256;
@@ -74,6 +76,17 @@ pub(crate) enum BackendEvent {
     TransferStarted {
         tab_id: String,
         info: TransferInfo,
+    },
+    TransferFileStarted {
+        tab_id: String,
+        transfer_id: String,
+        file: TransferFile,
+    },
+    TransferFileFinished {
+        tab_id: String,
+        transfer_id: String,
+        file_id: String,
+        state: TransferFileState,
     },
     Closed {
         tab_id: String,

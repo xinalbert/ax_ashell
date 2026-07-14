@@ -165,6 +165,7 @@ pub(crate) struct AxShell {
     pub(crate) local_sftp_sort_direction: SortDirection,
     pub(crate) sftp_transfer_tab: SftpTransferTab,
     pub(crate) sftp_transfer_scroll_handle: UniformListScrollHandle,
+    pub(crate) sftp_transfer_files_scroll_handle: UniformListScrollHandle,
     pub(crate) transfers: Vec<crate::sftp::Transfer>,
     pub(crate) show_transfers_dialog: bool,
     pub(crate) pane_root: PaneLayout,

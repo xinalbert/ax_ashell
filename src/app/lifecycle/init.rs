@@ -503,6 +503,7 @@ impl AxShell {
             local_sftp_sort_direction: crate::app::SortDirection::Asc,
             sftp_transfer_tab: crate::app::SftpTransferTab::Active,
             sftp_transfer_scroll_handle: gpui::UniformListScrollHandle::new(),
+            sftp_transfer_files_scroll_handle: gpui::UniformListScrollHandle::new(),
             transfers: {
                 let mut transfers = config.transfers();
                 let now = crate::sftp::unix_timestamp_secs();
@@ -511,8 +512,14 @@ impl AxShell {
                         t.state,
                         crate::sftp::TransferState::Running | crate::sftp::TransferState::Paused
                     ) {
-                        t.state =
-                            crate::sftp::TransferState::Zombie(t!("zombie_reason").to_string());
+                        let reason = t!("zombie_reason").to_string();
+                        t.state = crate::sftp::TransferState::Zombie(reason.clone());
+                        for file in &mut t.files {
+                            if !file.state.is_terminal() {
+                                file.state =
+                                    crate::sftp::TransferFileState::Interrupted(reason.clone());
+                            }
+                        }
                         if t.finished_at.is_none() {
                             t.finished_at = Some(now);
                         }

@@ -577,6 +577,40 @@ impl AxShell {
                                 if state.is_terminal() && t.finished_at.is_none() {
                                     t.finished_at = Some(crate::sftp::unix_timestamp_secs());
                                 }
+                                match &state {
+                                    crate::sftp::TransferState::Paused => {
+                                        if let Some(file) = t.files.iter_mut().rev().find(|file| {
+                                            matches!(
+                                                file.state,
+                                                crate::sftp::TransferFileState::Running
+                                            )
+                                        }) {
+                                            file.state = crate::sftp::TransferFileState::Paused;
+                                        }
+                                    }
+                                    crate::sftp::TransferState::Running => {
+                                        if let Some(file) = t.files.iter_mut().rev().find(|file| {
+                                            matches!(
+                                                file.state,
+                                                crate::sftp::TransferFileState::Paused
+                                            )
+                                        }) {
+                                            file.state = crate::sftp::TransferFileState::Running;
+                                        }
+                                    }
+                                    crate::sftp::TransferState::Interrupted(reason)
+                                    | crate::sftp::TransferState::Zombie(reason) => {
+                                        for file in &mut t.files {
+                                            if !file.state.is_terminal() {
+                                                file.state =
+                                                    crate::sftp::TransferFileState::Interrupted(
+                                                        reason.clone(),
+                                                    );
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
                                 t.state = state;
                                 transfers_changed = true;
                             }
@@ -596,12 +630,55 @@ impl AxShell {
                                     state: crate::sftp::TransferState::Running,
                                     started_at: crate::sftp::unix_timestamp_secs(),
                                     finished_at: None,
+                                    files: Vec::new(),
                                 },
                             );
                             if self.transfers.len() > 100 {
                                 self.transfers.truncate(100);
                             }
                             transfers_changed = true;
+                        }
+                        BackendEvent::TransferFileStarted {
+                            tab_id,
+                            transfer_id,
+                            file,
+                        } => {
+                            result.ui_changed = true;
+                            if let Some(transfer) = self.transfers.iter_mut().find(|transfer| {
+                                transfer.tab_id == tab_id && transfer.info.id == transfer_id
+                            }) {
+                                if let Some(existing) = transfer
+                                    .files
+                                    .iter_mut()
+                                    .find(|existing| existing.id == file.id)
+                                {
+                                    *existing = file;
+                                } else {
+                                    transfer.files.push(file);
+                                }
+                                transfers_changed = true;
+                            }
+                        }
+                        BackendEvent::TransferFileFinished {
+                            tab_id,
+                            transfer_id,
+                            file_id,
+                            state,
+                        } => {
+                            result.ui_changed = true;
+                            if let Some(file) = self
+                                .transfers
+                                .iter_mut()
+                                .find(|transfer| {
+                                    transfer.tab_id == tab_id && transfer.info.id == transfer_id
+                                })
+                                .and_then(|transfer| {
+                                    transfer.files.iter_mut().find(|file| file.id == file_id)
+                                })
+                            {
+                                file.state = state;
+                                transfers_changed = true;
+                            }
                         }
                         BackendEvent::SftpHome { tab_id, home } => {
                             result.ui_changed = true;

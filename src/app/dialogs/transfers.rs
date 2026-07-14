@@ -456,3 +456,229 @@ impl AxShell {
         });
     }
 }
+
+impl AxShell {
+    pub(crate) fn show_sftp_transfer_files_dialog(
+        &mut self,
+        group_id: String,
+        transfer_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.active_dialog.is_some() {
+            return;
+        }
+        self.active_dialog = Some(crate::app::DialogKind::TransferFiles);
+
+        let view = cx.entity();
+        let scroll_handle = self.sftp_transfer_files_scroll_handle.clone();
+        window.open_dialog(cx, move |dialog: Dialog, _window, _| {
+            dialog
+                .w(px(720.))
+                .close_button(false)
+                .overlay_closable(false)
+                .on_close({
+                    let view = view.clone();
+                    move |_, _, cx| {
+                        view.update(cx, |this, cx| {
+                            this.active_dialog = None;
+                            cx.notify();
+                        });
+                    }
+                })
+                .content({
+                    let view = view.clone();
+                    let group_id = group_id.clone();
+                    let transfer_id = transfer_id.clone();
+                    let scroll_handle = scroll_handle.clone();
+                    move |content, window, cx| {
+                        let transfer = view
+                            .read(cx)
+                            .transfers
+                            .iter()
+                            .find(|transfer| {
+                                transfer.tab_id == group_id && transfer.info.id == transfer_id
+                            })
+                            .cloned();
+                        let transfer_name = transfer
+                            .as_ref()
+                            .map(|transfer| transfer.info.name.clone())
+                            .unwrap_or_default();
+                        let files = transfer
+                            .map(|transfer| transfer.files)
+                            .unwrap_or_default();
+                        let files_count = files.len();
+                        let list_id = format!("sftp-transfer-files-list-{transfer_id}");
+
+                        let header = h_flex()
+                            .w_full()
+                            .justify_between()
+                            .items_center()
+                            .child(
+                                v_flex()
+                                    .min_w(px(0.))
+                                    .child(
+                                        selectable_plain_text(
+                                            "sftp-transfer-files-title",
+                                            t!("sftp_transfer_files").to_string(),
+                                        )
+                                        .text_lg()
+                                        .font_weight(FontWeight::SEMIBOLD),
+                                    )
+                                    .child(
+                                        selectable_plain_text(
+                                            "sftp-transfer-files-subtitle",
+                                            format!(
+                                                "{} ({})",
+                                                transfer_name,
+                                                t!("n_files", files = files_count)
+                                            ),
+                                        )
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .whitespace_nowrap(),
+                                    ),
+                            )
+                            .child(
+                                Button::new("close-sftp-transfer-files-dialog")
+                                    .small()
+                                    .ghost()
+                                    .icon(IconName::Close)
+                                    .on_click(window.listener_for(
+                                        &view,
+                                        |this, _, window, cx| {
+                                            this.active_dialog = None;
+                                            window.close_dialog(cx);
+                                            cx.notify();
+                                        },
+                                    )),
+                            );
+
+                        let file_list = div()
+                            .w_full()
+                            .h(px(400.))
+                            .relative()
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .when(files.is_empty(), |this| {
+                                this.child(
+                                    selectable_plain_text(
+                                        "sftp-transfer-files-empty",
+                                        t!("sftp_transfer_files_empty").to_string(),
+                                    )
+                                    .size_full()
+                                    .p_4()
+                                    .text_center()
+                                    .text_color(cx.theme().muted_foreground),
+                                )
+                            })
+                            .when(!files.is_empty(), |this| {
+                                let files = files.clone();
+                                this.child(
+                                    uniform_list(list_id, files.len(), move |range, _, cx| {
+                                        range
+                                            .into_iter()
+                                            .filter_map(|index| {
+                                                let file = files.get(index)?.clone();
+                                                Some(
+                                                    h_flex()
+                                                        .id(ElementId::Name(
+                                                            format!(
+                                                                "sftp-transfer-file-{}",
+                                                                file.id
+                                                            )
+                                                            .into(),
+                                                        ))
+                                                        .w_full()
+                                                        .h(px(32.))
+                                                        .items_center()
+                                                        .gap_2()
+                                                        .px_3()
+                                                        .border_b_1()
+                                                        .border_color(
+                                                            cx.theme().border.opacity(0.35),
+                                                        )
+                                                        .fast_hover_options(
+                                                            cx,
+                                                            list_fast_hover_options(cx),
+                                                        )
+                                                        .child(
+                                                            Icon::new(IconName::File)
+                                                                .with_size(
+                                                                    gpui_component::Size::Small,
+                                                                )
+                                                                .text_color(cx.theme().primary),
+                                                        )
+                                                        .child(
+                                                            selectable_plain_text(
+                                                                ElementId::Name(
+                                                                    format!(
+                                                                        "sftp-transfer-file-source-{}",
+                                                                        file.id
+                                                                    )
+                                                                    .into(),
+                                                                ),
+                                                                file.source.clone(),
+                                                            )
+                                                            .flex_1()
+                                                            .min_w(px(0.))
+                                                            .overflow_hidden()
+                                                            .text_ellipsis()
+                                                            .whitespace_nowrap()
+                                                            .text_size(rems(0.833)),
+                                                        )
+                                                        .child(
+                                                            selectable_plain_text(
+                                                                ElementId::Name(
+                                                                    format!(
+                                                                        "sftp-transfer-file-status-{}",
+                                                                        file.id
+                                                                    )
+                                                                    .into(),
+                                                                ),
+                                                                sftp_transfer_file_state_text(
+                                                                    &file.state,
+                                                                ),
+                                                            )
+                                                            .w(px(150.))
+                                                            .flex_none()
+                                                            .min_w(px(0.))
+                                                            .overflow_hidden()
+                                                            .text_ellipsis()
+                                                            .whitespace_nowrap()
+                                                            .text_size(rems(0.75))
+                                                            .text_color(
+                                                                cx.theme().muted_foreground,
+                                                            ),
+                                                        ),
+                                                )
+                                            })
+                                            .collect::<Vec<_>>()
+                                    })
+                                    .track_scroll(&scroll_handle)
+                                    .w_full()
+                                    .h_full(),
+                                )
+                            });
+
+                        content.child(v_flex().gap_3().child(header).child(file_list))
+                    }
+                })
+        });
+    }
+}
+
+fn sftp_transfer_file_state_text(state: &crate::sftp::TransferFileState) -> String {
+    match state {
+        crate::sftp::TransferFileState::Running => t!("downloading").to_string(),
+        crate::sftp::TransferFileState::Paused => t!("paused").to_string(),
+        crate::sftp::TransferFileState::Completed => t!("completed").to_string(),
+        crate::sftp::TransferFileState::Skipped => t!("skipped").to_string(),
+        crate::sftp::TransferFileState::Failed(error) => format!("{}: {error}", t!("failed")),
+        crate::sftp::TransferFileState::Interrupted(reason) => {
+            format!("{}: {reason}", t!("interrupted"))
+        }
+    }
+}

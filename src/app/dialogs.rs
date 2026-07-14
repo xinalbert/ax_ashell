@@ -21,7 +21,7 @@ use rust_i18n::t;
 
 use crate::{AxShell, monitoring::format_bytes, session::AuthMethod};
 
-pub(super) use crate::app::hover::FastHoverExt;
+pub(super) use crate::app::hover::{FastHoverExt, list_fast_hover_options};
 
 mod delete_confirm;
 mod selector;
@@ -36,6 +36,7 @@ mod transfers;
 pub(crate) enum DialogKind {
     SessionSelector,
     Transfers,
+    TransferFiles,
     NewSsh,
     SettingsCloseConfirm,
     SftpCloseConfirm,

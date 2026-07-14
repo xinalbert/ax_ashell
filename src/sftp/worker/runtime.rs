@@ -511,6 +511,7 @@ pub(super) async fn run_sftp(
                         &tab_id_clone,
                         "edit-download",
                         true,
+                        false,
                     )
                     .await
                     {
