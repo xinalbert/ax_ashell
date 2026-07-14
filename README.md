@@ -12,7 +12,7 @@ Forked from <https://github.com/rust-kotlin/ashell.git>. The current project is 
 
 - Local terminals and saved SSH sessions with password or private-key authentication
 - Multi-tab and multi-pane workspaces with configurable keybindings and search
-- Built-in SFTP browsing, transfer control, remote editing, and large-directory pagination
+- Built-in SFTP browsing, transfer control, remote editing, large-directory pagination, and batch download file details
 - Themes, fonts, tab color behavior, monitoring, and workspace preferences
 - Encrypted session sync over WebDAV or S3-compatible storage
 - Global and per-session proxy support plus SSH X11 forwarding
@@ -38,6 +38,7 @@ cargo dev-reload
 - [Feature guides](docs/README.md#feature-guides)
 - [Bundled fonts](docs/features/bundled-fonts.md)
 - [Development and packaging](docs/development.md)
+- [GitHub releases](https://github.com/xinalbert/axshell/releases)
 
 ## Project Notes
 

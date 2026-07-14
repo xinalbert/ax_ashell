@@ -2392,3 +2392,17 @@
 - 受影响文件：`Cargo.toml`，`Cargo.lock`，`src/config/store.rs`，`src/platform.rs`，`src/platform/file_icons.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/views.rs`，`src/app/views/sftp_panel.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo、GPUI `uniform_list` 和共享 FastHover；macOS 使用 `NSWorkspace`，Windows 使用 `SHGetFileInfoW`，Linux 使用 `freedesktop-icons` 和 `mime_guess`。已联网检索 KDE、Nautilus 和 Microsoft Shell 的远端类型图标与缓存边界；未使用多 agent。
 - 验证结果：`rustfmt --edition 2024`、`cargo check`、`cargo test --quiet file_icon`（5 项）、完整 `cargo test --quiet`（183 项）、SFTP hover 静态审计、`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning；真实三端 GUI 图标主题、缩放和回退仍需手工验收。
+# 2026-07-14 README 与 release workflow 链接维护预检
+
+- 日期：2026-07-14 22:35 +0800
+- 变化摘要：运行时、依赖、manifest/lock、CI build 和 release job 逻辑不变；本轮维护双语 README，并修正 release workflow 停用 Homebrew Cask 模板中的旧 GitHub 项目链接。
+- 受影响文件：`README.md`，`README.zh.md`，`.github/workflows/release.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`。
+- 验证结果：`origin` 已指向 `https://github.com/xinalbert/axshell.git`；README 当前主页和 Issues 链接正确；定位到 `.github/workflows/release.yml` 的三个停用模板 URL 仍为 `https://github.com/xinalbert/ax_shell`。待执行文档修改、旧链接检索、空白检查和 tracking docs validator。
+# 2026-07-14 完成 README 与 release workflow 链接维护环境验证
+
+- 日期：2026-07-14 22:37 +0800
+- 变化摘要：双语 README 已补充 SFTP 批量下载文件明细和 GitHub Releases 入口；release workflow 停用 Homebrew Cask 模板中的两个下载 URL 和 homepage 已统一改为 `https://github.com/xinalbert/axshell`。运行时、依赖、manifest/lock、CI build 和 release job 逻辑不变。
+- 受影响文件：`README.md`，`README.zh.md`，`.github/workflows/release.yml`，跟踪文档。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
+- 验证结果：`origin` 与用户指定 URL 一致；`rg` 确认目标文件均使用 `xinalbert/axshell` 且不再包含 `xinalbert/ax_shell`；README 预览图存在；`git diff --check` 通过。tracking docs validator 待本轮记录写入后执行。

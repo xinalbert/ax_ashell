@@ -492,16 +492,16 @@ jobs:
   #
   #           on_arm do
   #             sha256 "${SHA_ARM}"
-  #             url "https://github.com/xinalbert/ax_shell/releases/download/v#{version}/ax_shell-v#{version}-macos-aarch64.zip"
+  #             url "https://github.com/xinalbert/axshell/releases/download/v#{version}/ax_shell-v#{version}-macos-aarch64.zip"
   #           end
   #           on_intel do
   #             sha256 "${SHA_INTEL}"
-  #             url "https://github.com/xinalbert/ax_shell/releases/download/v#{version}/ax_shell-v#{version}-macos-x86_64.zip"
+  #             url "https://github.com/xinalbert/axshell/releases/download/v#{version}/ax_shell-v#{version}-macos-x86_64.zip"
   #           end
   #
   #           name "ax_shell"
   #           desc "AxShell is a modern, fast, GPUI Component-based desktop terminal client written in Rust."
-  #           homepage "https://github.com/xinalbert/ax_shell"
+  #           homepage "https://github.com/xinalbert/axshell"
   #
   #           app "AxShell.app"
   #
