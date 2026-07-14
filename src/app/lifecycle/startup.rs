@@ -564,15 +564,15 @@ pub(crate) fn launch_local_x_server_app(path: &str) -> Result<String> {
             app_path.display()
         ));
     }
-    let display = crate::platform::x_server::resolve_display(path, true);
+    let resolved_display = crate::platform::x_server::resolve_display(path, true);
     let mut command = std::process::Command::new(app_path);
     let server_kind = crate::platform::x_server::windows_x_server_kind(path);
-    let args = crate::platform::x_server::launch_args(path, &display);
+    let args = crate::platform::x_server::launch_args(path, &resolved_display);
     tracing::info!(
         component = "x11",
         operation = "launch_local_server",
         server = server_kind.label(),
-        display = %display,
+        display = %resolved_display,
         configured_args = ?args,
         "Launching configured Windows X server"
     );
@@ -582,7 +582,7 @@ pub(crate) fn launch_local_x_server_app(path: &str) -> Result<String> {
     command
         .spawn()
         .with_context(|| format!("launch local X server at {}", app_path.display()))?;
-    Ok(display)
+    Ok(resolved_display)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
