@@ -31,7 +31,7 @@
 | `src/app/lifecycle/` | 启动、窗口打开、日志/crash hook、`AxShell::new` 和事件泵 | 改启动顺序、日志目录、主窗口 options、runtime event pump、输入事件或初始化状态时 | 父模块入口为 `src/app/lifecycle.rs`；`startup` 由 app 兼容导出给 main |
 | `src/app/state/` | `AxShell` 子状态聚合 | 改 appearance、monitoring、runtime/event channel 或窗口生命周期状态时 | search 状态已并入 `src/app/search.rs` |
 | `src/config/` | 配置文件模型、默认值、规范化规则和 `ConfigStore` | 改配置 schema/serde 默认、窗口/光标/theme profile、旧目录迁移、sync 默认对象名或 custom theme draft/save path 时 | `model.rs` 承载 `ConfigFile` 和值类型，`store.rs` 只做持久化、迁移、归一化和访问器 |
-| `src/platform/` | 平台相关本地集成 | 改本地 X Server 路径发现、DISPLAY 选择或 Windows 启动参数时 | 入口为 `src/platform.rs`；当前子模块为 `x_server.rs` |
+| `src/platform/` | 平台相关本地集成 | 改本地 X Server、系统文件图标或目标专属原生 API 时 | 入口为 `src/platform.rs`；子模块包括 `x_server.rs` 和 `file_icons.rs` |
 | `src/session.rs` | SSH 会话领域模型 | 改 `Session`、`AuthMethod`、`SshConnectionMode`、会话级 `sftp_path` 或连接模式优先级时 | 类型直接由 `crate::session` 导出；无兼容 config 子模块 |
 | `src/backend.rs` | backend 领域入口 | 改 backend 模块导出时 | 子模块为 `auth`、`local`、`proxy`、`ssh` |
 | `src/backend/` | 本地/SSH 后端、共享认证、proxy transport、远程系统采样和 PTY/SSH 事件桥接 | 改 SSH 连接、private key、proxy、legacy fallback、本地 shell、后台事件或 backend shutdown 时 | `proxy.rs` 负责 session/env/global proxy 解析和网络连接；config 不再执行 transport |
@@ -61,9 +61,10 @@
 | `docs/resource-lifecycle.md` | English resource lifecycle and deep-sleep design | State machine, phases, resource policy, verification | Keep English documentation aligned with the Chinese lifecycle design |
 | `docs/resource-lifecycle.zh.md` | 中文资源生命周期与深度休眠设计 | 状态机、阶段路线、资源策略、验证边界 | 实现或评审后台降载、SFTP pin、backend shutdown 与系统睡眠恢复时 |
 | `src/config/model.rs` | 配置文件与值模型、默认值和规范化规则 | `ConfigFile`，`LocalShellProfile`，global SFTP local-directory setting，`default_local_shell_profiles`，`default_rayon_threads`，theme/profile/window types | 改配置 serde、local shell profile/argv、全局 SFTP 本机目录、Rayon `1–64` 范围、默认值、theme profile、窗口/标题栏/光标或 custom theme 模型时 |
-| `src/config/store.rs` | 本地配置路径、迁移、getter/setter 和 `ConfigStore` | `ConfigStore::load/save`，`normalize_local_shell_profiles`，global SFTP local-directory accessor，`rayon_threads`，`normalize_theme_profiles` | 改配置目录、旧目录迁移、local shell profile、全局 SFTP 本机目录、Rayon worker 设置、Settings 二次快捷键动作、sync 默认对象名、theme profile 或 custom theme draft 时 |
+| `src/config/store.rs` | 本地配置路径、迁移、getter/setter 和 `ConfigStore` | `ConfigStore::load/save`，`file_icons_path`，`normalize_local_shell_profiles`，global SFTP local-directory accessor，`rayon_threads`，`normalize_theme_profiles` | 改配置目录、独立文件图标缓存路径、旧目录迁移、local shell profile、全局 SFTP 本机目录、Rayon worker 设置、Settings 二次快捷键动作、sync 默认对象名、theme profile 或 custom theme draft 时 |
 | `src/backend/proxy.rs` | SSH/SFTP transport proxy | `ProxyStream`，`ENV_PROXY`，`connect`，`active` | 改 SOCKS5/HTTP/direct 连接、环境代理或 session/global proxy 优先级时 |
 | `src/platform/x_server.rs` | 本地 X Server 平台 helper | `default_app_path`，`local_x_server_available`，`default_display`，`resolve_display`，`launch_args` | 改 X server 缺失提示、macOS XQuartz、Windows VcXsrv/Xming、DISPLAY 或手动启动参数时 |
+| `src/platform/file_icons.rs` | 跨平台系统文件类型图标缓存、持久化和解析 | `FileIconCache`，`StoredFileIconCache`，`start_file_icon_cache_refresh`，macOS/Windows/Linux icon loader | 改 SFTP 文件图标来源、`file-icons.json` schema、启动预热、主题失效、原子写入或平台图标转换时 |
 | `src/app/state/` | `AxShell` 子状态模块 | `AppearanceState`，`LifecycleState`，`MonitoringState`，`RuntimeState` | 改应用外观、窗口生命周期、系统监控或按需 Tokio runtime / backend event channel 状态分组时 |
 | `src/app/actions/session.rs` | 会话连接、SSH 表单、local shell profile 和 tab 生命周期 action | `save_ssh_session_from_form`，`connect_ssh`，`open_saved_session_sftp_only`，`shutdown_all_backends`，`active_snapshot` | 改本地/SSH tab 创建、会话 `sftp_path` / `x11_forwarding` 保存、saved SSH 只开 SFTP、SSH 表单加载/重置、tab UI 状态回收、断线重试、关闭 tab/group、窗口退出或 active session 查询时 |
 | `src/app/actions/pane.rs` | pane tree 操作和 group activation action | `split_current_pane`，`focus_adjacent_pane`，`activate_group_page`，`focus_pane_with_id`，`sync_system_tab_to_active_group` | Local split 必须复制 source tab 的 `LocalShellProfile`；改 split pane、pane focus、splitter drag、active group + 页面联动切换时 |
@@ -75,8 +76,8 @@
 | `src/app/lifecycle/startup.rs` | 启动辅助、进程环境、日志 writer/轮转、crash hook 和窗口打开 | `configure_rayon_threads`，`init_logging`，`runtime_log_dir`，`crash_report_dir`，`open_main_window` | 启动期配置必须在 GPUI 初始化前应用；日志 writer 必须保留进程期 guard |
 | `assets/icons/terminal_icon_all_formats/terminal_icon_256.png` | 非 macOS runtime 窗口图标和 Linux/Debian 256px 图标资源 | PNG 资源文件 | 改 `include_bytes!`、Debian asset 或 Linux release icon 路径时确认存在性 |
 | `src/app/input/app_menu.rs` | GPUI 原生应用菜单注册 | `install`，`app_menus`，`Quit`，saved SSH import/export menu items | `Quit` 会先关闭全部 backend；File 菜单承载 saved SSH 导入/导出 action；原 `src/app/app_menu.rs` 迁入；通过 `crate::app::app_menu` 兼容导出 |
-| `src/app.rs` | 全局 UI 状态结构和 app 子模块出口 | `AxShell` fields，`rayon_threads_input`，local shell profile inputs，type re-exports，saved session/group context menu state | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel、Settings generation 或 saved sidebar 右键菜单状态时 |
-| `src/app/lifecycle/init.rs` | `AxShell` 初始化和默认状态装配 | `AxShell::new`，`rayon_threads_input`，local shell profile inputs，`backend_event_channel` | 使用 `src/events.rs` 构造 256 条 Tokio backend event queue；按需 runtime 不在初始化时创建；在此从默认 Shell Profile 初始化 Settings 输入 |
+| `src/app.rs` | 全局 UI 状态结构和 app 子模块出口 | `AxShell` fields，`FileIconCache`，rayon_threads_input，local shell profile inputs，type re-exports，saved session/group context menu state | 新增/调整应用级状态字段、图标缓存、输入实体、scroll handle、runtime/event channel、Settings generation 或 saved sidebar 右键菜单状态时 |
+| `src/app/lifecycle/init.rs` | `AxShell` 初始化和默认状态装配 | `AxShell::new`，`FileIconCache::load`，`start_file_icon_cache_refresh`，rayon_threads_input，local shell profile inputs，`backend_event_channel` | 配置缓存命中时立即装入类型图标；不命中时启动预热；使用 `src/events.rs` 构造 256 条 Tokio backend event queue |
 | `src/app/lifecycle/event_loop.rs` | 输入事件、后台事件分发、系统采样和主题同步 | `on_input_event`，`commit_rayon_threads_input`，`start_event_pump`，`drain_backend_events`，`flush_terminal_output`，`sample_system_if_due` | Rayon 数值输入在 Enter/Blur 保存、无效文本回显当前值；连续 `Output` 段按 tab 聚合并在非输出前 flush |
 | `src/app/constants.rs` | app 尺寸、快捷键 context、仓库 URL 和版本展示 | layout constants，`TERMINAL_KEY_CONTEXT`，`public_version_label` | 改 UI 固定尺寸、入口链接或公开版本文案时 |
 | `src/app/pane.rs` | pane tree 数据模型 | `PaneLayout` | 改 split tree、tab 查找、替换、删除或 pane 统计时 |
@@ -105,7 +106,7 @@
 | `src/app/views/` | 主工作区视图目录模块，按渲染区域拆分 SFTP、监控、侧栏、顶部标签、终端 pane 和整体布局 | `helpers.rs`，`layout.rs`，`monitoring.rs`，`sftp_panel.rs`，`sidebar.rs`，`tab_bar.rs`，`terminal_panel.rs` | 增加固定 Local Terminal 入口、调整 SFTP 双列面板、saved session 分组、侧栏折叠态、顶部标签、监控面板或主布局时 |
 | `src/app/views.rs` | views 目录模块入口和共享 imports | 子模块声明，`crate::app::views` 路由 | 改 views 模块可见性、共享 imports 或新增 views 子文件时 |
 | `src/app/views/layout.rs` | `Render for AxShell` 和顶层菜单/workspace/body 布局 | `render`，platform menu row，workspace page route，resizable panels，overlays | 改 Windows/Linux 全宽菜单、主布局、集成标题栏、workspace/body split、SFTP 页面接线、自绘 SFTP/saved session/saved group 右键菜单、saved SSH 右键 Open SFTP 或全局 overlays 时 |
-| `src/app/views/sftp_panel.rs` | SFTP 双列页面主体 | `render_sftp_panel`，`RemoteSftpDrag`，远端加载更多页脚 | 改远端/本地文件列表、远端到本地面板内部拖放下载、分页加载按钮、表头、上传下载按钮、隐藏文件开关、SFTP 右键菜单或双栏布局时 |
+| `src/app/views/sftp_panel.rs` | SFTP 双列页面主体 | `render_sftp_panel`，`RemoteSftpDrag`，`FileIconCache` 接线，远端加载更多页脚 | 改远端/本地文件列表、系统文件图标、远端到本地面板内部拖放下载、分页加载按钮、表头、上传下载按钮、隐藏文件开关、SFTP 右键菜单或双栏布局时 |
 | `src/app/views/sftp_panel/sort.rs` | SFTP 远端/本地列表排序 helper | `sort_sftp_entries`，`SftpSortableEntry` | 改名称/大小/修改时间排序规则、目录优先或本地/远端排序一致性时 |
 | `src/app/views/sftp_panel/transfer_panel.rs` | SFTP 页面传输标签和传输行渲染 | `render_sftp_transfer_panel`，`render_sftp_transfer_row`，`sftp_transfer_status_text` | 改传输列表分组、进度条、暂停/恢复/取消/移除按钮或传输状态文案时 |
 | `src/app/views/sidebar.rs` | 展开/收起侧栏和 saved session entry 渲染 | `sidebar`，`render_collapsed_sidebar`，saved sidebar row renderers | 改 SAVED 列表、`uniform_list` 可见行、分组展开/重命名、分组/单条 SSH 右键入口、折叠态入口或本地终端固定入口时 |
@@ -174,6 +175,7 @@
 - `rg -n 'x11_forwarding|local_x_server_available|request_x11|resolve_display|windows_x_server_kind' src/session.rs src/app src/backend src/platform`
 - `rg -n 'sftp_path|default_local_sftp_path|last_local_sftp_paths|configured_default_local_browser_dir|restore_active_local_sftp_path' src/session.rs src/config src/app src/sftp`
 - `rg -n 'ThemeConfig|ThemeSet|try_parse_color|watch_dir|default_light_theme|default_dark_theme' ~/.cargo/git/checkouts/gpui-component-*`
+- `rg -n 'FileIconCache|file_icons_path|file-icons.json|start_file_icon_cache_refresh' src/config src/platform src/app`
 - `cargo check`
 
 ## 忽略与未索引

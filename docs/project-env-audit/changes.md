@@ -2344,3 +2344,11 @@
 - 受影响文件：`src/app.rs`，`src/app/terminal.rs`，`src/app/actions/terminal.rs`，`src/app/views/terminal_panel.rs`，`src/terminal/element.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`，未联网或使用多 agent。
 - 验证结果：`rustfmt --edition 2024` 通过；终端链接修饰键测试 3 项和布局缓存测试 1 项通过；`cargo check` 通过；完整 `cargo test --quiet` 174 项通过；hover 静态审计、`git diff --check` 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning；真实 GUI 下 Command/Ctrl 按下和松开时的视觉切换仍待手工验收。
+
+## 2026-07-14 完成 SFTP 系统文件图标缓存环境验证
+
+- 时间：2026-07-14 17:03 +0800
+- 变化摘要：SFTP 本地和远端列表通过独立的 `file-icons.json` 持久化缓存显示本机系统文件类型图标。缓存按目录、通用文件和常用扩展名存储，启动时先加载，缺失、损坏、平台或 Linux 主题变化时后台预热并原子更新；行渲染、滚动、hover 和断联后只读取内存映射。
+- 受影响文件：`Cargo.toml`，`Cargo.lock`，`src/config/store.rs`，`src/platform.rs`，`src/platform/file_icons.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/views.rs`，`src/app/views/sftp_panel.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo、GPUI `uniform_list` 和共享 FastHover；macOS 使用 `NSWorkspace`，Windows 使用 `SHGetFileInfoW`，Linux 使用 `freedesktop-icons` 和 `mime_guess`。已联网检索 KDE、Nautilus 和 Microsoft Shell 的远端类型图标与缓存边界；未使用多 agent。
+- 验证结果：`rustfmt --edition 2024`、`cargo check`、`cargo test --quiet file_icon`（5 项）、完整 `cargo test --quiet`（183 项）、SFTP hover 静态审计、`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning；真实三端 GUI 图标主题、缩放和回退仍需手工验收。

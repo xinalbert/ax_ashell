@@ -129,3 +129,23 @@
 - 关键结论：OpenSSH 官方默认相对保守，`ConnectionAttempts` 为 1；不同 GUI SSH 客户端对自动重连/连接重试的默认策略并不统一，且不少产品把“断线自动重连”和“首次连接重试”分开定义；在缺少稳定统一官方对照的前提下，本轮默认值应优先保持 AxShell 当前已上线行为，即额外 2 次 transport retry，延时 0.5s / 1.5s
 - 对实施计划的影响：设置页说明里明确“默认值保持当前产品行为”；配置 schema 允许用户自定义重试次数与延时；不把 OpenSSH 的 1 次尝试直接强推为新默认，以避免回退已有用户体验
 - 未解决问题：未找到足够稳定且一致的多家 GUI SSH 客户端“首次连接重试”官方默认值对照；如用户后续明确指定对标某一产品，可再补充定向检索
+
+## 2026-07-14 系统文件图标平台方案
+
+- 时间：2026-07-14 15:45 +0800
+- 检索问题：Linux 如何在不依赖 GTK 运行时的条件下，按当前 Freedesktop 图标主题查找 SFTP 文件类型图标。
+- 检索原因：项目需在 macOS、Windows 和 Linux 呈现各自系统风格的文件图标；Linux 的图标主题路径和继承链没有单一跨桌面原生 API。
+- 来源列表：`https://crates.io/crates/freedesktop-icons`，`cargo info freedesktop-icons`，本机下载的 `freedesktop-icons 0.4.0` crate 源码。
+- 关键结论：`freedesktop-icons 0.4.0` 可按主题名、尺寸和图标名称查找 PNG/SVG 资源，并处理主题目录及继承关系；应用可用 MIME 推断扩展名对应的主题图标候选，再回退到通用文件/文件夹图标。
+- 对实施计划的影响：Linux 后端采用该 crate，避免引入 GTK/GIO；macOS 保持 `NSWorkspace`，Windows 保持 Shell `SHGetFileInfoW`。所有平台输出统一的 GPUI 缓存图像。
+- 未解决问题：需在 GNOME、KDE 等真实桌面环境确认主题检测和缺失资源回退的视觉效果。
+
+## 2026-07-14 文件管理器类型图标与缓存边界
+
+- 时间：2026-07-14 16:34 +0800
+- 检索问题：主流文件管理器和 Windows Shell 如何为远端/慢速目录选择类型图标，以及系统图标查询是否适合在 UI 线程执行。
+- 检索原因：用户要求联网对标，以验证 SFTP 图标是否应以路径为缓存键，以及启动预热/离线缓存策略是否合理。
+- 来源列表：KDE KIO `KFileItem` <https://github.com/KDE/kio/blob/master/src/core/kfileitem.cpp>；GNOME Nautilus `nautilus-file.c` <https://github.com/GNOME/nautilus/blob/main/src/nautilus-file.c>；Microsoft `SHGetFileInfoW` <https://learn.microsoft.com/windows/win32/api/shellapi/nf-shellapi-shgetfileinfow>。
+- 关键结论：KDE 对慢速 URL 以文件名扩展名推断 MIME，再使用 MIME 图标名缓存；Nautilus 将已获得的 `GIcon` 保存在文件对象上，并把自定义/缩略图作为额外分支；Windows Shell 支持虚拟扩展名加 `SHGFI_USEFILEATTRIBUTES`，无需访问真实文件，并明确建议从后台线程调用。三者均不要求为远端路径同步读取本地文件系统。
+- 对实施计划的影响：AxShell 缓存固定为目录、通用文件和受控扩展名，并序列化图像数据到独立配置文件；缓存缺失、损坏、平台或 Linux 主题变更时才在启动阶段预热。SFTP 行渲染只查询内存映射。
+- 未解决问题：KDE/GNOME 会处理本地自定义目录图标和缩略图；AxShell 本轮故意不支持这两类路径相关资源，需在真实三端 GUI 验收系统主题、缩放和回退视觉效果。
