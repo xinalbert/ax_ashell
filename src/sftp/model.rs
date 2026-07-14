@@ -82,6 +82,22 @@ impl<'de> serde::Deserialize<'de> for TransferState {
     }
 }
 
+impl TransferState {
+    pub(crate) fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::Completed | Self::Failed(_) | Self::Interrupted(_) | Self::Zombie(_)
+        )
+    }
+}
+
+pub(crate) fn unix_timestamp_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TransferInfo {
     pub id: String,
@@ -100,4 +116,39 @@ pub struct Transfer {
     pub transferred: u64,
     pub total: Option<u64>,
     pub state: TransferState,
+    #[serde(default)]
+    pub started_at: u64,
+    #[serde(default)]
+    pub finished_at: Option<u64>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Transfer;
+
+    #[test]
+    fn transfer_history_without_timestamps_stays_compatible() {
+        let transfer: Transfer = serde_json::from_str(
+            r#"{
+                "tab_id":"group-a",
+                "tab_title":"Session A",
+                "info":{
+                    "id":"transfer-a",
+                    "name":"report.csv",
+                    "source":"/remote/report.csv",
+                    "target":"/local",
+                    "kind":"Download",
+                    "total_bytes":128
+                },
+                "transferred":128,
+                "total":128,
+                "state":"Completed"
+            }"#,
+        )
+        .expect("legacy transfer history should deserialize");
+
+        assert_eq!(transfer.started_at, 0);
+        assert_eq!(transfer.finished_at, None);
+    }
+}
+use std::time::{SystemTime, UNIX_EPOCH};

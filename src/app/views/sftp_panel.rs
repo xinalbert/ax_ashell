@@ -1033,6 +1033,7 @@ impl AxShell {
                                             format_bytes(entry.size)
                                         };
                                         let entry_modified = format_mtime(entry.modified);
+                                        let icon = file_icons.local_icon(&entry.name, entry.is_dir);
                                             Some(
                                                 h_flex()
                                                 .id(ElementId::Name(
@@ -1118,12 +1119,12 @@ impl AxShell {
                                                         .items_center()
                                                         .gap_2()
                                                         .child(
-                                                            div()
-                                                                .w(icon_col_width)
-                                                                .flex_none()
-                                                                .text_size(rems(1.0))
-                                                                .text_color(name_color)
-                                                                .child(if entry.is_dir { "📁" } else { "📄" }),
+                                                            sftp_file_icon(
+                                                                icon,
+                                                                entry.is_dir,
+                                                                icon_col_width,
+                                                                name_color,
+                                                            ),
                                                         )
                                                         .child(
                                                             selectable_plain_text(

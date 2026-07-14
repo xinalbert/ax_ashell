@@ -578,6 +578,199 @@ impl Render for AxShell {
                         ),
                 )
             })
+            .when_some(self.sftp_transfer_context_menu.clone(), |this, menu| {
+                let Some(transfer) = self
+                    .transfers
+                    .iter()
+                    .find(|transfer| {
+                        transfer.tab_id == menu.group_id && transfer.info.id == menu.transfer_id
+                    })
+                    .cloned()
+                else {
+                    return this;
+                };
+                let menu_hover_tokens = fast_hover_tokens(cx);
+                let menu_radius = cx.theme().radius;
+                let menu_fg = cx.theme().popover_foreground;
+                let menu_width = px(170.);
+                let menu_item_count = match transfer.state {
+                    crate::sftp::TransferState::Running | crate::sftp::TransferState::Paused => 2,
+                    crate::sftp::TransferState::Completed
+                        if matches!(transfer.info.kind, crate::sftp::TransferType::Download) =>
+                    {
+                        2
+                    }
+                    crate::sftp::TransferState::Completed
+                    | crate::sftp::TransferState::Failed(_)
+                    | crate::sftp::TransferState::Interrupted(_)
+                    | crate::sftp::TransferState::Zombie(_) => 1,
+                };
+                let menu_height = px(8. + 30. * menu_item_count as f32);
+                let menu_margin = px(8.);
+                let viewport_size = window.viewport_size();
+                let menu_left = menu
+                    .position
+                    .x
+                    .min((viewport_size.width - menu_width - menu_margin).max(menu_margin))
+                    .max(menu_margin);
+                let menu_top = menu
+                    .position
+                    .y
+                    .min((viewport_size.height - menu_height - menu_margin).max(menu_margin))
+                    .max(menu_margin);
+                let menu_item = move |id: &'static str, label: String| {
+                    div()
+                        .id(id)
+                        .w_full()
+                        .h(px(30.))
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .justify_start()
+                        .rounded(menu_radius)
+                        .text_size(rems(0.917))
+                        .text_color(menu_fg)
+                        .cursor_pointer()
+                        .fast_hover_with_tokens(menu_hover_tokens)
+                        .child(label)
+                };
+                let menu_body = match transfer.state {
+                    crate::sftp::TransferState::Running => v_flex()
+                        .w_full()
+                        .child(
+                            menu_item("sftp-transfer-context-pause", t!("pause").to_string())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
+                                        this.trigger_sftp_transfer_context_pause(cx);
+                                        cx.stop_propagation();
+                                    }),
+                                ),
+                        )
+                        .child(
+                            menu_item("sftp-transfer-context-cancel", t!("cancel").to_string())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
+                                        this.trigger_sftp_transfer_context_cancel(cx);
+                                        cx.stop_propagation();
+                                    }),
+                                ),
+                        )
+                        .into_any_element(),
+                    crate::sftp::TransferState::Paused => v_flex()
+                        .w_full()
+                        .child(
+                            menu_item("sftp-transfer-context-resume", t!("resume").to_string())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
+                                        this.trigger_sftp_transfer_context_resume(cx);
+                                        cx.stop_propagation();
+                                    }),
+                                ),
+                        )
+                        .child(
+                            menu_item("sftp-transfer-context-cancel", t!("cancel").to_string())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
+                                        this.trigger_sftp_transfer_context_cancel(cx);
+                                        cx.stop_propagation();
+                                    }),
+                                ),
+                        )
+                        .into_any_element(),
+                    crate::sftp::TransferState::Completed => v_flex()
+                        .w_full()
+                        .when(
+                            matches!(transfer.info.kind, crate::sftp::TransferType::Download),
+                            |this| {
+                                this.child(
+                                    menu_item(
+                                        "sftp-transfer-context-open-folder",
+                                        t!("open_folder").to_string(),
+                                    )
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.trigger_sftp_transfer_context_open_folder(cx);
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
+                                )
+                            },
+                        )
+                        .child(
+                            menu_item("sftp-transfer-context-remove", t!("remove").to_string())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
+                                        this.trigger_sftp_transfer_context_remove(cx);
+                                        cx.stop_propagation();
+                                    }),
+                                ),
+                        )
+                        .into_any_element(),
+                    crate::sftp::TransferState::Failed(_)
+                    | crate::sftp::TransferState::Interrupted(_)
+                    | crate::sftp::TransferState::Zombie(_) => v_flex()
+                        .w_full()
+                        .child(
+                            menu_item("sftp-transfer-context-remove", t!("remove").to_string())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
+                                        this.trigger_sftp_transfer_context_remove(cx);
+                                        cx.stop_propagation();
+                                    }),
+                                ),
+                        )
+                        .into_any_element(),
+                };
+                this.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .bottom_0()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.dismiss_sftp_transfer_context_menu(cx);
+                            }),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(|this, _, _, cx| {
+                                this.dismiss_sftp_transfer_context_menu(cx);
+                            }),
+                        )
+                        .child(
+                            div()
+                                .absolute()
+                                .left(menu_left)
+                                .top(menu_top)
+                                .w(menu_width)
+                                .p_1()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(cx.theme().border)
+                                .bg(cx.theme().popover)
+                                .shadow_lg()
+                                .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                    window.prevent_default();
+                                    cx.stop_propagation();
+                                })
+                                .on_mouse_down(MouseButton::Right, |_, window, cx| {
+                                    window.prevent_default();
+                                    cx.stop_propagation();
+                                })
+                                .child(menu_body),
+                        ),
+                )
+            })
             .when_some(self.saved_session_context_menu.clone(), |this, menu| {
                 let view = cx.entity();
                 let menu_hover_tokens = fast_hover_tokens(cx);

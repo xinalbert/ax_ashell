@@ -1,26 +1,39 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use super::super::*;
+
+const TRANSFER_ICON_COLUMN_WIDTH: f32 = 24.;
+const TRANSFER_STATUS_COLUMN_WIDTH: f32 = 180.;
+const TRANSFER_TIME_COLUMN_WIDTH: f32 = 72.;
+const TRANSFER_SPEED_COLUMN_WIDTH: f32 = 84.;
+const TRANSFER_ACTIONS_COLUMN_WIDTH: f32 = 72.;
 
 impl AxShell {
     pub(super) fn render_sftp_transfer_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let selected_tab = self.sftp_transfer_tab;
+        let active_group_id = self.active_group.as_deref();
         let active_count = self
             .transfers
             .iter()
+            .filter(|transfer| transfer_belongs_to_group(transfer, active_group_id))
             .filter(|transfer| transfer_belongs_to_tab(transfer, SftpTransferTab::Active))
             .count();
         let failed_count = self
             .transfers
             .iter()
+            .filter(|transfer| transfer_belongs_to_group(transfer, active_group_id))
             .filter(|transfer| transfer_belongs_to_tab(transfer, SftpTransferTab::Failed))
             .count();
         let completed_count = self
             .transfers
             .iter()
+            .filter(|transfer| transfer_belongs_to_group(transfer, active_group_id))
             .filter(|transfer| transfer_belongs_to_tab(transfer, SftpTransferTab::Completed))
             .count();
         let transfers = self
             .transfers
             .iter()
+            .filter(|transfer| transfer_belongs_to_group(transfer, active_group_id))
             .filter(|transfer| transfer_belongs_to_tab(transfer, selected_tab))
             .cloned()
             .collect::<Vec<_>>();
@@ -132,6 +145,7 @@ impl AxShell {
                         )
                     }),
             )
+            .child(Self::render_sftp_transfer_header(cx))
             .child(
                 div()
                     .flex_1()
@@ -192,6 +206,53 @@ impl AxShell {
             }))
     }
 
+    fn render_sftp_transfer_header(cx: &mut Context<Self>) -> impl IntoElement {
+        let column_label = |label: String| {
+            div()
+                .min_w(px(0.))
+                .overflow_hidden()
+                .text_ellipsis()
+                .whitespace_nowrap()
+                .text_size(rems(0.75))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(cx.theme().muted_foreground)
+                .child(label)
+        };
+
+        h_flex()
+            .w_full()
+            .h(px(26.))
+            .flex_none()
+            .items_center()
+            .gap_2()
+            .px_3()
+            .border_b_1()
+            .border_color(cx.theme().border.opacity(0.35))
+            .bg(cx.theme().tab_bar)
+            .child(div().w(px(TRANSFER_ICON_COLUMN_WIDTH)).flex_none())
+            .child(column_label(t!("name").to_string()).flex_1())
+            .child(
+                column_label(t!("sftp_transfer_status").to_string())
+                    .w(px(TRANSFER_STATUS_COLUMN_WIDTH))
+                    .flex_none(),
+            )
+            .child(
+                column_label(t!("sftp_transfer_time").to_string())
+                    .w(px(TRANSFER_TIME_COLUMN_WIDTH))
+                    .flex_none(),
+            )
+            .child(
+                column_label(t!("sftp_transfer_speed").to_string())
+                    .w(px(TRANSFER_SPEED_COLUMN_WIDTH))
+                    .flex_none(),
+            )
+            .child(
+                column_label(t!("sftp_transfer_actions").to_string())
+                    .w(px(TRANSFER_ACTIONS_COLUMN_WIDTH))
+                    .flex_none(),
+            )
+    }
+
     fn render_sftp_transfer_row(
         transfer: crate::sftp::Transfer,
         view: gpui::Entity<AxShell>,
@@ -204,122 +265,16 @@ impl AxShell {
         };
         let status_text = sftp_transfer_status_text(&transfer);
         let transfer_id = transfer.info.id.clone();
-        let mut actions = h_flex().flex_none().items_center().gap_1();
-
-        match &transfer.state {
-            crate::sftp::TransferState::Running => {
-                let pause_id = transfer.info.id.clone();
-                let cancel_id = transfer.info.id.clone();
-                let pause_group_id = transfer.tab_id.clone();
-                let cancel_group_id = transfer.tab_id.clone();
-                actions = actions
-                    .child(
-                        Button::new(ElementId::Name(format!("sftp-pause-{pause_id}").into()))
-                            .ghost()
-                            .small()
-                            .icon(IconName::Pause)
-                            .on_click(window.listener_for(&view, move |this, _, _, _| {
-                                if let Some(handle) =
-                                    this.ensure_sftp_handle_for_group(&pause_group_id)
-                                {
-                                    this.mark_sftp_activity_for_group(&pause_group_id);
-                                    handle.pause_transfer(pause_id.clone());
-                                }
-                            })),
-                    )
-                    .child(
-                        Button::new(ElementId::Name(format!("sftp-cancel-{cancel_id}").into()))
-                            .ghost()
-                            .small()
-                            .icon(IconName::Close)
-                            .on_click(window.listener_for(&view, move |this, _, _, _| {
-                                if let Some(handle) =
-                                    this.ensure_sftp_handle_for_group(&cancel_group_id)
-                                {
-                                    this.mark_sftp_activity_for_group(&cancel_group_id);
-                                    handle.cancel_transfer(cancel_id.clone());
-                                }
-                            })),
-                    );
-            }
-            crate::sftp::TransferState::Paused => {
-                let resume_id = transfer.info.id.clone();
-                let cancel_id = transfer.info.id.clone();
-                let resume_group_id = transfer.tab_id.clone();
-                let cancel_group_id = transfer.tab_id.clone();
-                actions = actions
-                    .child(
-                        Button::new(ElementId::Name(format!("sftp-resume-{resume_id}").into()))
-                            .ghost()
-                            .small()
-                            .icon(IconName::Play)
-                            .on_click(window.listener_for(&view, move |this, _, _, _| {
-                                if let Some(handle) =
-                                    this.ensure_sftp_handle_for_group(&resume_group_id)
-                                {
-                                    this.mark_sftp_activity_for_group(&resume_group_id);
-                                    handle.resume_transfer(resume_id.clone());
-                                }
-                            })),
-                    )
-                    .child(
-                        Button::new(ElementId::Name(format!("sftp-cancel-{cancel_id}").into()))
-                            .ghost()
-                            .small()
-                            .icon(IconName::Close)
-                            .on_click(window.listener_for(&view, move |this, _, _, _| {
-                                if let Some(handle) =
-                                    this.ensure_sftp_handle_for_group(&cancel_group_id)
-                                {
-                                    this.mark_sftp_activity_for_group(&cancel_group_id);
-                                    handle.cancel_transfer(cancel_id.clone());
-                                }
-                            })),
-                    );
-            }
-            crate::sftp::TransferState::Completed => {
-                if matches!(transfer.info.kind, crate::sftp::TransferType::Download) {
-                    let target = transfer.info.target.clone();
-                    actions = actions.child(
-                        Button::new(ElementId::Name(
-                            format!("sftp-open-folder-{}", transfer.info.id).into(),
-                        ))
-                        .ghost()
-                        .small()
-                        .icon(IconName::Folder)
-                        .on_click(move |_, _, _| {
-                            let _ = std::process::Command::new("open").arg(&target).spawn();
-                        }),
-                    );
-                }
-                let remove_id = transfer.info.id.clone();
-                actions = actions.child(
-                    Button::new(ElementId::Name(format!("sftp-remove-{remove_id}").into()))
-                        .ghost()
-                        .small()
-                        .icon(IconName::Close)
-                        .on_click(window.listener_for(&view, move |this, _, _, cx| {
-                            this.remove_transfer(&remove_id, cx);
-                        })),
-                );
-            }
-            crate::sftp::TransferState::Failed(_)
-            | crate::sftp::TransferState::Interrupted(_)
-            | crate::sftp::TransferState::Zombie(_) => {
-                let remove_id = transfer.info.id.clone();
-                actions = actions.child(
-                    Button::new(ElementId::Name(format!("sftp-remove-{remove_id}").into()))
-                        .ghost()
-                        .small()
-                        .icon(IconName::Close)
-                        .on_click(window.listener_for(&view, move |this, _, _, cx| {
-                            this.remove_transfer(&remove_id, cx);
-                        })),
-                );
-            }
-        }
+        let transfer_group_id = transfer.tab_id.clone();
+        let action_transfer_id = transfer.info.id.clone();
+        let action_group_id = transfer.tab_id.clone();
+        let right_click_transfer_id = transfer.info.id.clone();
+        let right_click_group_id = transfer.tab_id.clone();
 
         h_flex()
+            .id(ElementId::Name(
+                format!("sftp-transfer-row-{transfer_group_id}-{transfer_id}").into(),
+            ))
             .w_full()
             .h(px(32.))
             .items_center()
@@ -327,11 +282,30 @@ impl AxShell {
             .px_3()
             .border_b_1()
             .border_color(cx.theme().border.opacity(0.35))
-            .fast_hover(cx)
+            .fast_hover_options(cx, list_fast_hover_options(cx))
+            .on_mouse_down(
+                MouseButton::Right,
+                window.listener_for(&view, move |this, event: &MouseDownEvent, _, cx| {
+                    this.open_sftp_transfer_context_menu(
+                        right_click_group_id.clone(),
+                        right_click_transfer_id.clone(),
+                        event.position,
+                        cx,
+                    );
+                    cx.stop_propagation();
+                }),
+            )
             .child(
-                Icon::new(icon)
-                    .with_size(Size::Small)
-                    .text_color(cx.theme().primary),
+                div()
+                    .w(px(TRANSFER_ICON_COLUMN_WIDTH))
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        Icon::new(icon)
+                            .with_size(Size::Small)
+                            .text_color(cx.theme().primary),
+                    ),
             )
             .child(
                 selectable_plain_text(
@@ -352,9 +326,9 @@ impl AxShell {
                     ElementId::Name(format!("sftp-transfer-status-{transfer_id}").into()),
                     status_text,
                 )
-                .w(px(180.))
+                .w(px(TRANSFER_STATUS_COLUMN_WIDTH))
+                .flex_none()
                 .min_w(px(0.))
-                .flex_shrink_1()
                 .overflow_hidden()
                 .text_ellipsis()
                 .whitespace_nowrap()
@@ -363,21 +337,58 @@ impl AxShell {
             )
             .child(
                 selectable_plain_text(
-                    ElementId::Name(format!("sftp-transfer-session-{transfer_id}").into()),
-                    transfer.tab_title,
+                    ElementId::Name(format!("sftp-transfer-time-{transfer_id}").into()),
+                    sftp_transfer_time_text(&transfer),
                 )
-                .w(px(140.))
-                .min_w(px(0.))
-                .flex_shrink_1()
-                .overflow_hidden()
-                .text_ellipsis()
+                .w(px(TRANSFER_TIME_COLUMN_WIDTH))
+                .flex_none()
                 .whitespace_nowrap()
                 .text_size(rems(0.833))
                 .text_color(cx.theme().muted_foreground),
             )
-            .child(actions)
+            .child(
+                selectable_plain_text(
+                    ElementId::Name(format!("sftp-transfer-speed-{transfer_id}").into()),
+                    sftp_transfer_speed_text(&transfer),
+                )
+                .w(px(TRANSFER_SPEED_COLUMN_WIDTH))
+                .flex_none()
+                .whitespace_nowrap()
+                .text_size(rems(0.833))
+                .text_color(cx.theme().muted_foreground),
+            )
+            .child(
+                div()
+                    .w(px(TRANSFER_ACTIONS_COLUMN_WIDTH))
+                    .flex_none()
+                    .items_center()
+                    .justify_end()
+                    .child(
+                        Button::new(ElementId::Name(
+                            format!("sftp-transfer-actions-{transfer_id}").into(),
+                        ))
+                        .ghost()
+                        .small()
+                        .icon(IconName::Ellipsis)
+                        .on_click(window.listener_for(
+                            &view,
+                            move |this, _, window, cx| {
+                                this.open_sftp_transfer_context_menu(
+                                    action_group_id.clone(),
+                                    action_transfer_id.clone(),
+                                    window.mouse_position(),
+                                    cx,
+                                );
+                            },
+                        )),
+                    ),
+            )
             .into_any_element()
     }
+}
+
+fn transfer_belongs_to_group(transfer: &crate::sftp::Transfer, group_id: Option<&str>) -> bool {
+    group_id.is_some_and(|group_id| transfer.tab_id == group_id)
 }
 
 fn transfer_belongs_to_tab(transfer: &crate::sftp::Transfer, tab: SftpTransferTab) -> bool {
@@ -436,5 +447,111 @@ fn sftp_transfer_status_text(transfer: &crate::sftp::Transfer) -> String {
             format!("{}: {reason}", t!("interrupted"))
         }
         crate::sftp::TransferState::Zombie(reason) => format!("{}: {reason}", t!("zombie")),
+    }
+}
+
+fn sftp_transfer_time_text(transfer: &crate::sftp::Transfer) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let Some(elapsed) = sftp_transfer_elapsed_secs(transfer, now) else {
+        return "--".to_string();
+    };
+
+    if elapsed < 60 {
+        format!("{elapsed}s")
+    } else if elapsed < 3600 {
+        format!("{}m {:02}s", elapsed / 60, elapsed % 60)
+    } else {
+        format!("{}h {:02}m", elapsed / 3600, elapsed % 3600 / 60)
+    }
+}
+
+fn sftp_transfer_speed_text(transfer: &crate::sftp::Transfer) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let Some(elapsed) = sftp_transfer_elapsed_secs(transfer, now) else {
+        return "--".to_string();
+    };
+    if transfer.transferred == 0 {
+        return "--".to_string();
+    }
+
+    format!("{}/s", format_bytes(transfer.transferred / elapsed.max(1)))
+}
+
+fn sftp_transfer_elapsed_secs(transfer: &crate::sftp::Transfer, now: u64) -> Option<u64> {
+    (transfer.started_at > 0).then(|| {
+        transfer
+            .finished_at
+            .unwrap_or(now)
+            .saturating_sub(transfer.started_at)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sftp::{Transfer, TransferInfo, TransferState, TransferType};
+
+    use super::{
+        SftpTransferTab, sftp_transfer_elapsed_secs, transfer_belongs_to_group,
+        transfer_belongs_to_tab,
+    };
+
+    fn transfer(group_id: &str, state: TransferState) -> Transfer {
+        Transfer {
+            tab_id: group_id.to_string(),
+            tab_title: group_id.to_string(),
+            info: TransferInfo {
+                id: "transfer".to_string(),
+                name: "file.txt".to_string(),
+                source: "/remote/file.txt".to_string(),
+                target: "/local".to_string(),
+                kind: TransferType::Download,
+                total_bytes: Some(1024),
+            },
+            transferred: 512,
+            total: Some(1024),
+            state,
+            started_at: 100,
+            finished_at: None,
+        }
+    }
+
+    #[test]
+    fn transfer_filter_keeps_records_in_the_active_sftp_group() {
+        let active = transfer("active", TransferState::Running);
+        let other = transfer("other", TransferState::Running);
+
+        assert!(transfer_belongs_to_group(&active, Some("active")));
+        assert!(!transfer_belongs_to_group(&other, Some("active")));
+        assert!(!transfer_belongs_to_group(&active, None));
+    }
+
+    #[test]
+    fn transfer_filter_uses_the_expected_status_tab() {
+        assert!(transfer_belongs_to_tab(
+            &transfer("group", TransferState::Paused),
+            SftpTransferTab::Active
+        ));
+        assert!(transfer_belongs_to_tab(
+            &transfer("group", TransferState::Failed("failed".to_string())),
+            SftpTransferTab::Failed
+        ));
+        assert!(transfer_belongs_to_tab(
+            &transfer("group", TransferState::Completed),
+            SftpTransferTab::Completed
+        ));
+    }
+
+    #[test]
+    fn transfer_elapsed_time_uses_the_terminal_timestamp() {
+        let mut transfer = transfer("group", TransferState::Completed);
+        transfer.finished_at = Some(145);
+
+        assert_eq!(sftp_transfer_elapsed_secs(&transfer, 999), Some(45));
     }
 }

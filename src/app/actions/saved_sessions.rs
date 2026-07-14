@@ -653,6 +653,7 @@ impl AxShell {
         cx: &mut Context<Self>,
     ) {
         self.sftp_context_menu = None;
+        self.sftp_transfer_context_menu = None;
         self.saved_group_context_menu = None;
         self.saved_session_context_menu = Some(SavedSessionContextMenuState {
             session_id,
@@ -669,6 +670,7 @@ impl AxShell {
         cx: &mut Context<Self>,
     ) {
         self.sftp_context_menu = None;
+        self.sftp_transfer_context_menu = None;
         self.saved_session_context_menu = None;
         self.saved_group_context_menu = Some(SavedGroupContextMenuState {
             group_name,

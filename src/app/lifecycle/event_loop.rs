@@ -558,17 +558,24 @@ impl AxShell {
                             self.status = reason.into();
                         }
                         BackendEvent::TransferProgress {
-                            tab_id: _,
+                            tab_id,
                             id,
                             transferred,
                             total,
                             state,
                         } => {
                             result.ui_changed = true;
-                            if let Some(t) = self.transfers.iter_mut().find(|t| t.info.id == id) {
+                            if let Some(t) = self
+                                .transfers
+                                .iter_mut()
+                                .find(|t| t.tab_id == tab_id && t.info.id == id)
+                            {
                                 t.transferred = transferred;
                                 if let Some(total) = total {
                                     t.total = Some(total);
+                                }
+                                if state.is_terminal() && t.finished_at.is_none() {
+                                    t.finished_at = Some(crate::sftp::unix_timestamp_secs());
                                 }
                                 t.state = state;
                                 transfers_changed = true;
@@ -587,6 +594,8 @@ impl AxShell {
                                     transferred: 0,
                                     total: None,
                                     state: crate::sftp::TransferState::Running,
+                                    started_at: crate::sftp::unix_timestamp_secs(),
+                                    finished_at: None,
                                 },
                             );
                             if self.transfers.len() > 100 {

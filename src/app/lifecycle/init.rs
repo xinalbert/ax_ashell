@@ -486,6 +486,7 @@ impl AxShell {
             },
             file_icons,
             sftp_context_menu: None,
+            sftp_transfer_context_menu: None,
             saved_group_context_menu: None,
             saved_session_context_menu: None,
             sftp_creating_folder: false,
@@ -504,6 +505,7 @@ impl AxShell {
             sftp_transfer_scroll_handle: gpui::UniformListScrollHandle::new(),
             transfers: {
                 let mut transfers = config.transfers();
+                let now = crate::sftp::unix_timestamp_secs();
                 for t in &mut transfers {
                     if matches!(
                         t.state,
@@ -511,6 +513,9 @@ impl AxShell {
                     ) {
                         t.state =
                             crate::sftp::TransferState::Zombie(t!("zombie_reason").to_string());
+                        if t.finished_at.is_none() {
+                            t.finished_at = Some(now);
+                        }
                     }
                 }
                 transfers

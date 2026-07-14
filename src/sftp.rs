@@ -14,7 +14,7 @@ pub use self::{
     worker::spawn_sftp,
 };
 pub(crate) use self::{
-    model::{SftpOverwriteDecision, SftpOverwriteRequest},
+    model::{SftpOverwriteDecision, SftpOverwriteRequest, unix_timestamp_secs},
     path::{join_remote, resolve_remote_path},
     worker::SftpHandle,
 };

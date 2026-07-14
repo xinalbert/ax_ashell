@@ -393,6 +393,9 @@ impl AxShell {
                         transfer.state = crate::sftp::TransferState::Interrupted(
                             "SFTP connection closed".to_string(),
                         );
+                        if transfer.finished_at.is_none() {
+                            transfer.finished_at = Some(crate::sftp::unix_timestamp_secs());
+                        }
                     }
                 }
                 self.config.set_transfers(self.transfers.clone());
@@ -511,9 +514,13 @@ impl AxShell {
         tab: crate::app::SftpTransferTab,
         cx: &mut Context<Self>,
     ) {
+        let Some(active_group_id) = self.active_group.clone() else {
+            return;
+        };
         let targets = self
             .transfers
             .iter()
+            .filter(|transfer| transfer.tab_id == active_group_id)
             .filter(|transfer| Self::transfer_belongs_to_sftp_tab(transfer, tab))
             .filter(|transfer| matches!(transfer.state, crate::sftp::TransferState::Running))
             .map(|transfer| (transfer.tab_id.clone(), transfer.info.id.clone()))
@@ -533,9 +540,13 @@ impl AxShell {
         tab: crate::app::SftpTransferTab,
         cx: &mut Context<Self>,
     ) {
+        let Some(active_group_id) = self.active_group.clone() else {
+            return;
+        };
         let targets = self
             .transfers
             .iter()
+            .filter(|transfer| transfer.tab_id == active_group_id)
             .filter(|transfer| Self::transfer_belongs_to_sftp_tab(transfer, tab))
             .filter(|transfer| matches!(transfer.state, crate::sftp::TransferState::Paused))
             .map(|transfer| (transfer.tab_id.clone(), transfer.info.id.clone()))
@@ -556,9 +567,13 @@ impl AxShell {
         delete_local_downloads: bool,
         cx: &mut Context<Self>,
     ) {
+        let Some(active_group_id) = self.active_group.clone() else {
+            return;
+        };
         let transfers = self
             .transfers
             .iter()
+            .filter(|transfer| transfer.tab_id == active_group_id)
             .filter(|transfer| Self::transfer_belongs_to_sftp_tab(transfer, tab))
             .cloned()
             .collect::<Vec<_>>();
@@ -585,15 +600,105 @@ impl AxShell {
 
         let ids = transfers
             .iter()
-            .map(|transfer| transfer.info.id.as_str())
+            .map(|transfer| transfer.info.id.clone())
             .collect::<std::collections::HashSet<_>>();
-        self.transfers
-            .retain(|transfer| !ids.contains(transfer.info.id.as_str()));
+        self.transfers.retain(|transfer| {
+            transfer.tab_id != active_group_id || !ids.contains(&transfer.info.id)
+        });
         self.config.set_transfers(self.transfers.clone());
         if cleanup_errors.is_empty() {
             self.status = rust_i18n::t!("removed_transfers", count = ids.len()).into();
         } else {
             self.status = cleanup_errors.join("; ").into();
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn open_sftp_transfer_context_menu(
+        &mut self,
+        group_id: String,
+        transfer_id: String,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.sftp_context_menu = None;
+        self.saved_session_context_menu = None;
+        self.saved_group_context_menu = None;
+        self.sftp_transfer_context_menu = Some(crate::app::SftpTransferContextMenuState {
+            group_id,
+            transfer_id,
+            position,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn dismiss_sftp_transfer_context_menu(&mut self, cx: &mut Context<Self>) {
+        if self.sftp_transfer_context_menu.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    fn take_sftp_transfer_context_transfer(&mut self) -> Option<crate::sftp::Transfer> {
+        let menu = self.sftp_transfer_context_menu.take()?;
+        self.transfers
+            .iter()
+            .find(|transfer| {
+                transfer.tab_id == menu.group_id && transfer.info.id == menu.transfer_id
+            })
+            .cloned()
+    }
+
+    pub(crate) fn trigger_sftp_transfer_context_pause(&mut self, cx: &mut Context<Self>) {
+        if let Some(transfer) = self.take_sftp_transfer_context_transfer()
+            && matches!(transfer.state, crate::sftp::TransferState::Running)
+            && let Some(handle) = self.ensure_sftp_handle_for_group(&transfer.tab_id)
+        {
+            self.mark_sftp_activity_for_group(&transfer.tab_id);
+            handle.pause_transfer(transfer.info.id);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_transfer_context_resume(&mut self, cx: &mut Context<Self>) {
+        if let Some(transfer) = self.take_sftp_transfer_context_transfer()
+            && matches!(transfer.state, crate::sftp::TransferState::Paused)
+            && let Some(handle) = self.ensure_sftp_handle_for_group(&transfer.tab_id)
+        {
+            self.mark_sftp_activity_for_group(&transfer.tab_id);
+            handle.resume_transfer(transfer.info.id);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_transfer_context_cancel(&mut self, cx: &mut Context<Self>) {
+        if let Some(transfer) = self.take_sftp_transfer_context_transfer()
+            && matches!(
+                transfer.state,
+                crate::sftp::TransferState::Running | crate::sftp::TransferState::Paused
+            )
+            && let Some(handle) = self.ensure_sftp_handle_for_group(&transfer.tab_id)
+        {
+            self.mark_sftp_activity_for_group(&transfer.tab_id);
+            handle.cancel_transfer(transfer.info.id);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_transfer_context_open_folder(&mut self, cx: &mut Context<Self>) {
+        if let Some(transfer) = self.take_sftp_transfer_context_transfer()
+            && matches!(transfer.info.kind, crate::sftp::TransferType::Download)
+        {
+            let _ = open::that(&transfer.info.target);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn trigger_sftp_transfer_context_remove(&mut self, cx: &mut Context<Self>) {
+        if let Some(transfer) = self.take_sftp_transfer_context_transfer() {
+            self.transfers.retain(|candidate| {
+                candidate.tab_id != transfer.tab_id || candidate.info.id != transfer.info.id
+            });
+            self.config.set_transfers(self.transfers.clone());
         }
         cx.notify();
     }
@@ -1045,6 +1150,7 @@ impl AxShell {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        self.sftp_transfer_context_menu = None;
         self.saved_session_context_menu = None;
         self.saved_group_context_menu = None;
         self.sftp_context_menu = Some(SftpContextMenuState {
@@ -1064,6 +1170,7 @@ impl AxShell {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        self.sftp_transfer_context_menu = None;
         self.saved_session_context_menu = None;
         self.saved_group_context_menu = None;
         self.sftp_context_menu = Some(SftpContextMenuState {

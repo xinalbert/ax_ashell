@@ -94,3 +94,10 @@ pub(crate) struct SftpContextMenuState {
     pub(crate) target: SftpContextMenuTarget,
     pub(crate) position: Point<Pixels>,
 }
+
+#[derive(Clone)]
+pub(crate) struct SftpTransferContextMenuState {
+    pub(crate) group_id: String,
+    pub(crate) transfer_id: String,
+    pub(crate) position: Point<Pixels>,
+}

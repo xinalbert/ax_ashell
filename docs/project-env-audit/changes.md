@@ -2345,6 +2345,14 @@
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`，未联网或使用多 agent。
 - 验证结果：`rustfmt --edition 2024` 通过；终端链接修饰键测试 3 项和布局缓存测试 1 项通过；`cargo check` 通过；完整 `cargo test --quiet` 174 项通过；hover 静态审计、`git diff --check` 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning；真实 GUI 下 Command/Ctrl 按下和松开时的视觉切换仍待手工验收。
 
+## 2026-07-14 完成 SFTP 传输面板环境验证
+
+- 时间：2026-07-14 15:23 +0800
+- 变化摘要：传输记录、状态页计数和批量动作按当前 SFTP group 隔离；持久化传输模型记录开始/结束时间并兼容旧配置；传输面板使用固定表头列、平均速度和列表专用共享 hover。行右键与固定宽度的更多按钮复用同一自绘菜单，下载目录通过既有跨平台 `open` 依赖打开。
+- 受影响文件：`src/app.rs`，`src/app/sftp.rs`，`src/app/actions/sftp.rs`，`src/app/actions/saved_sessions.rs`，`src/app/lifecycle/init.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/views/layout.rs`，`src/app/views/sftp_panel/transfer_panel.rs`，`src/sftp.rs`，`src/sftp/model.rs`，`locales/`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo、既有 `chrono` / `open` 依赖、GPUI `uniform_list` 和共享 FastHover；未新增依赖，未修改 `Cargo.toml` / `Cargo.lock`，未联网或使用多 agent。
+- 验证结果：`rustfmt --edition 2024`、传输聚焦测试、`cargo check`、完整 `cargo test --quiet`（178 项）、hover 静态审计和 `git diff --check` 通过；仅保留依赖 `block v0.1.6` 的 future-incompat warning。真实 GUI 会话切换、列宽和右键操作仍待手工验收。
+
 ## 2026-07-14 完成 SFTP 系统文件图标缓存环境验证
 
 - 时间：2026-07-14 17:03 +0800

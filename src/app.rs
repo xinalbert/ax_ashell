@@ -47,7 +47,7 @@ pub(crate) use pane::PaneLayout;
 pub(crate) use session_ui::{ConnectionProgress, SelectorEntry, TerminalPasswordPrompt};
 pub(crate) use sftp::{
     LocalFileBrowserState, LocalFileEntry, SftpContextMenuState, SftpContextMenuTarget,
-    SftpSortColumn, SftpTransferTab, SftpUiState, SortDirection,
+    SftpSortColumn, SftpTransferContextMenuState, SftpTransferTab, SftpUiState, SortDirection,
 };
 pub(crate) use terminal::{
     HoverTargetKind, HoveredUrl, TerminalFontMetrics, TerminalScrollbarHandle,
@@ -148,6 +148,7 @@ pub(crate) struct AxShell {
     pub(crate) local_file_browser: LocalFileBrowserState,
     pub(crate) file_icons: crate::platform::file_icons::FileIconCache,
     pub(crate) sftp_context_menu: Option<SftpContextMenuState>,
+    pub(crate) sftp_transfer_context_menu: Option<SftpTransferContextMenuState>,
     pub(crate) saved_group_context_menu: Option<SavedGroupContextMenuState>,
     pub(crate) saved_session_context_menu: Option<SavedSessionContextMenuState>,
     pub(crate) sftp_creating_folder: bool,
