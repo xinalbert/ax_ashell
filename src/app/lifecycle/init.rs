@@ -559,7 +559,8 @@ impl AxShell {
                 net_tx_history: Vec::with_capacity(20),
                 last_sample: Instant::now(),
                 system_tab_id: None,
-                remote_sample_in_flight: false,
+                remote_sample_generation: 0,
+                remote_sample_in_flight: None,
             },
             search: SearchState {
                 input: search_input,

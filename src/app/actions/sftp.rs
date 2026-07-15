@@ -269,10 +269,18 @@ impl AxShell {
         {
             return None;
         }
-        if let Some(handle) = self.sftp_handles.get(group_id)
-            && !handle.commands_closed()
-        {
-            return Some(handle.clone());
+        let connection_may_be_stale = self
+            .tab_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .and_then(|group| group.sftp.as_ref())
+            .is_some_and(|sftp| sftp.connection_may_be_stale);
+        if !connection_may_be_stale {
+            if let Some(handle) = self.sftp_handles.get(group_id)
+                && !handle.commands_closed()
+            {
+                return Some(handle.clone());
+            }
         }
         if let Some(handle) = self.sftp_handles.remove(group_id) {
             handle.close();
@@ -313,6 +321,7 @@ impl AxShell {
             sftp.has_more_entries = false;
             sftp.loading_more_entries = false;
             sftp.reached_entries_limit = false;
+            sftp.connection_may_be_stale = false;
         }
         Some(handle)
     }
@@ -345,6 +354,45 @@ impl AxShell {
         if let Some(group_id) = self.active_group.clone() {
             self.mark_sftp_activity_for_group(&group_id);
         }
+    }
+
+    pub(crate) fn mark_idle_sftp_connections_stale(&mut self) -> bool {
+        let active_group_id = self.active_group.clone();
+        let group_ids = self.sftp_handles.keys().cloned().collect::<Vec<_>>();
+        let mut active_page_marked_stale = false;
+
+        for group_id in group_ids {
+            let active_work_pins = self
+                .sftp_handles
+                .get(&group_id)
+                .map(SftpHandle::active_work_pins)
+                .unwrap_or_default();
+            let has_active_transfer = self.group_has_active_sftp_transfer(&group_id);
+            let Some(group) = self
+                .tab_groups
+                .iter_mut()
+                .find(|group| group.id == group_id)
+            else {
+                continue;
+            };
+            let Some(sftp) = group.sftp.as_mut() else {
+                continue;
+            };
+            if !should_mark_sftp_connection_stale(
+                active_work_pins,
+                has_active_transfer,
+                sftp.connection_may_be_stale,
+            ) {
+                continue;
+            }
+
+            sftp.connection_may_be_stale = true;
+            sftp.status = rust_i18n::t!("sftp_resume_reconnect").to_string();
+            active_page_marked_stale |=
+                group.sftp_page_open && active_group_id.as_deref() == Some(group_id.as_str());
+        }
+
+        active_page_marked_stale
     }
 
     pub(crate) fn group_has_active_sftp_transfer(&self, group_id: &str) -> bool {
@@ -1558,6 +1606,14 @@ fn should_reclaim_sftp_worker(
     last_activity.is_some_and(|last_activity| now.duration_since(last_activity) >= idle_timeout)
 }
 
+fn should_mark_sftp_connection_stale(
+    active_work_pins: usize,
+    has_active_transfer: bool,
+    already_stale: bool,
+) -> bool {
+    active_work_pins == 0 && !has_active_transfer && !already_stale
+}
+
 #[cfg(test)]
 mod idle_reclaim_tests {
     use std::{
@@ -1565,7 +1621,9 @@ mod idle_reclaim_tests {
         time::{Duration, Instant},
     };
 
-    use super::{download_targets_for_context, should_reclaim_sftp_worker};
+    use super::{
+        download_targets_for_context, should_mark_sftp_connection_stale, should_reclaim_sftp_worker,
+    };
 
     #[test]
     fn context_download_uses_the_selected_group_only_for_a_selected_item() {
@@ -1621,5 +1679,13 @@ mod idle_reclaim_tests {
             timeout,
         ));
         assert!(!should_reclaim_sftp_worker(false, 0, None, now, timeout));
+    }
+
+    #[test]
+    fn resume_marks_only_idle_sftp_connections_stale() {
+        assert!(should_mark_sftp_connection_stale(0, false, false));
+        assert!(!should_mark_sftp_connection_stale(1, false, false));
+        assert!(!should_mark_sftp_connection_stale(0, true, false));
+        assert!(!should_mark_sftp_connection_stale(0, false, true));
     }
 }

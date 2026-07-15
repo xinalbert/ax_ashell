@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：消除持续终端输出中新建或变更行先以 ANSI 前景色绘制、125ms 后才补关键词 / URL 色的明显跳色，同时保持大范围变更时的 CPU 限频保护。
-- 交付物：可报告真正重建行的可视快照构建结果、按 `Rc<RenderRow>` 重排行级高亮缓存的增量高亮器、小变更同步高亮与大变更 125ms 校正策略、回归测试和验证记录。
+- 目标：实现不依赖原生平台 API 的系统 suspend/resume MVP 兜底，在长时间未调度后安全恢复应用状态，避免旧监控结果、假活连接和恢复风暴。
+- 交付物：基于长调度间隙的恢复检测、幂等恢复 reducer、远程监控代次隔离、仅活动 SSH 的单次健康探测、活动 SFTP 的可能失效标记、单元测试和双语资源生命周期文档。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/terminal/tab.rs`，`src/terminal/highlight.rs`，必要时 `src/terminal/element.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`。
-- 不在本轮范围内：关键词规则和配色、终端后端 / PTY 协议、GPUI 绘制 API、配置 schema、依赖版本、`Cargo.toml` / `Cargo.lock`、CI workflow，以及按列范围优化无换行进度条的第二阶段工作。
+- 当前范围：`src/app/state/lifecycle.rs`、`src/app/state/monitoring.rs`、`src/app/lifecycle/event_loop.rs`、`src/app/workspace.rs`、`src/events.rs`、`src/backend/ssh.rs`、`src/app/actions/sftp.rs`、`docs/resource-lifecycle.md`、`docs/resource-lifecycle.zh.md`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：macOS `NSWorkspace`、Windows `WM_POWERBROADCAST`、Linux logind D-Bus 原生事件；自动重连 SSH；自动重启或续传 SFTP；终端/SFTP 架构重构；依赖、`Cargo.toml`、`Cargo.lock`、CI workflow 与退出流程重构。
 
 ## 当前状态
 
@@ -22,36 +22,37 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 环境、现有 `Rc<RenderRow>` 复用与高亮缓存边界确认 | 预检、项目地图、`tab.rs` / `highlight.rs` 源码审查 | 现有 125ms 到期刷新由 app event loop 驱动；不需新增定时器或依赖 |
-| P2 | completed | `VisibleRowBuild` 元数据与按行身份重排的高亮缓存 | terminal 单元测试、`cargo check` | 滚屏 `TermDamage::Full` 只作为候选检查范围，不等价于全屏高亮失效 |
-| P3 | completed | 小范围同步识别及大范围 125ms 校正接线 | 跳色 / 滚屏 / WRAPLINE / resize 回归测试 | 同步路径只扫描真正重建行及相连逻辑行；复杂大变更继续批处理 |
-| P4 | completed | 格式化、完整验证和记录收口 | `cargo test --quiet`、`cargo build`、`git diff --check`、tracking validator | 真实 GUI 持续输出与无换行进度条需手工采样 |
+| P1 | completed | 环境预检、现有生命周期/监控/SSH/SFTP 边界和 MVP 范围 | 环境记录、项目地图、源码审查 | 固定 10 秒调度间隙作为跨平台恢复兜底，避免误判后台节流 |
+| P2 | completed | 恢复 reducer、调度间隙检测和监控代次隔离 | 4 项恢复相关单元测试、`cargo check` | 旧 probe 结果不能影响恢复后的当前页面 |
+| P3 | completed | 当前上下文单次健康检查与 SFTP 可能失效状态 | SSH/SFTP action 与 event-loop 审查、完整测试 | 不自动重连、不批量采样、不续传 |
+| P4 | completed | 文档、完整验证与记录收口 | `cargo test --quiet`、`git diff --check`、tracking validator | 原生三平台电源事件作为正式阶段后续工作 |
 
 ## 已完成
 
 - 已完成 Rust 2024 / Cargo 施工前预检；本机 `rustc 1.96.1`、`cargo 1.96.1` 满足仓库 `rust-version = 1.88.0`。
-- 已确认 `build_visible_rows` 已逐 cell 验证滚屏复用的 `Rc<RenderRow>`，但没有把真正重建行上报给高亮器。
-- 已确认 `HighlightCache` 当前按视口行号保存，而 `TermDamage::Full` 会触发整屏高亮重算；这正是滚屏仍会出现延迟跳色的缺口。
-- 已确认 app event loop 会检查 `TerminalTab::highlight_refresh_due`，因此大范围 125ms 校正会自然请求 UI 刷新。
-- 已让 `build_visible_rows` 返回真正重建行；最多 4 行时当帧同步识别关键词 / HTTP / IP / 端口和相关 `WRAPLINE` URL 链，随后仅保留这些行的 125ms 轻量校正。
-- 已将 `HighlightCache` 改为按 `Rc<RenderRow>` 身份重排；滚屏中已验证复用的行继续保留关键词和 URL 色，不再因 `TermDamage::Full` 强制全屏重算。
-- 已将 URL 处理收紧为仅构建受影响的逻辑换行链；行缓存迁移使用 `Rc` 指针哈希定位，避免滚屏路径的线性嵌套查找。
+- 已确认 `Foreground / Background / DeepSleep` 使用 GPUI 窗口激活事件，后台 250ms、深睡 1s；尚未接入 OS suspend/resume。
+- 已确认 SSH/SFTP 关闭使用 2 秒 timeout/abort，SFTP worker 使用 work pin；这些机制不需要重构。
+- 已确认系统恢复后风险集中在过期 remote probe、监控 in-flight 标记、SFTP server-side handle 假活和恢复风暴。
+- 恢复兜底同时比较单调时钟和墙上时钟的 10 秒事件泵间隙；恢复后监控代次递增，旧 remote probe 结果被忽略。
+- 仅当前可见 terminal SSH 会发起一次 5 秒 SSH session-open 健康检查。检查事件还绑定 terminal backend 代次，用户重连后的旧结果不能关闭或改写新连接。
+- 空闲 SFTP worker 被标记为下次用户操作时重建；有 work pin、活动/暂停传输、远程编辑或排队操作的 worker 保持不动，且不会自动恢复传输。
 
 ## 验证
 
-- 已完成：环境预检、实施记录与项目地图审查、终端调用链审查；`rustfmt --edition 2024 src/terminal/tab.rs src/terminal/highlight.rs`；terminal tab 聚焦测试 19 项；terminal highlight 聚焦测试 20 项；`cargo check`；完整 `cargo test --quiet`（190 项）；`cargo build`；`git diff --check`；tracking docs validator。
-- 未完成：真实 GUI 下连续换行输出、跨 `WRAPLINE` URL、resize / alternate screen 与无换行 `\r` 进度条的颜色首帧和 CPU sample 验收。
+- 已完成：环境预检、实施记录与项目地图审查、生命周期/监控/SSH/SFTP worker 恢复边界审查、受影响 Rust 文件 `rustfmt --edition 2024`、恢复相关单元测试（4 项）、`cargo check`、完整 `cargo test --quiet`（194 项）、`git diff --check` 与 tracking docs validator。
+- 未完成：macOS、Windows、Linux 的睡眠、可用时休眠、睡眠期间网络变化、活动 SSH、空闲 SFTP 页面和带 pin 传输的实机验收；正式原生电源事件接入。
 
 ## 风险与阻塞
 
-- 风险：跨 `WRAPLINE` URL 的两端可能因滚屏或换行标志变化而失去逻辑行上下文；同步路径必须使用当前和前一帧的 wrap 边界扩展受影响行。
-- 风险：无换行的 `\r` 进度条会持续重建同一行；本轮先完成行级同步，后续仅在新 sample 证明仍是热点时保留 `LineDamageBounds` 列范围做局部识别。
+- 风险：长调度间隙是通用兜底，不能区分系统睡眠、调试器暂停或极端主线程阻塞；正式阶段必须接入每个平台原生电源事件。
+- 风险：标准 SSH 不能恢复断开的交互 shell；MVP 只能提示并提供已有的用户主动重连路径。
+- 风险：SFTP 传输的安全续传需要单独的断点、远端大小校验和覆盖策略设计；本轮仅标记可能失效，不自动重新开始。
 - 无阻塞。
 
 ## 下一步
 
-- 在真实终端负载采样中确认颜色不再跳变，并仅在无换行进度条仍显著占用 CPU 时启动列范围增量识别第二阶段。
+- 在三平台实机按资源生命周期文档执行睡眠/唤醒与断网矩阵；之后单独设计 `PowerEvent::Suspend/Resume` 的原生事件适配层，继续保留本轮 10 秒兜底。
 
 ## 最后更新时间
 
-- 2026-07-15 09:49 +0800
+- 2026-07-15 11:09 +0800

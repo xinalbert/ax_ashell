@@ -537,20 +537,54 @@ impl AxShell {
         };
         let Some(backend) = (|| {
             let tab = self.tabs.iter().find(|t| t.id == *tab_id)?;
-            if !tab.connected {
+            if !tab.connected || tab.connection_may_be_stale {
                 return None;
             }
             Some(tab.backend.clone())
         })() else {
             return;
         };
-        if self.monitoring.remote_sample_in_flight {
+        let Some(generation) = self.monitoring.begin_remote_sample(false) else {
             return;
-        }
-        self.monitoring.remote_sample_in_flight = true;
+        };
         if let Ok(backend) = backend.lock() {
-            backend.send(BackendCommand::SampleMetrics);
+            backend.send(BackendCommand::SampleMetrics { generation });
+        } else {
+            self.monitoring.finish_remote_sample(generation);
         }
+    }
+
+    pub(crate) fn request_active_ssh_resume_health_check(&mut self) -> bool {
+        if !self.lifecycle.is_foreground() || self.workspace_page != WorkspacePage::Terminal {
+            return false;
+        }
+        let Some(tab_id) = self.active_tab.clone() else {
+            return false;
+        };
+        let Some((backend, backend_generation)) = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == tab_id)
+            .and_then(|tab| {
+                (tab.kind == TabKind::Ssh && tab.connected && tab.connection_may_be_stale)
+                    .then(|| (tab.backend.clone(), tab.backend_generation))
+            })
+        else {
+            return false;
+        };
+        let Some(generation) = self.monitoring.begin_remote_sample(true) else {
+            return false;
+        };
+        if let Ok(backend) = backend.lock() {
+            backend.send(BackendCommand::CheckConnection {
+                generation,
+                backend_generation,
+            });
+            return true;
+        }
+
+        let _ = self.monitoring.finish_remote_sample(generation);
+        false
     }
 
     pub(crate) fn sync_active_sftp_to_shell_working_dir(&mut self, cx: &mut Context<Self>) {

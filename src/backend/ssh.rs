@@ -32,12 +32,14 @@ mod x11;
 
 use connection::connect_and_authenticate;
 pub(crate) use legacy::{negotiation_error_details, ssh_client_config};
-use system_probe::sample_remote_system_with_handle;
+use system_probe::{check_ssh_connection_with_handle, sample_remote_system_with_handle};
 use x11::X11ForwardingState;
 
 const BASH_CWD_PROMPT_COMMAND: &str =
     r#"printf '\033]7;file://%s%s\033\\' "$(hostname 2>/dev/null || printf localhost)" "$PWD""#;
 const SSH_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+const SSH_REMOTE_METRICS_TIMEOUT: Duration = Duration::from_secs(5);
+const SSH_RESUME_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct SshBackendShutdown {
     commands: mpsc::UnboundedSender<BackendCommand>,
@@ -282,23 +284,70 @@ async fn run_ssh(
                             );
                         }
                     }
-                    Some(BackendCommand::SampleMetrics) => {
+                    Some(BackendCommand::SampleMetrics { generation }) => {
                         let handle_clone = handle.clone();
                         let tab_id_clone = tab_id.clone();
                         let events_clone = events.clone();
                         child_tasks.spawn(async move {
-                            match sample_remote_system_with_handle(handle_clone).await {
+                            match tokio::time::timeout(
+                                SSH_REMOTE_METRICS_TIMEOUT,
+                                sample_remote_system_with_handle(handle_clone),
+                            )
+                            .await
+                            .map_err(|_| anyhow::anyhow!("remote metrics timed out"))
+                            .and_then(|result| result)
+                            {
                                 Ok(snapshot) => {
                                     let _ = events_clone.send(BackendEvent::RemoteSystem {
                                         tab_id: tab_id_clone,
+                                        generation,
                                         snapshot,
                                     }).await;
                                 }
                                 Err(err) => {
                                     let _ = events_clone.send(BackendEvent::RemoteSystemUnavailable {
                                         tab_id: tab_id_clone,
+                                        generation,
                                         reason: format!("remote metrics unavailable: {err:#}"),
                                     }).await;
+                                }
+                            }
+                        });
+                    }
+                    Some(BackendCommand::CheckConnection {
+                        generation,
+                        backend_generation,
+                    }) => {
+                        let handle_clone = handle.clone();
+                        let tab_id_clone = tab_id.clone();
+                        let events_clone = events.clone();
+                        child_tasks.spawn(async move {
+                            match tokio::time::timeout(
+                                SSH_RESUME_HEALTH_CHECK_TIMEOUT,
+                                check_ssh_connection_with_handle(handle_clone),
+                            )
+                            .await
+                            .map_err(|_| anyhow::anyhow!("SSH health check timed out"))
+                            .and_then(|result| result)
+                            {
+                                Ok(()) => {
+                                    let _ = events_clone
+                                        .send(BackendEvent::ConnectionHealthy {
+                                            tab_id: tab_id_clone,
+                                            generation,
+                                            backend_generation,
+                                        })
+                                        .await;
+                                }
+                                Err(err) => {
+                                    let _ = events_clone
+                                        .send(BackendEvent::ConnectionUnhealthy {
+                                            tab_id: tab_id_clone,
+                                            generation,
+                                            backend_generation,
+                                            reason: format!("SSH health check failed: {err:#}"),
+                                        })
+                                        .await;
                                 }
                             }
                         });

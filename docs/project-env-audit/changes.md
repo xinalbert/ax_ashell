@@ -2419,3 +2419,21 @@
 - 执行内容：为 `HighlightRefresh` 增加已排队大范围刷新的状态；该状态存在时，小行重建继续复用缓存并等待 125ms 全量校正。新增 resize 后紧接 `\r` 输出的回归测试。
 - 验证结果：新增回归测试通过；完整 `cargo test --quiet`（190 项）、`cargo check`、`cargo build`、`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning。
 - 风险/待办：真实 GUI 仍需验证连续 ANSI 刷新和 resize / alternate screen 后的首帧颜色；无换行进度条的列范围优化仍为独立第二阶段。
+
+## 2026-07-15 系统 suspend/resume MVP 施工前预检
+
+- 时间：2026-07-15 10:23 +0800
+- 目的：在不改动终端/SFTP 架构、不引入原生平台事件依赖的前提下，实现系统唤醒后的跨平台安全恢复兜底。
+- 改动范围：`src/app/state/lifecycle.rs`，`src/app/state/monitoring.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/workspace.rs`，`src/events.rs`，`src/backend/ssh.rs`，`src/app/actions/sftp.rs`，`docs/resource-lifecycle*.md`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 执行内容：确认本机 `rustc 1.96.1` / `cargo 1.96.1` 满足 Rust 2024 与 `rust-version = 1.88.0`；审查窗口 lifecycle、单一 event pump、远程系统监控、SSH child task、SFTP work pin/有界关闭、CI 三平台构建。确定以 10 秒以上的调度间隙做通用 resume fallback，不新增依赖、不修改 `Cargo.toml` / `Cargo.lock`、不联网、不使用多 agent。
+- 验证结果：已定位恢复时旧 remote probe、`remote_sample_in_flight`、SFTP server-side handle 与恢复风暴风险；待执行恢复 reducer、事件代次、当前上下文探测、聚焦测试、`cargo check`、完整测试、空白检查和 tracking validator。
+- 风险/待办：该兜底不能准确区分系统睡眠、调试暂停和严重主线程阻塞；正式阶段需要 macOS `NSWorkspace`、Windows `WM_POWERBROADCAST`、Linux logind D-Bus 接入与三平台实机睡眠/唤醒验收。SSH 仅标记可能失效并让用户重连，不承诺会话恢复；SFTP 不自动续传。
+
+## 2026-07-15 完成系统 suspend/resume MVP 环境验证
+
+- 时间：2026-07-15 11:09 +0800
+- 目的：完成不依赖原生平台事件的恢复安全性 MVP，并验证不引入 SSH 重连风暴或 SFTP 自动续传。
+- 改动范围：`src/app/state/lifecycle.rs`，`src/app/state/monitoring.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/workspace.rs`，`src/events.rs`，`src/backend/local.rs`，`src/backend/ssh.rs`，`src/backend/ssh/system_probe.rs`，`src/monitoring.rs`，`src/terminal/backend.rs`，`src/terminal/tab.rs`，`src/app/actions/sftp.rs`，`src/app/sftp.rs`，双语资源与跟踪文档。
+- 执行内容：以双时钟 10 秒 event-pump 间隙触发可能恢复；以 monitoring generation 忽略旧采样，以 terminal backend generation 拒绝用户重连后的旧健康检查事件。SSH 健康检查最多 5 秒且只针对当前可见 terminal tab；空闲 SFTP 标记为按需重建，带 work pin 或活动/暂停传输的 worker 不主动处置。未新增依赖，未修改 `Cargo.toml`、`Cargo.lock` 或 CI。
+- 验证结果：受影响 Rust 文件 `rustfmt --edition 2024` 通过；`cargo test --quiet resume` 4 项通过；`cargo check` 通过；完整 `cargo test --quiet` 194 项通过；`git diff --check` 与 tracking docs validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning。
+- 风险/待办：仍须在 macOS、Windows、Linux 实机验证睡眠、可用时休眠、断网、活动 SSH、空闲 SFTP 与带 pin 传输；随后以 `PowerEvent::Suspend/Resume` 适配原生事件，但保留本轮通用兜底。

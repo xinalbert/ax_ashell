@@ -55,10 +55,23 @@ pub(crate) enum BackendEvent {
     },
     RemoteSystem {
         tab_id: String,
+        generation: u64,
         snapshot: SystemSnapshot,
     },
     RemoteSystemUnavailable {
         tab_id: String,
+        generation: u64,
+        reason: String,
+    },
+    ConnectionHealthy {
+        tab_id: String,
+        generation: u64,
+        backend_generation: u32,
+    },
+    ConnectionUnhealthy {
+        tab_id: String,
+        generation: u64,
+        backend_generation: u32,
         reason: String,
     },
     SftpHome {

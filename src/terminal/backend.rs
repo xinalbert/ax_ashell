@@ -3,8 +3,17 @@ use std::sync::{Arc, mpsc::Sender};
 #[derive(Debug)]
 pub enum BackendCommand {
     Input(Vec<u8>),
-    Resize { cols: u16, rows: u16 },
-    SampleMetrics,
+    Resize {
+        cols: u16,
+        rows: u16,
+    },
+    SampleMetrics {
+        generation: u64,
+    },
+    CheckConnection {
+        generation: u64,
+        backend_generation: u32,
+    },
     QueryWorkingDirectory,
     Close,
 }

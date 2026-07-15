@@ -63,6 +63,9 @@ pub(crate) struct SftpUiState {
     pub(crate) preview: Option<PreviewData>,
     pub(crate) selected_entries: HashSet<String>,
     pub(crate) home_dir: String,
+    /// A system resume can invalidate the server-side SFTP handle. It is
+    /// recreated only when the user next needs this idle connection.
+    pub(crate) connection_may_be_stale: bool,
 }
 
 #[derive(Clone, Debug)]

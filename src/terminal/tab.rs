@@ -37,6 +37,9 @@ pub struct TerminalTab {
     pub status: String,
     pub connected: bool,
     pub disconnected_reason: Option<String>,
+    /// Set after a probable system resume until a current-context health
+    /// check succeeds or a new backend connects.
+    pub connection_may_be_stale: bool,
     /// Incremented each time the tab is reconnected. Used to ignore stale
     /// `BackendEvent::Closed` from the previous backend after a retry.
     pub backend_generation: u32,
@@ -317,6 +320,7 @@ impl TerminalTab {
             status,
             connected: matches!(kind, TabKind::Local),
             disconnected_reason: None,
+            connection_may_be_stale: false,
             backend_generation: 0,
             backend_initialized: true,
             session: None,

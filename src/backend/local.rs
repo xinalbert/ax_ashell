@@ -224,7 +224,9 @@ pub fn spawn_local_terminal(
                         }
                     }
                     BackendCommand::Close => break,
-                    BackendCommand::SampleMetrics | BackendCommand::QueryWorkingDirectory => {}
+                    BackendCommand::SampleMetrics { .. }
+                    | BackendCommand::CheckConnection { .. }
+                    | BackendCommand::QueryWorkingDirectory => {}
                 },
                 Err(mpsc::RecvTimeoutError::Timeout) => match child.try_wait() {
                     Ok(Some(status)) => {

@@ -335,7 +335,7 @@ impl AxShell {
                 self.monitoring.cpu_history.clear();
                 self.monitoring.net_rx_history.clear();
                 self.monitoring.net_tx_history.clear();
-                self.monitoring.remote_sample_in_flight = false;
+                self.monitoring.invalidate_remote_samples();
                 if self.monitoring.system_tab_id.is_none() {
                     self.monitoring.status = Some("monitored session closed".to_string().into());
                 } else {
