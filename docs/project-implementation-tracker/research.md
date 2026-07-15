@@ -1,5 +1,15 @@
 # 外部检索记录
 
+## 2026-07-15 SFTP 初始目录与终端目录关联
+
+- 时间：2026-07-15 16:10 +0800
+- 检索问题：SFTP 文件浏览器应如何在固定起始路径、上次目录、服务端 home 和 SSH 终端当前目录之间选择，避免打开时出现短暂跳转。
+- 检索原因：AxShell 当前在进入 SFTP 页面时会同时加载 home 和终端 CWD；需要以主流产品的明确配置和动作边界决定修复策略。
+- 来源列表：WinSCP Directories <https://winscp.net/eng/docs/ui_login_directories>；Cyberduck SFTP <https://docs.cyberduck.io/protocols/sftp/>；VS Code Remote SSH <https://code.visualstudio.com/docs/remote/ssh>。
+- 关键结论：WinSCP 支持每站点的初始远端目录以及“记住上次目录”，未指定时通常使用服务端 home；Cyberduck 将当前文件浏览目录传入终端作为显式“Open in Terminal”动作；VS Code Remote SSH 让用户显式打开远端工作目录。三者均不支持普通打开时先展示一个目录、再后台跳到另一个目录的模式。
+- 对实施计划的影响：AxShell 普通 SFTP 打开改为一次性确定初始路径，优先 `Session.sftp_path`，其次保存会话的最后远端目录，最后服务端 home。移除终端 CWD 的自动同步，在远端路径栏提供显式跳转按钮。
+- 未解决问题：远端初始目录被删除或无权限时的自动 home 回退不在本轮范围，保持当前的 SFTP 错误提示语义。
+
 ## 2026-07-15 高刷新率与自适应帧率调度
 
 - 时间：2026-07-15 11:58 +0800

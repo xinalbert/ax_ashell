@@ -144,6 +144,7 @@ pub(crate) struct AxShell {
     pub(crate) terminal_password_retry_tabs: HashSet<String>,
     pub(crate) pending_sftp_path_sync: Option<String>,
     pub(crate) pending_sftp_selection_path: Option<String>,
+    pub(crate) pending_sftp_terminal_cwd_tab: Option<String>,
     pub(crate) pending_local_sftp_path_sync: Option<String>,
     pub(crate) local_file_browser: LocalFileBrowserState,
     pub(crate) file_icons: crate::platform::file_icons::FileIconCache,

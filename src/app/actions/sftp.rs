@@ -7,6 +7,7 @@ use std::{
 
 use directories::BaseDirs;
 use gpui::{Context, Focusable as _, PathPromptOptions, Pixels, Point, Window};
+use rust_i18n::t;
 
 use crate::{
     AxShell, SftpContextMenuState,
@@ -209,23 +210,6 @@ impl AxShell {
             .and_then(|g| g.sftp.as_mut())
     }
 
-    pub(crate) fn active_sftp_should_sync_shell_dir_on_entry(&self) -> bool {
-        self.active_sftp().is_some_and(|sftp| {
-            sftp.current_path == "/"
-                && sftp.entries.is_empty()
-                && sftp.selected_path.is_none()
-                && sftp.selected_entries.is_empty()
-        }) && !self.active_sftp_has_configured_path()
-    }
-
-    pub(crate) fn active_sftp_has_configured_path(&self) -> bool {
-        let Some(group_id) = self.active_group.as_deref() else {
-            return false;
-        };
-        self.session_for_sftp_group(group_id)
-            .is_some_and(|session| !session.sftp_path.trim().is_empty())
-    }
-
     fn session_for_sftp_group(&self, group_id: &str) -> Option<crate::session::Session> {
         let group = self
             .tab_groups
@@ -258,6 +242,18 @@ impl AxShell {
         let group_id = self.active_group.as_deref()?;
         let session = self.session_for_sftp_group(group_id)?;
         self.config.get(&session.id).map(|_| session.id)
+    }
+
+    pub(crate) fn persist_sftp_path_for_group(&mut self, group_id: &str, path: &str) {
+        let Some(session_id) = self
+            .session_for_sftp_group(group_id)
+            .and_then(|session| self.config.get(&session.id).map(|_| session.id))
+        else {
+            return;
+        };
+        if self.config.set_last_remote_sftp_path(&session_id, path) {
+            self.config.save_logged("set_last_remote_sftp_path");
+        }
     }
 
     pub(crate) fn ensure_sftp_handle_for_group(&mut self, group_id: &str) -> Option<SftpHandle> {
@@ -295,22 +291,24 @@ impl AxShell {
             .filter(|sftp| !sftp.current_path.is_empty())
             .filter(|sftp| sftp.current_path != "/" || sftp.home_dir != "/")
             .map(|sftp| sftp.current_path.clone());
+        let remembered_path = self
+            .config
+            .last_remote_sftp_path(&session.id)
+            .map(str::to_string);
+        let initial_path =
+            sftp_worker_initial_path(restore_path, &session.sftp_path, remembered_path);
         let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
         let handle = crate::sftp::spawn_sftp(
             &runtime,
             task_tracker,
             group_id.to_string(),
             session,
+            initial_path,
             self.runtime_state.events_tx.clone(),
         );
         self.sftp_handles
             .insert(group_id.to_string(), handle.clone());
         self.mark_sftp_activity_for_group(group_id);
-        if let Some(path) = restore_path
-            && !path.is_empty()
-        {
-            handle.list_dir(path);
-        }
         if let Some(group) = self
             .tab_groups
             .iter_mut()
@@ -758,25 +756,72 @@ impl AxShell {
         cx.notify();
     }
 
-    pub(crate) fn active_shell_working_dir(&self) -> Option<String> {
-        let active_group_id = self.active_group.as_ref()?;
-        let tab_id = self.group_primary_ssh_tab_id(active_group_id)?;
-        self.tabs
-            .iter()
-            .find(|tab| tab.id == tab_id)
-            .and_then(|tab| tab.shell_working_dir.clone())
-    }
-
     pub(crate) fn resolve_active_sftp_path(&self, path: &str) -> String {
         let current_dir = self
-            .active_shell_working_dir()
-            .or_else(|| self.active_sftp().map(|sftp| sftp.current_path.clone()))
+            .active_sftp()
+            .map(|sftp| sftp.current_path.clone())
             .unwrap_or_else(|| "/".to_string());
         let home_dir = self
             .active_sftp()
             .map(|sftp| sftp.home_dir.clone())
             .unwrap_or_else(|| "/".to_string());
         crate::sftp::resolve_remote_path(&current_dir, path, &home_dir)
+    }
+
+    pub(crate) fn can_open_sftp_at_terminal_working_dir(&self) -> bool {
+        self.active_group
+            .as_deref()
+            .and_then(|group_id| self.group_primary_ssh_tab_id(group_id))
+            .is_some()
+    }
+
+    pub(crate) fn open_sftp_at_terminal_working_dir(&mut self, cx: &mut Context<Self>) {
+        let Some(group_id) = self.active_group.clone() else {
+            return;
+        };
+        let Some(tab_id) = self.group_primary_ssh_tab_id(&group_id) else {
+            self.status = t!("sftp_terminal_directory_unavailable").into();
+            cx.notify();
+            return;
+        };
+        let shell_working_dir = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == tab_id)
+            .and_then(|tab| tab.shell_working_dir.clone());
+        if let Some(path) = shell_working_dir {
+            self.navigate_sftp(path, cx);
+            return;
+        }
+
+        self.pending_sftp_terminal_cwd_tab = Some(tab_id.clone());
+        if let Some(tab) = self.tabs.iter().find(|tab| tab.id == tab_id) {
+            tab.send_backend(crate::terminal::BackendCommand::QueryWorkingDirectory);
+            self.status = t!("sftp_terminal_directory_loading").into();
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn open_pending_sftp_terminal_working_dir(
+        &mut self,
+        tab_id: &str,
+        path: String,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_sftp_terminal_cwd_tab.as_deref() != Some(tab_id) {
+            return;
+        }
+        self.pending_sftp_terminal_cwd_tab = None;
+        let is_current_sftp_tab = self.workspace_page == WorkspacePage::Sftp
+            && self
+                .active_group
+                .as_deref()
+                .and_then(|group_id| self.group_primary_ssh_tab_id(group_id))
+                .as_deref()
+                == Some(tab_id);
+        if is_current_sftp_tab {
+            self.navigate_sftp(path, cx);
+        }
     }
 
     pub(crate) fn navigate_sftp(&mut self, path: String, cx: &mut Context<Self>) {
@@ -1354,7 +1399,10 @@ impl AxShell {
         let Some(menu) = self.sftp_context_menu.take() else {
             return;
         };
-        if matches!(menu.target, SftpContextMenuTarget::Remote { .. }) {
+        if matches!(
+            menu.target,
+            SftpContextMenuTarget::Remote { .. } | SftpContextMenuTarget::RemoteDirectory
+        ) {
             self.upload_sftp_folder(window, cx);
         }
         cx.notify();
@@ -1614,6 +1662,16 @@ fn should_mark_sftp_connection_stale(
     active_work_pins == 0 && !has_active_transfer && !already_stale
 }
 
+fn sftp_worker_initial_path(
+    active_path: Option<String>,
+    configured_path: &str,
+    remembered_path: Option<String>,
+) -> Option<String> {
+    active_path
+        .or_else(|| (!configured_path.trim().is_empty()).then(|| configured_path.to_string()))
+        .or(remembered_path)
+}
+
 #[cfg(test)]
 mod idle_reclaim_tests {
     use std::{
@@ -1622,7 +1680,8 @@ mod idle_reclaim_tests {
     };
 
     use super::{
-        download_targets_for_context, should_mark_sftp_connection_stale, should_reclaim_sftp_worker,
+        download_targets_for_context, sftp_worker_initial_path, should_mark_sftp_connection_stale,
+        should_reclaim_sftp_worker,
     };
 
     #[test]

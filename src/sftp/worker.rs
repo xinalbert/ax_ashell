@@ -232,6 +232,7 @@ pub fn spawn_sftp(
     task_tracker: RuntimeTaskTracker,
     tab_id: String,
     session: Session,
+    initial_path: Option<String>,
     events: BackendEventSender,
 ) -> SftpHandle {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
@@ -257,6 +258,7 @@ pub fn spawn_sftp(
         if let Err(err) = run_sftp(
             tab_id.clone(),
             session,
+            initial_path,
             cmd_rx,
             cmd_tx_clone,
             events.clone(),

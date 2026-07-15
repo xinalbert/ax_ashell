@@ -40,6 +40,7 @@ use crate::sftp::{
 pub(super) async fn run_sftp(
     tab_id: String,
     session: Session,
+    initial_path: Option<String>,
     mut commands: UnboundedReceiver<SftpCommand>,
     commands_tx: UnboundedSender<SftpCommand>,
     events: BackendEventSender,
@@ -76,7 +77,7 @@ pub(super) async fn run_sftp(
         })
         .await;
 
-    let initial_path = sftp_initial_path(&session, &home);
+    let initial_path = sftp_initial_path(initial_path.as_deref(), &home);
     let mut browse_cursor = None;
     open_and_emit_browser_page(&events, &tab_id, &handle, &initial_path, &mut browse_cursor)
         .await?;
@@ -829,30 +830,25 @@ mod lifecycle_tests {
 
     use tokio::task::JoinSet;
 
-    use crate::session::Session;
-
     use super::{SftpWorkTracker, TransferStateFlag, cancel_sftp_child_tasks, sftp_initial_path};
 
     #[test]
-    fn sftp_initial_path_uses_the_session_path_or_server_home() {
-        let mut session = Session::password(
-            "example.com".into(),
-            22,
-            "administrator".into(),
-            "password".into(),
-        );
+    fn sftp_initial_path_uses_the_selected_path_or_server_home() {
         let home = "/C:/Users/Administrator";
 
-        assert_eq!(sftp_initial_path(&session, home), home);
-
-        session.sftp_path = "~/2026".into();
+        assert_eq!(sftp_initial_path(None, home), home);
         assert_eq!(
-            sftp_initial_path(&session, home),
+            sftp_initial_path(Some("/srv/last-opened"), home),
+            "/srv/last-opened"
+        );
+        assert_eq!(
+            sftp_initial_path(Some("~/2026"), home),
             "/C:/Users/Administrator/2026"
         );
-
-        session.sftp_path = "/G:/albertxin/2026".into();
-        assert_eq!(sftp_initial_path(&session, home), "/G:/albertxin/2026");
+        assert_eq!(
+            sftp_initial_path(Some("/G:/albertxin/2026"), home),
+            "/G:/albertxin/2026"
+        );
     }
 
     #[tokio::test]

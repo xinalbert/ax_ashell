@@ -477,6 +477,7 @@ impl AxShell {
             terminal_password_retry_tabs: HashSet::new(),
             pending_sftp_path_sync: Some("/".into()),
             pending_sftp_selection_path: None,
+            pending_sftp_terminal_cwd_tab: None,
             pending_local_sftp_path_sync: Some(default_local_dir.clone()),
             local_file_browser: LocalFileBrowserState {
                 current_path: default_local_dir.clone(),

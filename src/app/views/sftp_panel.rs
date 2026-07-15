@@ -130,6 +130,7 @@ impl AxShell {
         let remote_reached_entries_limit = active_sftp
             .as_ref()
             .is_some_and(|sftp| sftp.reached_entries_limit);
+        let can_open_terminal_working_dir = self.can_open_sftp_at_terminal_working_dir();
         let remote_all_selected = !remote_entries.is_empty()
             && remote_entries
                 .iter()
@@ -232,6 +233,17 @@ impl AxShell {
                             })),
                     )
                     .child(Input::new(&self.sftp_path_input).flex_1().tab_index(0))
+                    .child(
+                        Button::new("sftp-open-terminal-directory")
+                            .ghost()
+                            .small()
+                            .icon(IconName::SquareTerminal)
+                            .tooltip(t!("open_terminal_directory").to_string())
+                            .disabled(!can_open_terminal_working_dir)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.open_sftp_at_terminal_working_dir(cx);
+                            })),
+                    )
                     .child(
                         Button::new("sftp-refresh")
                             .ghost()

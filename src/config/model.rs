@@ -355,6 +355,8 @@ pub(super) struct ConfigFile {
     pub(super) sessions: Vec<Session>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(super) last_local_sftp_paths: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(super) last_remote_sftp_paths: BTreeMap<String, String>,
     #[serde(default)]
     pub(super) default_local_sftp_path: String,
     #[serde(default)]
@@ -622,6 +624,7 @@ impl Default for ConfigFile {
             cursor_style: CursorStyle::default(),
             sessions: Vec::new(),
             last_local_sftp_paths: BTreeMap::new(),
+            last_remote_sftp_paths: BTreeMap::new(),
             default_local_sftp_path: String::new(),
             window_bounds: None,
             workspace_panels: None,

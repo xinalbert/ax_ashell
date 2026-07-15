@@ -30,7 +30,7 @@
 | `src/app/input/` | 原生菜单和快捷键录制/绑定 | 改 App menu、saved SSH 导入/导出菜单、Quit shutdown、workspace keybindings、设置页按键录制、冲突检测或 keybinding 展示时 | 父模块入口为 `src/app/input.rs` |
 | `src/app/lifecycle/` | 启动、窗口打开、日志/crash hook、`AxShell::new` 和事件泵 | 改启动顺序、日志目录、主窗口 options、runtime event pump、窗口激活、恢复兜底、输入事件或初始化状态时 | 父模块入口为 `src/app/lifecycle.rs`；`startup` 由 app 兼容导出给 main |
 | `src/app/state/` | `AxShell` 子状态聚合 | 改 appearance、monitoring、runtime/event channel、窗口生命周期或系统恢复代次时 | search 状态已并入 `src/app/search.rs` |
-| `src/config/` | 配置文件模型、默认值、规范化规则和 `ConfigStore` | 改配置 schema/serde 默认、窗口/光标/theme profile、旧目录迁移、sync 默认对象名或 custom theme draft/save path 时 | `model.rs` 承载 `ConfigFile` 和值类型，`store.rs` 只做持久化、迁移、归一化和访问器 |
+| `src/config/` | 配置文件模型、默认值、规范化规则和 `ConfigStore` | 改配置 schema/serde 默认、窗口/光标/theme profile、保存会话的本地/远端 SFTP 目录、旧目录迁移、sync 默认对象名或 custom theme draft/save path 时 | `model.rs` 承载 `ConfigFile` 和值类型，`store.rs` 只做持久化、迁移、归一化和访问器 |
 | `src/platform/` | 平台相关本地集成 | 改本地 X Server、系统文件图标或目标专属原生 API 时 | 入口为 `src/platform.rs`；子模块包括 `x_server.rs` 和 `file_icons.rs` |
 | `src/session.rs` | SSH 会话领域模型 | 改 `Session`、`AuthMethod`、`SshConnectionMode`、会话级 `sftp_path` 或连接模式优先级时 | 类型直接由 `crate::session` 导出；无兼容 config 子模块 |
 | `src/backend.rs` | backend 领域入口 | 改 backend 模块导出时 | 子模块为 `auth`、`local`、`proxy`、`ssh` |
@@ -69,7 +69,7 @@
 | `src/app/actions/session.rs` | 会话连接、SSH 表单、local shell profile 和 tab 生命周期 action | `save_ssh_session_from_form`，`connect_ssh`，`open_saved_session_sftp_only`，`shutdown_all_backends`，`active_snapshot` | 改本地/SSH tab 创建、会话 `sftp_path` / `x11_forwarding` 保存、saved SSH 只开 SFTP、SSH 表单加载/重置、tab UI 状态回收、断线重试、关闭 tab/group、窗口退出或 active session 查询时 |
 | `src/app/actions/pane.rs` | pane tree 操作和 group activation action | `split_current_pane`，`focus_adjacent_pane`，`activate_group_page`，`focus_pane_with_id`，`sync_system_tab_to_active_group` | Local split 必须复制 source tab 的 `LocalShellProfile`；改 split pane、pane focus、splitter drag、active group + 页面联动切换时 |
 | `src/app/actions/saved_sessions.rs` | session selector、saved group、saved session 菜单和 share 导入/导出 action | `selector_entries`，`on_selector_key_down`，`saved_session_groups`，`export_saved_sessions_share_file`，`export_saved_group_share_file`，`export_saved_session_share_file`，`import_saved_sessions_share_file`，`open_saved_session_context_menu`，`commit_saved_group_rename` | 改选择器键盘行为、saved session 分组、无凭据导入/导出、组名展示、右键菜单或重命名时 |
-| `src/app/actions/sftp.rs` | UI 侧 SFTP 与本地文件浏览 action | `ensure_sftp_handle_for_group`，`release_sftp_handle_for_group`，`pause_sftp_transfers_in_tab`，`open_sftp_transfer_context_menu`，`trigger_sftp_transfer_context_*`，`download_targets_for_context`，`sweep_idle_sftp_connections`，`mark_idle_sftp_connections_stale` | 改按需建连、会话 `sftp_path`、全局本机目录、分页加载、当前 group 的批量传输动作、传输右键菜单、worker 回收/深睡断连或系统恢复时 |
+| `src/app/actions/sftp.rs` | UI 侧 SFTP 与本地文件浏览 action | `ensure_sftp_handle_for_group`，`sftp_worker_initial_path`，`open_sftp_at_terminal_working_dir`，`persist_sftp_path_for_group`，`release_sftp_handle_for_group`，`pause_sftp_transfers_in_tab`，`open_sftp_transfer_context_menu`，`trigger_sftp_transfer_context_*`，`download_targets_for_context`，`sweep_idle_sftp_connections`，`mark_idle_sftp_connections_stale` | 改按需建连、初始远端目录优先级、会话 `sftp_path`、上次远端/本地目录、显式终端目录跳转、全局本机目录、分页加载、当前 group 的批量传输动作、传输右键菜单、worker 回收/深睡断连或系统恢复时 |
 | `src/app/actions/terminal.rs` | terminal 键盘、鼠标、修饰键、滚动和 IME action | `on_terminal_modifiers_changed`，`on_terminal_key_down`，`terminal_grid_point_and_side`，`on_terminal_scroll` | 改 URL/路径激活快捷键、鼠标命中、选择、滚动、快捷键、粘贴或 IME 候选框位置时 |
 | `src/app/theme.rs` | 主题、内置字体注册、当前 theme profile 和 custom theme 逻辑 | `EMBEDDED_FONT_FAMILIES`，`BUILT_IN_FONT_FAMILIES`，`load_fonts`，`load_embedded_themes`，`apply_theme_profile` | app 视觉系统入口；增删字体需同步 `assets/fonts/README.md` 与 Settings 字体排序 |
 | `assets/fonts/README.md` | 内置字体 family、版本、样式和用途清单 | Bundled Fonts 表、排除范围、授权入口 | 判断字体包中哪些文件需要编译进应用或核对内部 family 名时 |
@@ -174,7 +174,7 @@
 - `rg -n 'rayon_threads_input|commit_rayon_threads_input|RAYON_THREADS_(MIN|MAX)' src/app src/config`
 - `rg -n 'LocalShellProfile|local_shell_profiles|default_local_shell_profile|spawn_local_terminal' src/config src/backend/local.rs src/terminal/tab.rs src/app`
 - `rg -n 'x11_forwarding|local_x_server_available|request_x11|resolve_display|windows_x_server_kind' src/session.rs src/app src/backend src/platform`
-- `rg -n 'sftp_path|default_local_sftp_path|last_local_sftp_paths|configured_default_local_browser_dir|restore_active_local_sftp_path' src/session.rs src/config src/app src/sftp`
+- `rg -n 'sftp_path|default_local_sftp_path|last_(local|remote)_sftp_paths|configured_default_local_browser_dir|restore_active_local_sftp_path|open_sftp_at_terminal_working_dir' src/session.rs src/config src/app src/sftp`
 - `rg -n 'FileIconCache|file_icons_path|file-icons.json|start_file_icon_cache_refresh' src/config src/platform src/app`
 - `rg -n 'ThemeConfig|ThemeSet|try_parse_color|watch_dir|default_light_theme|default_dark_theme' ~/.cargo/git/checkouts/gpui-component-*`
 - `cargo check`
@@ -190,4 +190,4 @@
 
 ## 最后更新时间
 
-- 2026-07-15 11:09 +0800
+- 2026-07-15 16:32 +0800

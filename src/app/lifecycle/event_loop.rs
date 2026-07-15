@@ -458,6 +458,7 @@ impl AxShell {
                         } => {
                             result.ui_changed = true;
                             self.mark_sftp_activity_for_group(&tab_id);
+                            let mut opened_path = None;
                             if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
                                 && let Some(sftp) = group.sftp.as_mut()
                             {
@@ -496,6 +497,10 @@ impl AxShell {
                                     }
                                 }
                                 self.pending_sftp_path_sync = Some(sftp.current_path.clone());
+                                opened_path = Some(sftp.current_path.clone());
+                            }
+                            if let Some(path) = opened_path {
+                                self.persist_sftp_path_for_group(&tab_id, &path);
                             }
                         }
                         BackendEvent::SftpPreview { tab_id, preview } => {
@@ -856,7 +861,7 @@ impl AxShell {
                             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                                 tab.shell_working_dir = Some(path.clone());
                             }
-                            self.sync_sftp_to_shell_working_dir_for_tab(&tab_id, &path, cx);
+                            self.open_pending_sftp_terminal_working_dir(&tab_id, path, cx);
                         }
                         BackendEvent::SyncFinished(sync_result) => {
                             result.ui_changed = true;
