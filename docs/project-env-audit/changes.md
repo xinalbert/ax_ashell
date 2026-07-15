@@ -2392,3 +2392,30 @@
 - 受影响文件：`Cargo.toml`，`Cargo.lock`，`src/config/store.rs`，`src/platform.rs`，`src/platform/file_icons.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/views.rs`，`src/app/views/sftp_panel.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo、GPUI `uniform_list` 和共享 FastHover；macOS 使用 `NSWorkspace`，Windows 使用 `SHGetFileInfoW`，Linux 使用 `freedesktop-icons` 和 `mime_guess`。已联网检索 KDE、Nautilus 和 Microsoft Shell 的远端类型图标与缓存边界；未使用多 agent。
 - 验证结果：`rustfmt --edition 2024`、`cargo check`、`cargo test --quiet file_icon`（5 项）、完整 `cargo test --quiet`（183 项）、SFTP hover 静态审计、`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning；真实三端 GUI 图标主题、缩放和回退仍需手工验收。
+
+## 2026-07-15 终端同步增量高亮施工前预检
+
+- 时间：2026-07-15 09:18 +0800
+- 目的：消除持续输出中新建行先以普通 ANSI 色绘制、随后才补关键词 / URL 色的跳色，同时保留大范围变更的 125ms CPU 限频。
+- 改动范围：`src/terminal/tab.rs`，`src/terminal/highlight.rs`，必要时 `src/terminal/element.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 执行内容：确认本机 `rustc 1.96.1` / `cargo 1.96.1` 满足项目 Rust 2024 和 `rust-version = 1.88.0`；审查可视行的 `Rc<RenderRow>` 逐 cell 复用、按视口行号的高亮缓存、URL 的 `WRAPLINE` 扩展和 event loop 的到期刷新。确定不新增依赖、不修改 manifest/lock、不联网、不使用多 agent。
+- 验证结果：已确认 `TermDamage::Full` 在滚屏时不能直接代表全屏高亮失效，且 app event loop 已在高亮到期时安排 UI 刷新。待执行 Rust 修改、聚焦测试、`cargo check`、全量测试、构建、空白检查和 tracking validator。
+- 风险/待办：跨 `WRAPLINE` URL 需要在当前与前一帧换行边界间扩展同步识别范围；无换行进度条的按列局部识别留作后续 sample 驱动的第二阶段。
+
+## 2026-07-15 完成终端同步增量高亮环境验证
+
+- 时间：2026-07-15 09:42 +0800
+- 目的：让少量终端输出变更在首帧即获得关键词 / URL 颜色，同时保持 resize、alternate screen 等大范围变化的 125ms 保护。
+- 改动范围：`src/terminal/tab.rs`，`src/terminal/highlight.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 执行内容：`build_visible_rows` 现在返回真正重建行；最多 4 行重建时同步高亮并在 125ms 后仅校正这些行，大范围重建继续批处理。高亮缓存按 `Rc<RenderRow>` 重排，URL 只构建受影响的 `WRAPLINE` 逻辑行，缓存查找按行指针哈希完成。
+- 验证结果：`rustfmt --edition 2024 src/terminal/tab.rs src/terminal/highlight.rs`、terminal tab 聚焦测试 18 项、terminal highlight 聚焦测试 20 项、`cargo check`、完整 `cargo test --quiet`（189 项）、`cargo build`、`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning。
+- 风险/待办：仍需用真实 GUI 持续换行输出、跨行 URL、resize / alternate screen 和无换行 `\r` 进度条做颜色首帧及 CPU sample 验收；仅当后者仍是热点时再保留 `LineDamageBounds` 列范围做第二阶段局部识别。
+
+## 2026-07-15 大范围高亮回退调度加固
+
+- 时间：2026-07-15 09:49 +0800
+- 目的：确保 resize、alternate screen 等已排队的大范围高亮校正，不会被随后到来的单行输出意外改为同步路径。
+- 改动范围：`src/terminal/tab.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 执行内容：为 `HighlightRefresh` 增加已排队大范围刷新的状态；该状态存在时，小行重建继续复用缓存并等待 125ms 全量校正。新增 resize 后紧接 `\r` 输出的回归测试。
+- 验证结果：新增回归测试通过；完整 `cargo test --quiet`（190 项）、`cargo check`、`cargo build`、`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning。
+- 风险/待办：真实 GUI 仍需验证连续 ANSI 刷新和 resize / alternate screen 后的首帧颜色；无换行进度条的列范围优化仍为独立第二阶段。
