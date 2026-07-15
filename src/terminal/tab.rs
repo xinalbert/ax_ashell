@@ -71,6 +71,7 @@ struct SnapshotCache {
 }
 
 const HIGHLIGHT_REFRESH_INTERVAL: Duration = Duration::from_millis(125);
+const MAX_SYNCHRONOUS_HIGHLIGHT_ROWS: usize = 4;
 
 struct HighlightRefresh {
     pending_damage: DirtyRows,
@@ -80,6 +81,7 @@ struct HighlightRefresh {
     generation: u64,
     enabled: bool,
     force: bool,
+    deferred_large_refresh: bool,
 }
 
 impl Default for HighlightRefresh {
@@ -92,6 +94,7 @@ impl Default for HighlightRefresh {
             generation: 0,
             enabled: false,
             force: false,
+            deferred_large_refresh: false,
         }
     }
 }
@@ -103,6 +106,7 @@ impl HighlightRefresh {
 
     fn disable(&mut self) {
         self.enabled = false;
+        self.deferred_large_refresh = false;
     }
 
     fn should_refresh_at(&self, now: Instant) -> bool {
@@ -204,6 +208,11 @@ pub struct RenderCell {
 
 pub struct RenderRow {
     pub cells: Vec<RenderCell>,
+}
+
+struct VisibleRowBuild {
+    rows: Rc<Vec<Rc<RenderRow>>>,
+    rebuilt_rows: BTreeSet<usize>,
 }
 
 #[derive(Clone)]
@@ -491,7 +500,7 @@ impl TerminalTab {
         let highlight_generation = self.highlight_refresh.borrow().generation;
 
         let snapshot = Rc::new(RenderSnapshot {
-            visible_rows,
+            visible_rows: visible_rows.rows,
             cursor: self.cursor_state(),
             selection: viewport_selection_from_range(
                 content.display_offset,
@@ -692,7 +701,7 @@ impl TerminalTab {
 
     fn highlight_snapshot(
         &self,
-        visible_rows: &Rc<Vec<Rc<RenderRow>>>,
+        visible_rows: &VisibleRowBuild,
         keyword_highlight_enabled: bool,
         now: Instant,
     ) -> Rc<HashMap<(i32, i32), gpui::Hsla>> {
@@ -708,22 +717,70 @@ impl TerminalTab {
             refresh.force = true;
         }
 
-        if refresh.should_refresh_at(now) {
+        if refresh.force {
             let damage = std::mem::take(&mut refresh.pending_damage);
             refresh.highlights = Rc::new(super::highlight::highlight_rows_incremental(
-                visible_rows,
+                &visible_rows.rows,
                 &damage.rows,
                 damage.full,
                 &mut self.highlight_cache.borrow_mut(),
             ));
-            refresh.source_rows = Some(visible_rows.clone());
+            refresh.source_rows = Some(visible_rows.rows.clone());
             refresh.last_refresh = Some(now);
             refresh.generation = refresh.generation.wrapping_add(1);
             refresh.force = false;
+            refresh.deferred_large_refresh = false;
             return refresh.highlights.clone();
         }
 
-        refresh.cached_highlights_for(visible_rows)
+        if !visible_rows.rebuilt_rows.is_empty()
+            && visible_rows.rebuilt_rows.len() <= MAX_SYNCHRONOUS_HIGHLIGHT_ROWS
+            && !refresh.deferred_large_refresh
+        {
+            refresh.highlights = Rc::new(super::highlight::highlight_rows_incremental(
+                &visible_rows.rows,
+                &visible_rows.rebuilt_rows,
+                false,
+                &mut self.highlight_cache.borrow_mut(),
+            ));
+            refresh.source_rows = Some(visible_rows.rows.clone());
+            // Keep a cheap delayed correction for boundary cases without
+            // turning a scroll-related full damage into a full-screen rescan.
+            refresh.pending_damage = DirtyRows {
+                full: false,
+                rows: visible_rows.rebuilt_rows.clone(),
+            };
+            refresh.last_refresh = Some(now);
+            refresh.generation = refresh.generation.wrapping_add(1);
+            return refresh.highlights.clone();
+        }
+
+        if refresh.should_refresh_at(now) {
+            let damage = std::mem::take(&mut refresh.pending_damage);
+            refresh.highlights = Rc::new(super::highlight::highlight_rows_incremental(
+                &visible_rows.rows,
+                &damage.rows,
+                damage.full,
+                &mut self.highlight_cache.borrow_mut(),
+            ));
+            refresh.source_rows = Some(visible_rows.rows.clone());
+            refresh.last_refresh = Some(now);
+            refresh.generation = refresh.generation.wrapping_add(1);
+            refresh.deferred_large_refresh = false;
+            return refresh.highlights.clone();
+        }
+
+        if visible_rows.rebuilt_rows.is_empty() && !refresh.deferred_large_refresh {
+            refresh.pending_damage = DirtyRows::default();
+            refresh.source_rows = Some(visible_rows.rows.clone());
+            return refresh.highlights.clone();
+        }
+
+        if visible_rows.rebuilt_rows.len() > MAX_SYNCHRONOUS_HIGHLIGHT_ROWS {
+            refresh.deferred_large_refresh = true;
+        }
+
+        refresh.cached_highlights_for(&visible_rows.rows)
     }
 
     fn mark_dirty(&mut self) {
@@ -738,7 +795,7 @@ fn build_visible_rows(
     cols: usize,
     previous: Option<&Rc<RenderSnapshot>>,
     damage: &DirtyRows,
-) -> Rc<Vec<Rc<RenderRow>>> {
+) -> VisibleRowBuild {
     let mut visible_rows = previous
         .filter(|snapshot| snapshot.rows == rows && snapshot.cols == cols)
         .map_or_else(
@@ -815,7 +872,10 @@ fn build_visible_rows(
         });
 
     if changed_rows.is_empty() {
-        return Rc::new(visible_rows);
+        return VisibleRowBuild {
+            rows: Rc::new(visible_rows),
+            rebuilt_rows: changed_rows,
+        };
     }
 
     let mut rebuilt_rows = changed_rows
@@ -838,12 +898,15 @@ fn build_visible_rows(
         }
     }
 
-    for row in changed_rows {
+    for &row in &changed_rows {
         let cells = rebuilt_rows.remove(&row).unwrap_or_default();
         visible_rows[row] = Rc::new(RenderRow { cells });
     }
 
-    Rc::new(visible_rows)
+    VisibleRowBuild {
+        rows: Rc::new(visible_rows),
+        rebuilt_rows: changed_rows,
+    }
 }
 
 fn render_row_matches_term(
@@ -1034,7 +1097,7 @@ mod tests {
     }
 
     #[test]
-    fn continuous_output_defers_highlight_recompute_until_interval_expires() {
+    fn small_output_highlights_changed_rows_without_waiting_for_interval() {
         let mut tab = test_tab(16, 4);
         let start = Instant::now();
         tab.feed(b"ERROR");
@@ -1042,11 +1105,56 @@ mod tests {
         assert!(!first.highlights.is_empty());
 
         tab.feed(b"\rWARN ");
+        let immediate = tab.render_snapshot_at(true, start + Duration::from_millis(1));
+        assert!(!immediate.highlights.is_empty());
+        assert_eq!(tab.highlight_refresh.borrow().generation, 2);
+
+        let refreshed = tab.render_snapshot_at(
+            true,
+            start + Duration::from_millis(1) + HIGHLIGHT_REFRESH_INTERVAL,
+        );
+        assert!(!refreshed.highlights.is_empty());
+        assert_eq!(tab.highlight_refresh.borrow().generation, 3);
+    }
+
+    #[test]
+    fn large_visible_rebuild_keeps_the_highlight_interval() {
+        let mut tab = test_tab(16, 4);
+        let start = Instant::now();
+        tab.feed(b"ERROR");
+        let _ = tab.render_snapshot_at(true, start);
+
+        tab.resize(16, 5);
         let deferred = tab.render_snapshot_at(true, start + Duration::from_millis(1));
         assert!(deferred.highlights.is_empty());
         assert_eq!(tab.highlight_refresh.borrow().generation, 1);
 
-        let refreshed = tab.render_snapshot_at(true, start + HIGHLIGHT_REFRESH_INTERVAL);
+        let refreshed = tab.render_snapshot_at(
+            true,
+            start + Duration::from_millis(1) + HIGHLIGHT_REFRESH_INTERVAL,
+        );
+        assert!(!refreshed.highlights.is_empty());
+        assert_eq!(tab.highlight_refresh.borrow().generation, 2);
+    }
+
+    #[test]
+    fn large_rebuild_is_not_bypassed_by_a_following_small_update() {
+        let mut tab = test_tab(16, 4);
+        let start = Instant::now();
+        tab.feed(b"ERROR");
+        let _ = tab.render_snapshot_at(true, start);
+
+        tab.resize(16, 5);
+        let _ = tab.render_snapshot_at(true, start + Duration::from_millis(1));
+        tab.feed(b"\rWARN ");
+        let deferred = tab.render_snapshot_at(true, start + Duration::from_millis(2));
+        assert!(deferred.highlights.is_empty());
+        assert_eq!(tab.highlight_refresh.borrow().generation, 1);
+
+        let refreshed = tab.render_snapshot_at(
+            true,
+            start + Duration::from_millis(1) + HIGHLIGHT_REFRESH_INTERVAL,
+        );
         assert!(!refreshed.highlights.is_empty());
         assert_eq!(tab.highlight_refresh.borrow().generation, 2);
     }
@@ -1072,7 +1180,7 @@ mod tests {
         assert!(std::rc::Rc::ptr_eq(&stable_row, &deferred.visible_rows[1]));
         assert!(deferred.highlights.contains_key(&(1, 0)));
         assert!(deferred.highlights.contains_key(&(1, 13)));
-        assert_eq!(tab.highlight_refresh.borrow().generation, 1);
+        assert_eq!(tab.highlight_refresh.borrow().generation, 2);
     }
 
     #[test]
@@ -1182,6 +1290,25 @@ mod tests {
         // The prior bottom row was overwritten before scrolling, so its ERROR
         // color must not be reused for the new CHANGED row.
         assert!(!after.highlights.contains_key(&(2, 0)));
+    }
+
+    #[test]
+    fn bottom_scroll_highlights_new_row_without_waiting_for_interval() {
+        let mut tab = test_tab(16, 4);
+        let start = Instant::now();
+        tab.feed(b"INFO zero\r\nINFO one\r\nINFO two\r\nINFO three");
+        let before = tab.render_snapshot_at(true, start);
+        let prior_second_row = before.visible_rows[1].clone();
+
+        tab.feed(b"\r\nERROR four");
+        let after = tab.render_snapshot_at(true, start + Duration::from_millis(1));
+
+        assert!(std::rc::Rc::ptr_eq(
+            &prior_second_row,
+            &after.visible_rows[0]
+        ));
+        assert!(after.highlights.contains_key(&(3, 0)));
+        assert_eq!(tab.highlight_refresh.borrow().generation, 2);
     }
 
     fn test_tab(cols: u16, rows: u16) -> TerminalTab {
