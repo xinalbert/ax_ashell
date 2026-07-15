@@ -68,6 +68,14 @@ The formal platform integration remains future work: macOS `NSWorkspace` sleep/w
 | SFTP transfers | Continue | Continue | No automatic restart or resume |
 | Idle SFTP worker | Existing timeout applies | Phase two evaluates pins | Mark stale and reconnect on next user operation |
 
+## Adaptive Foreground Refresh
+
+Foreground terminal output and event-pump-driven UI changes are still coalesced by the app event pump. When a new foreground change arrives, AxShell uses at most three GPUI animation frames to sample the current window's presentation cadence. A valid sample can lower the coalescing interval from the 60Hz default to a maximum of 120Hz; slower, invalid, or stale samples retain the 60Hz interval.
+
+This is intentionally a bounded calibration, not a permanent animation loop. GPUI continues to own VSync, variable-refresh behavior, direct-input presentation, thermal throttling, and inactive-window throttling. After a window move or resize, AxShell discards the sample so a later foreground change calibrates against the current display. Background and DeepSleep keep their 250ms and 1s refresh intervals, and idle foreground windows keep the existing low-frequency notification path.
+
+Continuous terminal output can therefore use more CPU/GPU on a 120Hz display than on a 60Hz display. This tradeoff is confined to active foreground updates; it must not add repaint or timer work to an otherwise static window.
+
 ## Verification Boundary
 
 - Unit tests: state transitions, disabled deep sleep, resume-gap detection, and stale monitoring result isolation.

@@ -9,7 +9,6 @@ use crate::{
     events::{BACKEND_EVENT_QUEUE_CAPACITY, BackendEvent},
 };
 
-const ACTIVE_PUMP_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_PUMP_INTERVAL: Duration = Duration::from_millis(33);
 const BACKGROUND_PUMP_INTERVAL: Duration = Duration::from_millis(250);
 const DEEP_SLEEP_PUMP_INTERVAL: Duration = Duration::from_secs(1);
@@ -63,13 +62,11 @@ impl AxShell {
             let mut idle_ticks = 0u32;
             let mut last_blink_time = std::time::Instant::now();
             loop {
-                let sleep_for = match this.read_with(cx, |this, _| this.lifecycle.state()) {
-                    Ok(WindowLifecycleState::Foreground) if idle_ticks == 0 => ACTIVE_PUMP_INTERVAL,
-                    Ok(WindowLifecycleState::Foreground) => IDLE_PUMP_INTERVAL,
-                    Ok(WindowLifecycleState::Background) => BACKGROUND_PUMP_INTERVAL,
-                    Ok(WindowLifecycleState::DeepSleep) => DEEP_SLEEP_PUMP_INTERVAL,
-                    Err(_) => break,
-                };
+                let sleep_for =
+                    match this.read_with(cx, |this, _| this.event_pump_interval(idle_ticks)) {
+                        Ok(interval) => interval,
+                        Err(_) => break,
+                    };
                 cx.background_executor().timer(sleep_for).await;
                 if this
                     .update(cx, |this, cx| {
@@ -183,8 +180,19 @@ impl AxShell {
             if !system_resumed && !self.request_active_ssh_resume_health_check() {
                 self.sample_system_if_due();
             }
+        } else {
+            self.runtime_state.reset_frame_cadence();
         }
         cx.notify();
+    }
+
+    pub(crate) fn on_window_bounds_changed(
+        &mut self,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        // GPUI updates the current display before invoking bounds observers.
+        self.runtime_state.reset_frame_cadence();
     }
 
     fn detect_system_resume(
@@ -209,6 +217,7 @@ impl AxShell {
         );
         self.monitoring.invalidate_remote_samples();
         self.monitoring.sampler.reset_after_resume();
+        self.runtime_state.reset_frame_cadence();
         for tab in &mut self.tabs {
             if tab.kind == crate::terminal::TabKind::Ssh && tab.connected {
                 tab.connection_may_be_stale = true;
@@ -946,10 +955,12 @@ impl AxShell {
 
     fn schedule_terminal_refresh(&mut self) {
         self.runtime_state.pending_terminal_refresh = true;
+        self.note_foreground_refresh_activity();
     }
 
     fn schedule_ui_refresh(&mut self) {
         self.runtime_state.pending_ui_refresh = true;
+        self.note_foreground_refresh_activity();
     }
 
     fn should_flush_terminal_refresh(&self) -> bool {
@@ -980,9 +991,27 @@ impl AxShell {
 
     fn refresh_interval(&self) -> Duration {
         match self.lifecycle.state() {
-            WindowLifecycleState::Foreground => ACTIVE_PUMP_INTERVAL,
+            WindowLifecycleState::Foreground => self
+                .runtime_state
+                .foreground_refresh_interval(std::time::Instant::now()),
             WindowLifecycleState::Background => BACKGROUND_REFRESH_INTERVAL,
             WindowLifecycleState::DeepSleep => DEEP_SLEEP_REFRESH_INTERVAL,
+        }
+    }
+
+    fn event_pump_interval(&self, idle_ticks: u32) -> Duration {
+        match self.lifecycle.state() {
+            WindowLifecycleState::Foreground if idle_ticks == 0 => self.refresh_interval(),
+            WindowLifecycleState::Foreground => IDLE_PUMP_INTERVAL,
+            WindowLifecycleState::Background => BACKGROUND_PUMP_INTERVAL,
+            WindowLifecycleState::DeepSleep => DEEP_SLEEP_PUMP_INTERVAL,
+        }
+    }
+
+    fn note_foreground_refresh_activity(&mut self) {
+        if self.lifecycle.is_foreground() {
+            self.runtime_state
+                .note_foreground_refresh_activity(std::time::Instant::now());
         }
     }
 

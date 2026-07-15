@@ -2,6 +2,14 @@ use super::*;
 
 impl Render for AxShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.lifecycle.is_foreground()
+            && self
+                .runtime_state
+                .record_foreground_frame(std::time::Instant::now())
+        {
+            // Two bounded follow-up frames sample the display cadence for this activity burst.
+            window.request_animation_frame();
+        }
         if self
             .active_tab
             .as_ref()

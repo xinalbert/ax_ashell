@@ -310,6 +310,7 @@ impl AxShell {
         );
         _subscriptions
             .push(cx.observe_window_activation(window, Self::on_window_activation_changed));
+        _subscriptions.push(cx.observe_window_bounds(window, Self::on_window_bounds_changed));
 
         let (events_tx, events_rx) = crate::events::backend_event_channel();
         let workspace_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
