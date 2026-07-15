@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use gpui::{Context, Window, px};
 use gpui_component::input::{InputEvent, InputState};
@@ -9,7 +9,6 @@ use crate::{
     events::{BACKEND_EVENT_QUEUE_CAPACITY, BackendEvent},
 };
 
-const ACTIVE_PUMP_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_PUMP_INTERVAL: Duration = Duration::from_millis(33);
 const BACKGROUND_PUMP_INTERVAL: Duration = Duration::from_millis(250);
 const DEEP_SLEEP_PUMP_INTERVAL: Duration = Duration::from_secs(1);
@@ -63,17 +62,16 @@ impl AxShell {
             let mut idle_ticks = 0u32;
             let mut last_blink_time = std::time::Instant::now();
             loop {
-                let sleep_for = match this.read_with(cx, |this, _| this.lifecycle.state()) {
-                    Ok(WindowLifecycleState::Foreground) if idle_ticks == 0 => ACTIVE_PUMP_INTERVAL,
-                    Ok(WindowLifecycleState::Foreground) => IDLE_PUMP_INTERVAL,
-                    Ok(WindowLifecycleState::Background) => BACKGROUND_PUMP_INTERVAL,
-                    Ok(WindowLifecycleState::DeepSleep) => DEEP_SLEEP_PUMP_INTERVAL,
-                    Err(_) => break,
-                };
+                let sleep_for =
+                    match this.read_with(cx, |this, _| this.event_pump_interval(idle_ticks)) {
+                        Ok(interval) => interval,
+                        Err(_) => break,
+                    };
                 cx.background_executor().timer(sleep_for).await;
                 if this
                     .update(cx, |this, cx| {
                         let now = std::time::Instant::now();
+                        let system_resumed = this.detect_system_resume(now, SystemTime::now(), cx);
                         let lifecycle_changed = this.advance_window_lifecycle(now);
                         let drain = this.drain_backend_events(cx);
                         if drain.ui_changed {
@@ -82,8 +80,12 @@ impl AxShell {
                         let terminal_due = this.should_flush_terminal_refresh();
                         let highlight_due = this.terminal_highlight_refresh_due(now);
                         let ui_due = this.should_flush_ui_refresh();
-                        let system_sampled =
-                            this.lifecycle.is_foreground() && this.sample_system_if_due();
+                        let resume_health_check_started = this.lifecycle.is_foreground()
+                            && this.request_active_ssh_resume_health_check();
+                        let system_sampled = this.lifecycle.is_foreground()
+                            && !system_resumed
+                            && !resume_health_check_started
+                            && this.sample_system_if_due();
                         let sftp_closed = this.sweep_idle_sftp_connections_if_due(now);
                         let runtime_released = this.runtime_state.release_runtime_if_idle();
                         if this.lifecycle.is_foreground() {
@@ -106,6 +108,8 @@ impl AxShell {
                             || blink_due
                             || sftp_closed
                             || runtime_released
+                            || resume_health_check_started
+                            || system_resumed
                             || lifecycle_changed
                         {
                             cx.notify();
@@ -137,6 +141,8 @@ impl AxShell {
                             || blink_due
                             || sftp_closed
                             || runtime_released
+                            || resume_health_check_started
+                            || system_resumed
                             || lifecycle_changed
                         {
                             idle_ticks = 0;
@@ -170,9 +176,67 @@ impl AxShell {
             self.sync_theme_if_due(cx);
             self.schedule_terminal_refresh();
             self.schedule_ui_refresh();
-            self.sample_system_if_due();
+            let system_resumed = self.detect_system_resume(now, SystemTime::now(), cx);
+            if !system_resumed && !self.request_active_ssh_resume_health_check() {
+                self.sample_system_if_due();
+            }
+        } else {
+            self.runtime_state.reset_frame_cadence();
         }
         cx.notify();
+    }
+
+    pub(crate) fn on_window_bounds_changed(
+        &mut self,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        // GPUI updates the current display before invoking bounds observers.
+        self.runtime_state.reset_frame_cadence();
+    }
+
+    fn detect_system_resume(
+        &mut self,
+        now: std::time::Instant,
+        wall_clock: SystemTime,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.lifecycle.observe_event_pump_tick(now, wall_clock) {
+            return false;
+        }
+
+        self.handle_system_resume(now, cx);
+        true
+    }
+
+    fn handle_system_resume(&mut self, now: std::time::Instant, cx: &mut Context<Self>) {
+        tracing::info!(
+            component = "lifecycle",
+            operation = "resume",
+            "Detected a long event-pump gap; checking the active context"
+        );
+        self.monitoring.invalidate_remote_samples();
+        self.monitoring.sampler.reset_after_resume();
+        self.runtime_state.reset_frame_cadence();
+        for tab in &mut self.tabs {
+            if tab.kind == crate::terminal::TabKind::Ssh && tab.connected {
+                tab.connection_may_be_stale = true;
+                tab.status = rust_i18n::t!("connection_may_need_check").to_string();
+            }
+        }
+        let sftp_marked_stale = self.mark_idle_sftp_connections_stale();
+
+        self.monitoring.last_sample = now - crate::monitoring::SystemSampler::interval();
+        self.appearance.last_theme_sync = now - Duration::from_secs(1);
+        if self.lifecycle.is_foreground() {
+            self.sync_theme_if_due(cx);
+            self.request_active_ssh_resume_health_check();
+        }
+        self.schedule_terminal_refresh();
+        self.schedule_ui_refresh();
+        if sftp_marked_stale {
+            self.status = rust_i18n::t!("sftp_resume_reconnect_active").into();
+        }
     }
 
     pub(crate) fn on_input_event(
@@ -340,6 +404,7 @@ impl AxShell {
                             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                                 tab.backend_initialized = true;
                                 tab.connected = true;
+                                tab.connection_may_be_stale = false;
                                 tab.disconnected_reason = None;
                             }
                             if self
@@ -393,6 +458,7 @@ impl AxShell {
                         } => {
                             result.ui_changed = true;
                             self.mark_sftp_activity_for_group(&tab_id);
+                            let mut opened_path = None;
                             if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
                                 && let Some(sftp) = group.sftp.as_mut()
                             {
@@ -431,6 +497,10 @@ impl AxShell {
                                     }
                                 }
                                 self.pending_sftp_path_sync = Some(sftp.current_path.clone());
+                                opened_path = Some(sftp.current_path.clone());
+                            }
+                            if let Some(path) = opened_path {
+                                self.persist_sftp_path_for_group(&tab_id, &path);
                             }
                         }
                         BackendEvent::SftpPreview { tab_id, preview } => {
@@ -471,10 +541,15 @@ impl AxShell {
                                 self.sftp_overwrite_requests.push_back(request);
                             }
                         }
-                        BackendEvent::RemoteSystem { tab_id, snapshot } => {
+                        BackendEvent::RemoteSystem {
+                            tab_id,
+                            generation,
+                            snapshot,
+                        } => {
                             result.ui_changed = true;
-                            self.monitoring.remote_sample_in_flight = false;
-                            if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str()) {
+                            if self.monitoring.finish_remote_sample(generation) == Some(false)
+                                && self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str())
+                            {
                                 self.monitoring.status = None;
                                 self.monitoring.system = snapshot.clone();
                                 self.monitoring.cpu_history.push(snapshot.cpu_percent);
@@ -495,7 +570,11 @@ impl AxShell {
                                 }
                             }
                         }
-                        BackendEvent::RemoteSystemUnavailable { tab_id, reason } => {
+                        BackendEvent::RemoteSystemUnavailable {
+                            tab_id,
+                            generation,
+                            reason,
+                        } => {
                             tracing::warn!(
                                 component = "monitoring",
                                 operation = "remote_sample",
@@ -504,15 +583,96 @@ impl AxShell {
                                 "Remote system monitoring is unavailable"
                             );
                             result.ui_changed = true;
-                            self.monitoring.remote_sample_in_flight = false;
-                            if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str()) {
+                            if self.monitoring.finish_remote_sample(generation) == Some(false)
+                                && self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str())
+                            {
                                 self.monitoring.status = Some(reason.clone().into());
                                 self.status = reason.into();
                             }
                         }
+                        BackendEvent::ConnectionHealthy {
+                            tab_id,
+                            generation,
+                            backend_generation,
+                        } => {
+                            result.ui_changed = true;
+                            let is_current_backend = self
+                                .tabs
+                                .iter()
+                                .find(|tab| tab.id == tab_id)
+                                .is_some_and(|tab| tab.backend_generation == backend_generation);
+                            if !is_current_backend {
+                                let _ = self.monitoring.finish_remote_sample(generation);
+                                continue;
+                            }
+                            if self.active_tab.as_deref() != Some(tab_id.as_str()) {
+                                self.monitoring.invalidate_remote_samples();
+                            } else if self.monitoring.finish_remote_sample(generation) == Some(true)
+                            {
+                                if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id)
+                                {
+                                    tab.connection_may_be_stale = false;
+                                    tab.status = rust_i18n::t!("connection_healthy").to_string();
+                                }
+                                if self.active_tab.as_deref() == Some(tab_id.as_str()) {
+                                    if self.monitoring.system_tab_id.as_deref()
+                                        != Some(tab_id.as_str())
+                                    {
+                                        self.monitoring.system_tab_id = Some(tab_id);
+                                        self.monitoring.cpu_history.clear();
+                                        self.monitoring.net_rx_history.clear();
+                                        self.monitoring.net_tx_history.clear();
+                                    }
+                                    self.monitoring.status = None;
+                                }
+                            }
+                        }
+                        BackendEvent::ConnectionUnhealthy {
+                            tab_id,
+                            generation,
+                            backend_generation,
+                            reason,
+                        } => {
+                            result.ui_changed = true;
+                            let is_current_backend = self
+                                .tabs
+                                .iter()
+                                .find(|tab| tab.id == tab_id)
+                                .is_some_and(|tab| tab.backend_generation == backend_generation);
+                            if !is_current_backend {
+                                let _ = self.monitoring.finish_remote_sample(generation);
+                                continue;
+                            }
+                            if self.active_tab.as_deref() != Some(tab_id.as_str()) {
+                                self.monitoring.invalidate_remote_samples();
+                            } else if self.monitoring.finish_remote_sample(generation) == Some(true)
+                            {
+                                if let Some(tab) = self.tabs.iter().find(|tab| tab.id == tab_id) {
+                                    tab.shutdown_backend();
+                                }
+                                if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id)
+                                {
+                                    tab.connected = false;
+                                    tab.connection_may_be_stale = false;
+                                    tab.status = reason.clone();
+                                    tab.disconnected_reason = Some(
+                                        rust_i18n::t!(
+                                            "connection_resume_check_failed",
+                                            "reason" = reason
+                                        )
+                                        .to_string(),
+                                    );
+                                }
+                                if self.monitoring.system_tab_id.as_deref() == Some(tab_id.as_str())
+                                {
+                                    self.monitoring.status = Some(reason.clone().into());
+                                    self.status = reason.into();
+                                }
+                            }
+                        }
                         BackendEvent::Closed { tab_id, reason } => {
                             result.ui_changed = true;
-                            self.monitoring.remote_sample_in_flight = false;
+                            self.monitoring.invalidate_remote_samples();
                             let is_stale =
                                 self.tabs
                                     .iter()
@@ -701,7 +861,7 @@ impl AxShell {
                             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                                 tab.shell_working_dir = Some(path.clone());
                             }
-                            self.sync_sftp_to_shell_working_dir_for_tab(&tab_id, &path, cx);
+                            self.open_pending_sftp_terminal_working_dir(&tab_id, path, cx);
                         }
                         BackendEvent::SyncFinished(sync_result) => {
                             result.ui_changed = true;
@@ -800,10 +960,12 @@ impl AxShell {
 
     fn schedule_terminal_refresh(&mut self) {
         self.runtime_state.pending_terminal_refresh = true;
+        self.note_foreground_refresh_activity();
     }
 
     fn schedule_ui_refresh(&mut self) {
         self.runtime_state.pending_ui_refresh = true;
+        self.note_foreground_refresh_activity();
     }
 
     fn should_flush_terminal_refresh(&self) -> bool {
@@ -834,9 +996,27 @@ impl AxShell {
 
     fn refresh_interval(&self) -> Duration {
         match self.lifecycle.state() {
-            WindowLifecycleState::Foreground => ACTIVE_PUMP_INTERVAL,
+            WindowLifecycleState::Foreground => self
+                .runtime_state
+                .foreground_refresh_interval(std::time::Instant::now()),
             WindowLifecycleState::Background => BACKGROUND_REFRESH_INTERVAL,
             WindowLifecycleState::DeepSleep => DEEP_SLEEP_REFRESH_INTERVAL,
+        }
+    }
+
+    fn event_pump_interval(&self, idle_ticks: u32) -> Duration {
+        match self.lifecycle.state() {
+            WindowLifecycleState::Foreground if idle_ticks == 0 => self.refresh_interval(),
+            WindowLifecycleState::Foreground => IDLE_PUMP_INTERVAL,
+            WindowLifecycleState::Background => BACKGROUND_PUMP_INTERVAL,
+            WindowLifecycleState::DeepSleep => DEEP_SLEEP_PUMP_INTERVAL,
+        }
+    }
+
+    fn note_foreground_refresh_activity(&mut self) {
+        if self.lifecycle.is_foreground() {
+            self.runtime_state
+                .note_foreground_refresh_activity(std::time::Instant::now());
         }
     }
 
@@ -882,7 +1062,10 @@ impl AxShell {
             self.monitoring.last_sample = std::time::Instant::now();
             if let Some(ref tab_id) = self.monitoring.system_tab_id.clone()
                 && self.tabs.iter().any(|t| {
-                    t.id == *tab_id && t.kind == crate::terminal::TabKind::Ssh && t.connected
+                    t.id == *tab_id
+                        && t.kind == crate::terminal::TabKind::Ssh
+                        && t.connected
+                        && !t.connection_may_be_stale
                 })
                 && self.monitoring.status.is_none()
             {

@@ -130,6 +130,7 @@ impl AxShell {
         let remote_reached_entries_limit = active_sftp
             .as_ref()
             .is_some_and(|sftp| sftp.reached_entries_limit);
+        let can_open_terminal_working_dir = self.can_open_sftp_at_terminal_working_dir();
         let remote_all_selected = !remote_entries.is_empty()
             && remote_entries
                 .iter()
@@ -232,6 +233,17 @@ impl AxShell {
                             })),
                     )
                     .child(Input::new(&self.sftp_path_input).flex_1().tab_index(0))
+                    .child(
+                        Button::new("sftp-open-terminal-directory")
+                            .ghost()
+                            .small()
+                            .icon(IconName::SquareTerminal)
+                            .tooltip(t!("open_terminal_directory").to_string())
+                            .disabled(!can_open_terminal_working_dir)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.open_sftp_at_terminal_working_dir(cx);
+                            })),
+                    )
                     .child(
                         Button::new("sftp-refresh")
                             .ghost()
@@ -463,6 +475,14 @@ impl AxShell {
                     .relative()
                     .min_h(px(0.))
                     .when(remote_ready, |this| {
+                        this.on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                                this.open_sftp_directory_context_menu(event.position, cx);
+                            }),
+                        )
+                    })
+                    .when(remote_ready, |this| {
                         this.child({
                             let entries = remote_entries.clone();
                             let selected_entries = remote_selected_entries.clone();
@@ -547,6 +567,7 @@ impl AxShell {
                                                                     event.position,
                                                                     cx,
                                                                 );
+                                                                cx.stop_propagation();
                                                             }
                                                         }),
                                                     )
@@ -1077,6 +1098,7 @@ impl AxShell {
                                                                 event.position,
                                                                 cx,
                                                             );
+                                                            cx.stop_propagation();
                                                             }
                                                         }),
                                                     )

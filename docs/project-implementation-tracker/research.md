@@ -1,5 +1,25 @@
 # 外部检索记录
 
+## 2026-07-15 SFTP 初始目录与终端目录关联
+
+- 时间：2026-07-15 16:10 +0800
+- 检索问题：SFTP 文件浏览器应如何在固定起始路径、上次目录、服务端 home 和 SSH 终端当前目录之间选择，避免打开时出现短暂跳转。
+- 检索原因：AxShell 当前在进入 SFTP 页面时会同时加载 home 和终端 CWD；需要以主流产品的明确配置和动作边界决定修复策略。
+- 来源列表：WinSCP Directories <https://winscp.net/eng/docs/ui_login_directories>；Cyberduck SFTP <https://docs.cyberduck.io/protocols/sftp/>；VS Code Remote SSH <https://code.visualstudio.com/docs/remote/ssh>。
+- 关键结论：WinSCP 支持每站点的初始远端目录以及“记住上次目录”，未指定时通常使用服务端 home；Cyberduck 将当前文件浏览目录传入终端作为显式“Open in Terminal”动作；VS Code Remote SSH 让用户显式打开远端工作目录。三者均不支持普通打开时先展示一个目录、再后台跳到另一个目录的模式。
+- 对实施计划的影响：AxShell 普通 SFTP 打开改为一次性确定初始路径，优先 `Session.sftp_path`，其次保存会话的最后远端目录，最后服务端 home。移除终端 CWD 的自动同步，在远端路径栏提供显式跳转按钮。
+- 未解决问题：远端初始目录被删除或无权限时的自动 home 回退不在本轮范围，保持当前的 SFTP 错误提示语义。
+
+## 2026-07-15 高刷新率与自适应帧率调度
+
+- 时间：2026-07-15 11:58 +0800
+- 检索问题：AxShell 是否应自行读取 120Hz / VRR 显示器刷新率，如何在不增加空闲资源消耗的前提下让活动终端刷新适配实际帧率。
+- 检索原因：实现依赖锁定 GPUI 对平台帧回调、VRR 和热压力的实际语义，不能按通用 GUI 框架假设设计。
+- 来源列表：Zed / GPUI `window.rs` <https://github.com/zed-industries/zed/blob/main/crates/gpui/src/window.rs>；Zed `gpui_wgpu/wgpu_renderer.rs` <https://github.com/zed-industries/zed/blob/main/crates/gpui_wgpu/src/wgpu_renderer.rs>；Zed macOS window backend <https://github.com/zed-industries/zed/blob/main/crates/gpui_macos/src/window.rs>；Zed Linux X11 client <https://github.com/zed-industries/zed/blob/main/crates/gpui_linux/src/linux/x11/client.rs>；WGPU `PresentMode` <https://wgpu.rs/doc/wgpu/enum.PresentMode.html>。
+- 关键结论：GPUI 上游仅在窗口 dirty 时重建场景，并在高频输入时选择性保持 presentation 以支持 VRR；非活跃窗口约限 30Hz，严重/临界热压力约限 60Hz。WGPU 默认 FIFO VSync；macOS 帧源跟随窗口当前屏幕，Linux X11 读取当前 mode 的刷新周期。GPUI 没有适合 AxShell 直接跨平台读取并持久化显示器 Hz 的公开 API。
+- 对实施计划的影响：保留 GPUI / WGPU 的平台帧源和保护策略。AxShell 只在新前台活动 burst 中请求三个 animation frame 采样实际间隔；采样有效后将终端/UI 合帧间隔限制在 8.333ms 至 33ms。无效、陈旧或无活动时回退当前 16ms，不创建常驻 animation loop。
+- 未解决问题：锁定依赖是 Git 提交而不是版本化稳定 API；跨显示器移动、不同 VRR 策略和 Windows 组合器行为需要三平台实机帧率、CPU、GPU 与功耗采样确认。
+
 ## 2026-07-14 WinSCP 多文件传输队列模型
 
 - 时间：2026-07-14 19:42 +0800

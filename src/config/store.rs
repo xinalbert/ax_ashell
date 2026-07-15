@@ -59,13 +59,16 @@ fn normalize_local_shell_profiles(config: &mut ConfigFile) {
     config.local_shell_profiles = profiles;
 }
 
-fn normalize_last_local_sftp_paths(config: &mut ConfigFile) {
+fn normalize_last_sftp_paths(config: &mut ConfigFile) {
     let session_ids = config
         .sessions
         .iter()
         .map(|session| session.id.as_str())
         .collect::<HashSet<_>>();
     config.last_local_sftp_paths.retain(|session_id, path| {
+        session_ids.contains(session_id.as_str()) && !path.trim().is_empty()
+    });
+    config.last_remote_sftp_paths.retain(|session_id, path| {
         session_ids.contains(session_id.as_str()) && !path.trim().is_empty()
     });
 }
@@ -153,7 +156,7 @@ impl ConfigStore {
         cache.default_local_sftp_path =
             normalize_default_local_sftp_path(&cache.default_local_sftp_path);
         normalize_local_shell_profiles(&mut cache);
-        normalize_last_local_sftp_paths(&mut cache);
+        normalize_last_sftp_paths(&mut cache);
 
         let mut store = Self { path, cache };
         store.normalize_theme_profiles();
@@ -259,7 +262,7 @@ impl ConfigStore {
 
     pub fn replace_sessions(&mut self, sessions: Vec<Session>) {
         self.cache.sessions = sessions;
-        normalize_last_local_sftp_paths(&mut self.cache);
+        normalize_last_sftp_paths(&mut self.cache);
     }
 
     pub fn sync_endpoint(&self) -> &str {
@@ -1302,6 +1305,14 @@ impl ConfigStore {
             .map(String::as_str)
     }
 
+    pub fn last_remote_sftp_path(&self, session_id: &str) -> Option<&str> {
+        self.get(session_id)?;
+        self.cache
+            .last_remote_sftp_paths
+            .get(session_id)
+            .map(String::as_str)
+    }
+
     pub fn default_local_sftp_path(&self) -> &str {
         self.cache.default_local_sftp_path.as_str()
     }
@@ -1338,6 +1349,29 @@ impl ConfigStore {
         true
     }
 
+    pub fn set_last_remote_sftp_path(&mut self, session_id: &str, path: &str) -> bool {
+        if self.get(session_id).is_none() {
+            return false;
+        }
+
+        let path = path.trim();
+        if path.is_empty() {
+            return self
+                .cache
+                .last_remote_sftp_paths
+                .remove(session_id)
+                .is_some();
+        }
+        if self.last_remote_sftp_path(session_id) == Some(path) {
+            return false;
+        }
+
+        self.cache
+            .last_remote_sftp_paths
+            .insert(session_id.to_string(), path.to_string());
+        true
+    }
+
     pub fn upsert(&mut self, session: Session) {
         if let Some(existing) = self.cache.sessions.iter_mut().find(|s| s.id == session.id) {
             *existing = session;
@@ -1364,6 +1398,7 @@ impl ConfigStore {
     pub fn remove(&mut self, id: &str) {
         self.cache.sessions.retain(|s| s.id != id);
         self.cache.last_local_sftp_paths.remove(id);
+        self.cache.last_remote_sftp_paths.remove(id);
     }
 
     pub fn save(&self) -> Result<()> {
@@ -2097,10 +2132,11 @@ mod local_sftp_path_tests {
     }
 
     #[test]
-    fn local_sftp_paths_default_to_empty_for_existing_configs() {
+    fn sftp_paths_default_to_empty_for_existing_configs() {
         let config: ConfigFile = serde_json::from_str("{}").expect("config should deserialize");
 
         assert!(config.last_local_sftp_paths.is_empty());
+        assert!(config.last_remote_sftp_paths.is_empty());
         assert!(config.default_local_sftp_path.is_empty());
     }
 
@@ -2131,14 +2167,26 @@ mod local_sftp_path_tests {
     }
 
     #[test]
+    fn remote_sftp_path_requires_a_saved_session() {
+        let mut config = ConfigStore::in_memory();
+
+        assert!(!config.set_last_remote_sftp_path("temporary", "/srv/temporary"));
+        config.upsert(saved_session("saved"));
+        assert!(config.set_last_remote_sftp_path("saved", " /srv/saved "));
+        assert_eq!(config.last_remote_sftp_path("saved"), Some("/srv/saved"));
+    }
+
+    #[test]
     fn removing_a_session_removes_its_local_sftp_path() {
         let mut config = ConfigStore::in_memory();
         config.upsert(saved_session("saved"));
         assert!(config.set_last_local_sftp_path("saved", "/tmp/saved"));
+        assert!(config.set_last_remote_sftp_path("saved", "/srv/saved"));
 
         config.remove("saved");
 
         assert_eq!(config.last_local_sftp_path("saved"), None);
+        assert_eq!(config.last_remote_sftp_path("saved"), None);
     }
 
     #[test]
@@ -2147,10 +2195,14 @@ mod local_sftp_path_tests {
         config.replace_sessions(vec![saved_session("keep"), saved_session("remove")]);
         assert!(config.set_last_local_sftp_path("keep", "/tmp/keep"));
         assert!(config.set_last_local_sftp_path("remove", "/tmp/remove"));
+        assert!(config.set_last_remote_sftp_path("keep", "/srv/keep"));
+        assert!(config.set_last_remote_sftp_path("remove", "/srv/remove"));
 
         config.replace_sessions(vec![saved_session("keep")]);
 
         assert_eq!(config.last_local_sftp_path("keep"), Some("/tmp/keep"));
         assert_eq!(config.last_local_sftp_path("remove"), None);
+        assert_eq!(config.last_remote_sftp_path("keep"), Some("/srv/keep"));
+        assert_eq!(config.last_remote_sftp_path("remove"), None);
     }
 }

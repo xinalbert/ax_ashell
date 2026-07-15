@@ -1,3 +1,11 @@
+## 2026-07-15 高刷新率自适应刷新环境验证
+
+- 时间：2026-07-15 12:10 +0800
+- 变化摘要：前台 terminal/UI 变化会启动最多 3 帧的 GPUI animation frame 校准；有效样本将应用层合帧周期限定在 60–120Hz。窗口移动/缩放、失焦和系统恢复会清除样本；没有变化时不保留 animation frame 请求，后台 250ms、深睡 1s 和空闲低频通知不变。
+- 受影响文件：`src/app/state/runtime.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/lifecycle/init.rs`，`src/app/views/layout.rs`，`docs/resource-lifecycle*.md`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo 和锁定 GPUI；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`。上游 GPUI / WGPU 帧调度资料已联网确认。
+- 验证结果：`rustfmt --edition 2024` 通过；帧节奏测试 6 项通过；`cargo check` 通过；完整 `cargo test --quiet` 200 项通过；`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning。
+
 ## 2026-07-14 SFTP 下载任务文件明细预检
 
 - 日期：2026-07-14 19:42 +0800
@@ -2392,17 +2400,48 @@
 - 受影响文件：`Cargo.toml`，`Cargo.lock`，`src/config/store.rs`，`src/platform.rs`，`src/platform/file_icons.rs`，`src/app.rs`，`src/app/lifecycle/init.rs`，`src/app/views.rs`，`src/app/views/sftp_panel.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo、GPUI `uniform_list` 和共享 FastHover；macOS 使用 `NSWorkspace`，Windows 使用 `SHGetFileInfoW`，Linux 使用 `freedesktop-icons` 和 `mime_guess`。已联网检索 KDE、Nautilus 和 Microsoft Shell 的远端类型图标与缓存边界；未使用多 agent。
 - 验证结果：`rustfmt --edition 2024`、`cargo check`、`cargo test --quiet file_icon`（5 项）、完整 `cargo test --quiet`（183 项）、SFTP hover 静态审计、`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning；真实三端 GUI 图标主题、缩放和回退仍需手工验收。
-# 2026-07-14 README 与 release workflow 链接维护预检
 
-- 日期：2026-07-14 22:35 +0800
-- 变化摘要：运行时、依赖、manifest/lock、CI build 和 release job 逻辑不变；本轮维护双语 README，并修正 release workflow 停用 Homebrew Cask 模板中的旧 GitHub 项目链接。
-- 受影响文件：`README.md`，`README.zh.md`，`.github/workflows/release.yml`，跟踪文档。
-- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`。
-- 验证结果：`origin` 已指向 `https://github.com/xinalbert/axshell.git`；README 当前主页和 Issues 链接正确；定位到 `.github/workflows/release.yml` 的三个停用模板 URL 仍为 `https://github.com/xinalbert/ax_shell`。待执行文档修改、旧链接检索、空白检查和 tracking docs validator。
-# 2026-07-14 完成 README 与 release workflow 链接维护环境验证
+## 2026-07-15 终端同步增量高亮施工前预检
 
-- 日期：2026-07-14 22:37 +0800
-- 变化摘要：双语 README 已补充 SFTP 批量下载文件明细和 GitHub Releases 入口；release workflow 停用 Homebrew Cask 模板中的两个下载 URL 和 homepage 已统一改为 `https://github.com/xinalbert/axshell`。运行时、依赖、manifest/lock、CI build 和 release job 逻辑不变。
-- 受影响文件：`README.md`，`README.zh.md`，`.github/workflows/release.yml`，跟踪文档。
-- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；没有新增运行或测试依赖。
-- 验证结果：`origin` 与用户指定 URL 一致；`rg` 确认目标文件均使用 `xinalbert/axshell` 且不再包含 `xinalbert/ax_shell`；README 预览图存在；`git diff --check` 通过。tracking docs validator 待本轮记录写入后执行。
+- 时间：2026-07-15 09:18 +0800
+- 目的：消除持续输出中新建行先以普通 ANSI 色绘制、随后才补关键词 / URL 色的跳色，同时保留大范围变更的 125ms CPU 限频。
+- 改动范围：`src/terminal/tab.rs`，`src/terminal/highlight.rs`，必要时 `src/terminal/element.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 执行内容：确认本机 `rustc 1.96.1` / `cargo 1.96.1` 满足项目 Rust 2024 和 `rust-version = 1.88.0`；审查可视行的 `Rc<RenderRow>` 逐 cell 复用、按视口行号的高亮缓存、URL 的 `WRAPLINE` 扩展和 event loop 的到期刷新。确定不新增依赖、不修改 manifest/lock、不联网、不使用多 agent。
+- 验证结果：已确认 `TermDamage::Full` 在滚屏时不能直接代表全屏高亮失效，且 app event loop 已在高亮到期时安排 UI 刷新。待执行 Rust 修改、聚焦测试、`cargo check`、全量测试、构建、空白检查和 tracking validator。
+- 风险/待办：跨 `WRAPLINE` URL 需要在当前与前一帧换行边界间扩展同步识别范围；无换行进度条的按列局部识别留作后续 sample 驱动的第二阶段。
+
+## 2026-07-15 完成终端同步增量高亮环境验证
+
+- 时间：2026-07-15 09:42 +0800
+- 目的：让少量终端输出变更在首帧即获得关键词 / URL 颜色，同时保持 resize、alternate screen 等大范围变化的 125ms 保护。
+- 改动范围：`src/terminal/tab.rs`，`src/terminal/highlight.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 执行内容：`build_visible_rows` 现在返回真正重建行；最多 4 行重建时同步高亮并在 125ms 后仅校正这些行，大范围重建继续批处理。高亮缓存按 `Rc<RenderRow>` 重排，URL 只构建受影响的 `WRAPLINE` 逻辑行，缓存查找按行指针哈希完成。
+- 验证结果：`rustfmt --edition 2024 src/terminal/tab.rs src/terminal/highlight.rs`、terminal tab 聚焦测试 18 项、terminal highlight 聚焦测试 20 项、`cargo check`、完整 `cargo test --quiet`（189 项）、`cargo build`、`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning。
+- 风险/待办：仍需用真实 GUI 持续换行输出、跨行 URL、resize / alternate screen 和无换行 `\r` 进度条做颜色首帧及 CPU sample 验收；仅当后者仍是热点时再保留 `LineDamageBounds` 列范围做第二阶段局部识别。
+
+## 2026-07-15 大范围高亮回退调度加固
+
+- 时间：2026-07-15 09:49 +0800
+- 目的：确保 resize、alternate screen 等已排队的大范围高亮校正，不会被随后到来的单行输出意外改为同步路径。
+- 改动范围：`src/terminal/tab.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 执行内容：为 `HighlightRefresh` 增加已排队大范围刷新的状态；该状态存在时，小行重建继续复用缓存并等待 125ms 全量校正。新增 resize 后紧接 `\r` 输出的回归测试。
+- 验证结果：新增回归测试通过；完整 `cargo test --quiet`（190 项）、`cargo check`、`cargo build`、`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning。
+- 风险/待办：真实 GUI 仍需验证连续 ANSI 刷新和 resize / alternate screen 后的首帧颜色；无换行进度条的列范围优化仍为独立第二阶段。
+
+## 2026-07-15 系统 suspend/resume MVP 施工前预检
+
+- 时间：2026-07-15 10:23 +0800
+- 目的：在不改动终端/SFTP 架构、不引入原生平台事件依赖的前提下，实现系统唤醒后的跨平台安全恢复兜底。
+- 改动范围：`src/app/state/lifecycle.rs`，`src/app/state/monitoring.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/workspace.rs`，`src/events.rs`，`src/backend/ssh.rs`，`src/app/actions/sftp.rs`，`docs/resource-lifecycle*.md`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 执行内容：确认本机 `rustc 1.96.1` / `cargo 1.96.1` 满足 Rust 2024 与 `rust-version = 1.88.0`；审查窗口 lifecycle、单一 event pump、远程系统监控、SSH child task、SFTP work pin/有界关闭、CI 三平台构建。确定以 10 秒以上的调度间隙做通用 resume fallback，不新增依赖、不修改 `Cargo.toml` / `Cargo.lock`、不联网、不使用多 agent。
+- 验证结果：已定位恢复时旧 remote probe、`remote_sample_in_flight`、SFTP server-side handle 与恢复风暴风险；待执行恢复 reducer、事件代次、当前上下文探测、聚焦测试、`cargo check`、完整测试、空白检查和 tracking validator。
+- 风险/待办：该兜底不能准确区分系统睡眠、调试暂停和严重主线程阻塞；正式阶段需要 macOS `NSWorkspace`、Windows `WM_POWERBROADCAST`、Linux logind D-Bus 接入与三平台实机睡眠/唤醒验收。SSH 仅标记可能失效并让用户重连，不承诺会话恢复；SFTP 不自动续传。
+
+## 2026-07-15 完成系统 suspend/resume MVP 环境验证
+
+- 时间：2026-07-15 11:09 +0800
+- 目的：完成不依赖原生平台事件的恢复安全性 MVP，并验证不引入 SSH 重连风暴或 SFTP 自动续传。
+- 改动范围：`src/app/state/lifecycle.rs`，`src/app/state/monitoring.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/workspace.rs`，`src/events.rs`，`src/backend/local.rs`，`src/backend/ssh.rs`，`src/backend/ssh/system_probe.rs`，`src/monitoring.rs`，`src/terminal/backend.rs`，`src/terminal/tab.rs`，`src/app/actions/sftp.rs`，`src/app/sftp.rs`，双语资源与跟踪文档。
+- 执行内容：以双时钟 10 秒 event-pump 间隙触发可能恢复；以 monitoring generation 忽略旧采样，以 terminal backend generation 拒绝用户重连后的旧健康检查事件。SSH 健康检查最多 5 秒且只针对当前可见 terminal tab；空闲 SFTP 标记为按需重建，带 work pin 或活动/暂停传输的 worker 不主动处置。未新增依赖，未修改 `Cargo.toml`、`Cargo.lock` 或 CI。
+- 验证结果：受影响 Rust 文件 `rustfmt --edition 2024` 通过；`cargo test --quiet resume` 4 项通过；`cargo check` 通过；完整 `cargo test --quiet` 194 项通过；`git diff --check` 与 tracking docs validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning。
+- 风险/待办：仍须在 macOS、Windows、Linux 实机验证睡眠、可用时休眠、断网、活动 SSH、空闲 SFTP 与带 pin 传输；随后以 `PowerEvent::Suspend/Resume` 适配原生事件，但保留本轮通用兜底。

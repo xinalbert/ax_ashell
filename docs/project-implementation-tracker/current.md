@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：维护双语 README 的当前产品与发布入口，并将 GitHub release workflow 中残留的旧仓库链接统一为 `https://github.com/xinalbert/axshell`。
-- 交付物：同步的 `README.md` / `README.zh.md`，以及链接正确的 `.github/workflows/release.yml` 注释模板。
+- 目标：让 SFTP 打开行为可预测且只加载一次初始目录。
+- 交付物：保存会话的远端目录恢复、固定路径优先级、显式“打开终端当前目录”动作和自动化验证。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`README.md`，`README.zh.md`，`.github/workflows/release.yml`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
-- 不在本轮范围内：应用代码、发布流程步骤、构建矩阵、artifact 命名、依赖、`Cargo.toml`、`Cargo.lock`、GitHub 远端配置。
+- 当前范围：`src/config/model.rs`、`src/config/store.rs`、`src/app.rs`、`src/app/actions/sftp.rs`、`src/app/workspace.rs`、`src/app/lifecycle/event_loop.rs`、`src/app/lifecycle/init.rs`、`src/app/views/sftp_panel.rs`、`src/sftp/worker.rs`、`src/sftp/worker/runtime.rs`、`locales/`、`docs/features/`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：`Cargo.toml` / `Cargo.lock`、SFTP 协议、传输模型、会话导入导出格式、终端 CWD 捕获协议。
 
 ## 当前状态
 
@@ -22,32 +22,34 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | README、workflow 与 Git remote 链接审查 | `rg`、`git remote -v` | `origin` 已指向用户指定的 GitHub 仓库；仅 release workflow 注释仍使用旧路径 |
-| P2 | completed | 双语 README 与 release workflow 链接更新 | 双语结构/链接静态检查 | README 保持简短，补充 SFTP 下载明细和 release 入口 |
-| P3 | completed | 文档和 tracking 收口 | `git diff --check`、tracking docs validator | 无 Rust 源码变动，无需构建或测试 |
+| P1 | completed | 确认初始目录双请求根因和主流客户端目录优先级 | 代码路径与官方文档核对 | 当前 home 列举与终端 CWD 同步并行 |
+| P2 | completed | 保存远端目录、单一初始列举和显式终端目录动作 | 3 项聚焦测试、`cargo check` | 优先级为活动重连路径、固定路径、上次目录、home |
+| P3 | completed | 格式化、完整测试、追踪记录收口 | `rustfmt`、`cargo test`、validator | GUI 行为保留手工验收 |
 
 ## 已完成
 
-- 已读取环境记录、实施记录、项目地图和 README 维护规范。
-- 已确认 `README.md` 与 `README.zh.md` 顶部互链，主页和 Issues 链接已使用目标仓库。
-- 已确认 `origin` 为 `https://github.com/xinalbert/axshell.git`；`.github/workflows/release.yml` 停用的 Homebrew Cask 模板原有三个 `xinalbert/ax_shell` 链接。
-- 已在双语 README 补充批量下载文件明细和 GitHub Releases 入口，保持两种语言的章节结构一致。
-- 已将 Cask 模板的两条 release URL 和 homepage 统一改为 `https://github.com/xinalbert/axshell`。
+- 已确认 worker 连接后按 `sftp_path` 或 home 列举目录，而 SFTP 页面切入同时会自动同步 SSH 终端 CWD，导致出现两次目录列举和 home 闪现。
+- 已完成外部检索：WinSCP 支持每站点初始远端目录及“记住上次目录”；Cyberduck 将当前目录到终端的关联设计为显式动作。
+- 已确定本轮目录优先级：固定 `SFTP 路径`、保存会话的上次远端目录、服务端 home；终端当前目录仅由用户显式触发。
+- 已新增本机 `last_remote_sftp_paths`，仅在成功接收目录列表后记录已保存会话的远端目录；删除或导入替换会话时自动清理失效记录。
+- 已将连接重建路径传入 worker 启动参数，移除启动后的第二次 `ListDir`；worker 现在只列举一次选定的初始目录。
+- 已移除进入 SFTP 页与终端 CWD 事件的隐式同步，并在远端地址栏加入显式“打开终端当前目录”按钮。
 
 ## 验证
 
-- 已完成：README/文档索引和 release workflow 审查；Git remote 与用户提供的仓库 URL 核对；目标文件中正确 URL 检索；目标范围内旧路径检索为空；`preview.png` 存在；`git diff --check`。
-- 未完成：无。
+- 已完成：环境记录、实施记录、项目地图、SFTP worker/workspace/配置路径审查；WinSCP 与 Cyberduck 官方文档检索；受影响 Rust 文件 `rustfmt --edition 2024`；启动路径、worker 初始路径和远端路径存储各 1 项聚焦测试；`cargo check`；完整 `cargo test --quiet`（202 项）；`git diff --check`；tracking docs validator。
+- 未完成：真实 GUI 连接、目录恢复和显式终端目录跳转验收。
 
 ## 风险与阻塞
 
-- Homebrew Cask job 保持停用；本轮仅维护其示例 URL，不改变启用条件或打包语义。
+- 风险：旧配置没有远端目录记录，必须无缝回退服务端 home。
+- 风险：SFTP 连接重建必须带上已知当前目录，但不能再通过独立命令重复列举。
 - 无阻塞。
 
 ## 下一步
 
-- README 与 workflow 链接维护已完成；后续启用 Cask job 时应使用当前示例中的 GitHub 仓库路径。
+- 在真实 SSH/SFTP 服务器上确认固定路径、上次远端目录、home 回退和工具栏“打开终端当前目录”的顺序及无 home 闪现。
 
 ## 最后更新时间
 
-- 2026-07-14 22:37 +0800
+- 2026-07-15 16:32 +0800

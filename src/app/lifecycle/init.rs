@@ -310,6 +310,7 @@ impl AxShell {
         );
         _subscriptions
             .push(cx.observe_window_activation(window, Self::on_window_activation_changed));
+        _subscriptions.push(cx.observe_window_bounds(window, Self::on_window_bounds_changed));
 
         let (events_tx, events_rx) = crate::events::backend_event_channel();
         let workspace_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
@@ -476,6 +477,7 @@ impl AxShell {
             terminal_password_retry_tabs: HashSet::new(),
             pending_sftp_path_sync: Some("/".into()),
             pending_sftp_selection_path: None,
+            pending_sftp_terminal_cwd_tab: None,
             pending_local_sftp_path_sync: Some(default_local_dir.clone()),
             local_file_browser: LocalFileBrowserState {
                 current_path: default_local_dir.clone(),
@@ -559,7 +561,8 @@ impl AxShell {
                 net_tx_history: Vec::with_capacity(20),
                 last_sample: Instant::now(),
                 system_tab_id: None,
-                remote_sample_in_flight: false,
+                remote_sample_generation: 0,
+                remote_sample_in_flight: None,
             },
             search: SearchState {
                 input: search_input,

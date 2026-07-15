@@ -48,7 +48,13 @@ Window close and the application Quit menu both call `shutdown_all_backends()`, 
 
 ### Phase Four: Process exit and system sleep
 
-Add application-level `shutdown_all()`: stop new work, cancel and join backends, then save layout. After OS sleep/resume, validate connection health and resume monitoring only for the focused page, avoiding a reconnect or probe storm.
+The cross-platform resume MVP is implemented. A gap of at least 10 seconds in the app event pump, measured with both monotonic and wall clocks, is treated as a possible resume. This intentionally remains a conservative fallback: it can also detect a debugger pause or severe scheduling stall, but it avoids assuming that every OS exposes a safe native power hook through GPUI.
+
+On a possible resume, AxShell invalidates older monitoring requests, refreshes the system theme once, and marks live SSH connections as needing validation. Only the SSH tab in the currently visible terminal context receives one bounded five-second health check; success clears the marker, while failure uses the existing user-driven reconnect path. AxShell never reconnects all SSH tabs automatically. A dropped SSH interactive session cannot be resumed by standard SSH; use `tmux` or `screen` on the remote host when command continuity is required.
+
+Idle SFTP workers are marked for lazy recreation, while workers with active pins, transfers, remote editing, or other queued work are left untouched. The next user operation creates a fresh SFTP worker if needed. AxShell does not restart transfers or promise resume semantics after system sleep.
+
+The formal platform integration remains future work: macOS `NSWorkspace` sleep/wake notifications, Windows `WM_POWERBROADCAST`, and Linux logind `PrepareForSleep` should publish a shared power event. Linux native integration must remain optional because logind is not universal. It should complement, not replace, the MVP fallback.
 
 ## Resource Policy
 
@@ -57,14 +63,23 @@ Add application-level `shutdown_all()`: stop new work, cancel and join backends,
 | SSH terminal / local PTY | Keep running | Keep running | Continue unchanged; bounded cleanup on close/reconnect |
 | Backend events | Low-frequency drain | Low-frequency drain | Refresh immediately |
 | Terminal paint / cursor | Coalesced paint; no blink | Lower-rate paint; no blink | Normal refresh |
-| Local and remote monitoring | No new samples | No new samples | Sample focused page only |
+| Local and remote monitoring | No new samples | No new samples | Drop old samples; health-check only the visible SSH tab, then resume normal sampling |
 | Follow-system theme | No polling | No polling | Sync once |
-| SFTP transfers | Continue | Continue | No reconnect needed |
-| Idle SFTP worker | Existing timeout applies | Phase two evaluates pins | Reconnect on demand |
+| SFTP transfers | Continue | Continue | No automatic restart or resume |
+| Idle SFTP worker | Existing timeout applies | Phase two evaluates pins | Mark stale and reconnect on next user operation |
+
+## Adaptive Foreground Refresh
+
+Foreground terminal output and event-pump-driven UI changes are still coalesced by the app event pump. When a new foreground change arrives, AxShell uses at most three GPUI animation frames to sample the current window's presentation cadence. A valid sample can lower the coalescing interval from the 60Hz default to a maximum of 120Hz; slower, invalid, or stale samples retain the 60Hz interval.
+
+This is intentionally a bounded calibration, not a permanent animation loop. GPUI continues to own VSync, variable-refresh behavior, direct-input presentation, thermal throttling, and inactive-window throttling. After a window move or resize, AxShell discards the sample so a later foreground change calibrates against the current display. Background and DeepSleep keep their 250ms and 1s refresh intervals, and idle foreground windows keep the existing low-frequency notification path.
+
+Continuous terminal output can therefore use more CPU/GPU on a 120Hz display than on a 60Hz display. This tradeoff is confined to active foreground updates; it must not add repaint or timer work to an otherwise static window.
 
 ## Verification Boundary
 
-- Unit tests: state transitions, timeouts, disabled deep sleep, and configuration normalization.
+- Unit tests: state transitions, disabled deep sleep, resume-gap detection, and stale monitoring result isolation.
 - Local checks: `rustfmt`, `cargo check`, `cargo test --quiet`, and `git diff --check`.
 - GUI checks: monitoring stops after focus loss; five minutes reaches deep sleep; refocus restores monitoring and terminal rendering; background SSH output remains bounded.
 - Connected checks: closing a tab or window while SSH is connecting or while a remote probe/CWD query is running should exit within two seconds or log an abort; closing and reconnecting a local shell must not leave reader/writer threads behind.
+- Platform checks: on macOS, Windows, and Linux, test sleep, hibernate where available, network loss during sleep, active terminal output, an idle SFTP page, and a pinned transfer. Confirm that only the visible SSH tab receives a check and that no connection or transfer is restarted automatically.

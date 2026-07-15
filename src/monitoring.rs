@@ -128,6 +128,21 @@ impl SystemSampler {
             total_swap: swap_total,
         }
     }
+
+    pub fn reset_after_resume(&mut self) {
+        self.nets.refresh(true);
+        self.last_rx_total = self
+            .nets
+            .iter()
+            .map(|(_, data)| data.total_received())
+            .sum();
+        self.last_tx_total = self
+            .nets
+            .iter()
+            .map(|(_, data)| data.total_transmitted())
+            .sum();
+        self.last_instant = Instant::now();
+    }
 }
 
 fn ratio(used: u64, total: u64) -> f32 {

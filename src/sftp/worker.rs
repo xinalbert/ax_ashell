@@ -38,8 +38,9 @@ enum SftpCommand {
         local_dir: String,
         pin: SftpWorkPin,
     },
-    EditFile {
+    OpenFile {
         remote_path: String,
+        watch_changes: bool,
         pin: SftpWorkPin,
     },
     CreateDir {
@@ -167,7 +168,19 @@ impl SftpHandle {
     }
 
     pub(crate) fn edit_file(&self, remote_path: String) -> bool {
-        self.send_work_command(|pin| SftpCommand::EditFile { remote_path, pin })
+        self.send_work_command(|pin| SftpCommand::OpenFile {
+            remote_path,
+            watch_changes: true,
+            pin,
+        })
+    }
+
+    pub(crate) fn open_file(&self, remote_path: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::OpenFile {
+            remote_path,
+            watch_changes: false,
+            pin,
+        })
     }
 
     pub(crate) fn create_dir(&self, path: String) -> bool {
@@ -232,6 +245,7 @@ pub fn spawn_sftp(
     task_tracker: RuntimeTaskTracker,
     tab_id: String,
     session: Session,
+    initial_path: Option<String>,
     events: BackendEventSender,
 ) -> SftpHandle {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
@@ -257,6 +271,7 @@ pub fn spawn_sftp(
         if let Err(err) = run_sftp(
             tab_id.clone(),
             session,
+            initial_path,
             cmd_rx,
             cmd_tx_clone,
             events.clone(),

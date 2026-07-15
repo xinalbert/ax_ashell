@@ -313,83 +313,120 @@ fn highlight_cells(cells: &[Vec<RenderCell>]) -> HashMap<(i32, i32), Hsla> {
 
 #[derive(Default)]
 pub struct HighlightCache {
-    keyword_rows: Vec<CachedHighlightRow>,
-    url_rows: Vec<BTreeSet<i32>>,
-    url_wraps: Vec<bool>,
+    rows: Vec<CachedHighlightRow>,
 }
 
 struct CachedHighlightRow {
     source: Rc<RenderRow>,
-    highlights: Vec<(i32, Hsla)>,
+    keyword_highlights: Vec<(i32, Hsla)>,
+    url_highlights: BTreeSet<i32>,
+    wraps_to_next: bool,
 }
 
 pub fn highlight_rows_incremental(
     rows: &[Rc<RenderRow>],
     dirty_rows: &BTreeSet<usize>,
-    full_damage: bool,
+    full_refresh: bool,
     cache: &mut HighlightCache,
 ) -> HashMap<(i32, i32), Hsla> {
     let colors = highlight_colors();
-    let cache_needs_reset =
-        full_damage || cache.keyword_rows.len() != rows.len() || cache.url_rows.len() != rows.len();
-    if cache_needs_reset {
-        cache.keyword_rows = rows
-            .iter()
-            .map(|row| CachedHighlightRow {
-                source: row.clone(),
-                highlights: highlight_row(row, &colors),
-            })
-            .collect();
-        cache.url_rows = vec![BTreeSet::new(); rows.len()];
-        cache.url_wraps = vec![false; rows.len()];
-    } else {
-        for &row_idx in dirty_rows {
-            let Some(row) = rows.get(row_idx) else {
-                continue;
-            };
-            cache.keyword_rows[row_idx] = CachedHighlightRow {
-                source: row.clone(),
-                highlights: highlight_row(row, &colors),
-            };
-        }
+    let rebase = cache.rebase(rows);
+    let mut effective_dirty_rows = rebase.rebuilt_rows;
+    effective_dirty_rows.extend(dirty_rows.iter().copied());
+    if full_refresh {
+        effective_dirty_rows.extend(0..rows.len());
     }
 
-    // A disabled highlighter does not receive output damage. Recheck row identity
-    // when it is enabled again so stale cached colors cannot be reused.
-    let mut effective_dirty_rows = dirty_rows.clone();
-    for (row_idx, row) in rows.iter().enumerate() {
-        if !Rc::ptr_eq(&cache.keyword_rows[row_idx].source, row) {
-            cache.keyword_rows[row_idx] = CachedHighlightRow {
-                source: row.clone(),
-                highlights: highlight_row(row, &colors),
-            };
-            effective_dirty_rows.insert(row_idx);
-        }
+    for &row_idx in &effective_dirty_rows {
+        let Some((row, cached)) = rows.get(row_idx).zip(cache.rows.get_mut(row_idx)) else {
+            continue;
+        };
+        cached.source = row.clone();
+        cached.keyword_highlights = highlight_row(row, &colors);
+        cached.wraps_to_next = row_wraps_to_next(row);
     }
 
-    let current_wraps: Vec<bool> = rows.iter().map(|row| row_wraps_to_next(row)).collect();
+    let current_wraps = cache
+        .rows
+        .iter()
+        .map(|cached| cached.wraps_to_next)
+        .collect::<Vec<_>>();
+    let mut url_dirty_sources = effective_dirty_rows.clone();
+    if rebase.viewport_moved && !rows.is_empty() {
+        // The viewport can begin halfway through a previously wrapped URL.
+        // Recheck just its first logical line after cache rows are moved.
+        url_dirty_sources.insert(0);
+    }
     let url_dirty_rows = url_dirty_rows(
         &current_wraps,
-        &cache.url_wraps,
-        &effective_dirty_rows,
-        cache_needs_reset,
+        &rebase.previous_wraps,
+        &url_dirty_sources,
+        full_refresh,
     );
     for &row_idx in &url_dirty_rows {
-        cache.url_rows[row_idx].clear();
+        if let Some(cached) = cache.rows.get_mut(row_idx) {
+            cached.url_highlights.clear();
+        }
     }
-    apply_url_highlights(rows, &url_dirty_rows, &mut cache.url_rows);
-    cache.url_wraps = current_wraps;
+    apply_url_highlights(rows, &url_dirty_rows, cache);
 
     let mut map = HashMap::new();
-    for (row_idx, cached) in cache.keyword_rows.iter().enumerate() {
-        for &(col, color) in &cached.highlights {
+    for (row_idx, cached) in cache.rows.iter().enumerate() {
+        for &(col, color) in &cached.keyword_highlights {
             map.insert((row_idx as i32, col), color);
         }
-        for &col in &cache.url_rows[row_idx] {
+        for &col in &cached.url_highlights {
             map.entry((row_idx as i32, col)).or_insert(colors.url);
         }
     }
     map
+}
+
+struct RebasedRows {
+    rebuilt_rows: BTreeSet<usize>,
+    previous_wraps: Vec<bool>,
+    viewport_moved: bool,
+}
+
+impl HighlightCache {
+    /// Keep cached colors attached to verified row blocks while the viewport moves.
+    fn rebase(&mut self, rows: &[Rc<RenderRow>]) -> RebasedRows {
+        let previous_rows = std::mem::take(&mut self.rows);
+        let previous_wraps = previous_rows
+            .iter()
+            .map(|cached| cached.wraps_to_next)
+            .collect::<Vec<_>>();
+        let mut previous = previous_rows
+            .into_iter()
+            .enumerate()
+            .map(|(row_idx, cached)| (Rc::as_ptr(&cached.source), (row_idx, cached)))
+            .collect::<HashMap<_, _>>();
+        let mut rebuilt_rows = BTreeSet::new();
+        let mut viewport_moved = false;
+        let mut rebased = Vec::with_capacity(rows.len());
+
+        for (row_idx, row) in rows.iter().enumerate() {
+            if let Some((previous_idx, cached)) = previous.remove(&Rc::as_ptr(row)) {
+                viewport_moved |= previous_idx != row_idx;
+                rebased.push(cached);
+            } else {
+                rebuilt_rows.insert(row_idx);
+                rebased.push(CachedHighlightRow {
+                    source: row.clone(),
+                    keyword_highlights: Vec::new(),
+                    url_highlights: BTreeSet::new(),
+                    wraps_to_next: row_wraps_to_next(row),
+                });
+            }
+        }
+
+        self.rows = rebased;
+        RebasedRows {
+            rebuilt_rows,
+            previous_wraps,
+            viewport_moved,
+        }
+    }
 }
 
 fn highlight_row(row: &RenderRow, colors: &HighlightColors) -> Vec<(i32, Hsla)> {
@@ -901,14 +938,21 @@ fn highlight_row(row: &RenderRow, colors: &HighlightColors) -> Vec<(i32, Hsla)> 
 fn apply_url_highlights(
     rows: &[Rc<RenderRow>],
     dirty_rows: &BTreeSet<usize>,
-    highlights: &mut [BTreeSet<i32>],
+    cache: &mut HighlightCache,
 ) {
     // URL detection must use logical lines because a terminal wrap can split a URL.
-    let logical_lines = build_logical_lines(rows);
-    for line in &logical_lines {
-        if !line.rows.iter().any(|row| dirty_rows.contains(row)) {
-            continue;
+    // Build only chains touched by this refresh instead of rebuilding the viewport.
+    let mut logical_starts = BTreeSet::new();
+    for &row_idx in dirty_rows {
+        let mut start = row_idx;
+        while start > 0 && row_wraps_to_next(&rows[start - 1]) {
+            start -= 1;
         }
+        logical_starts.insert(start);
+    }
+
+    for start in logical_starts {
+        let line = build_logical_line_from_row(rows, start);
         let text = line.text.as_str();
         for m in find_urls(text) {
             let url_len = find_url_len(&text[m..]);
@@ -916,7 +960,9 @@ fn apply_url_highlights(
                 let idx = m + i;
                 if idx < line.byte_to_cell.len() {
                     let (r, c) = line.byte_to_cell[idx];
-                    highlights[r].insert(c as i32);
+                    if let Some(cached) = cache.rows.get_mut(r) {
+                        cached.url_highlights.insert(c as i32);
+                    }
                 }
             }
         }
@@ -1255,35 +1301,30 @@ pub struct LogicalLine {
 
 pub fn build_logical_lines(rows: &[Rc<RenderRow>]) -> Vec<LogicalLine> {
     let mut logical_lines = Vec::new();
-    let mut current_line: Option<LogicalLine> = None;
-
-    for (row_idx, row) in rows.iter().enumerate() {
-        if row.cells.is_empty() {
-            if let Some(line) = current_line.take() {
-                logical_lines.push(line);
-            }
+    let mut row_idx = 0;
+    while row_idx < rows.len() {
+        if rows[row_idx].cells.is_empty() {
+            row_idx += 1;
             continue;
         }
+        let line = build_logical_line_from_row(rows, row_idx);
+        row_idx = line.rows.last().copied().unwrap_or(row_idx) + 1;
+        logical_lines.push(line);
+    }
 
-        let wraps_from_prev = row_idx > 0 && {
-            current_line
-                .as_ref()
-                .and_then(|line| line.rows.last())
-                .is_some_and(|&previous_row| row_wraps_to_next(&rows[previous_row]))
-        };
+    logical_lines
+}
 
-        if !wraps_from_prev {
-            if let Some(line) = current_line.take() {
-                logical_lines.push(line);
-            }
-        }
+fn build_logical_line_from_row(rows: &[Rc<RenderRow>], start: usize) -> LogicalLine {
+    let mut line = LogicalLine {
+        text: String::with_capacity(128),
+        byte_to_cell: Vec::with_capacity(128),
+        rows: Vec::new(),
+    };
+    let mut row_idx = start;
 
-        let mut line = current_line.take().unwrap_or_else(|| LogicalLine {
-            text: String::with_capacity(128),
-            byte_to_cell: Vec::with_capacity(128),
-            rows: Vec::new(),
-        });
-
+    loop {
+        let row = &rows[row_idx];
         for cell in &row.cells {
             line.text.push(cell.cell.c);
             let end_len = line.text.len();
@@ -1293,14 +1334,16 @@ pub fn build_logical_lines(rows: &[Rc<RenderRow>]) -> Vec<LogicalLine> {
         }
         line.rows.push(row_idx);
 
-        current_line = Some(line);
+        if !row_wraps_to_next(row)
+            || row_idx + 1 >= rows.len()
+            || rows[row_idx + 1].cells.is_empty()
+        {
+            break;
+        }
+        row_idx += 1;
     }
 
-    if let Some(line) = current_line.take() {
-        logical_lines.push(line);
-    }
-
-    logical_lines
+    line
 }
 
 pub fn find_url_at_cell(
@@ -1376,8 +1419,11 @@ mod tests {
         find_terminal_target_at_cell, find_url_len, highlight_cells, highlight_keywords,
         highlight_rows_incremental, hsla, rows_from_cells,
     };
-    use crate::terminal::RenderCell;
-    use std::collections::{BTreeSet, HashMap};
+    use crate::terminal::{RenderCell, RenderRow};
+    use std::{
+        collections::{BTreeSet, HashMap},
+        rc::Rc,
+    };
 
     fn highlighted_columns(text: &str, keywords: &[&str]) -> Vec<i32> {
         let mut map = HashMap::new();
@@ -1523,6 +1569,25 @@ mod tests {
     }
 
     #[test]
+    fn incremental_highlights_reuse_moved_rows_without_full_refresh() {
+        let previous = rows_from_cells(&render_cells(&["INFO ready", "ERROR failed"]));
+        let current = vec![
+            previous[1].clone(),
+            rows_from_cells(&render_cells(&["WARN retry"]))[0].clone(),
+        ];
+        let mut cache = HighlightCache::default();
+
+        let _ = highlight_rows_incremental(&previous, &(0..2).collect(), true, &mut cache);
+        let incremental =
+            highlight_rows_incremental(&current, &std::iter::once(1).collect(), false, &mut cache);
+
+        assert_eq!(
+            incremental,
+            highlight_cells(&render_cells(&["ERROR failed", "WARN retry"]))
+        );
+    }
+
+    #[test]
     fn incremental_highlights_preserve_urls_across_wrapped_rows() {
         let mut cells = render_cells(&["https://exa", "mple.com/log"]);
         cells
@@ -1658,6 +1723,49 @@ mod tests {
         );
 
         assert_eq!(updated, highlight_cells(&changed_cells));
+    }
+
+    #[test]
+    fn url_damage_clears_moved_cached_rows_after_wrap_is_removed() {
+        let mut cells = render_cells(&["https://exa", "mple.com/log", "INFO ready"]);
+        cells
+            .get_mut(0)
+            .expect("first row")
+            .iter_mut()
+            .find(|cell| cell.col == 10)
+            .expect("last cell of wrapped row")
+            .cell
+            .flags
+            .insert(alacritty_terminal::term::cell::Flags::WRAPLINE);
+        let previous = rows_from_cells(&cells);
+        let mut cache = HighlightCache::default();
+        let _ = highlight_rows_incremental(&previous, &(0..3).collect(), true, &mut cache);
+
+        let mut changed_first_row = cells[0].clone();
+        changed_first_row
+            .iter_mut()
+            .find(|cell| cell.col == 10)
+            .expect("last cell of changed row")
+            .cell
+            .flags
+            .remove(alacritty_terminal::term::cell::Flags::WRAPLINE);
+        let expected_cells = vec![
+            changed_first_row.clone(),
+            cells[1].clone(),
+            cells[2].clone(),
+        ];
+        let current = vec![
+            Rc::new(RenderRow {
+                cells: changed_first_row,
+            }),
+            previous[1].clone(),
+            previous[2].clone(),
+        ];
+        let updated =
+            highlight_rows_incremental(&current, &std::iter::once(0).collect(), false, &mut cache);
+
+        assert_eq!(updated, highlight_cells(&expected_cells));
+        assert!(!updated.contains_key(&(1, 0)));
     }
 
     fn render_cells(lines: &[&str]) -> Vec<Vec<RenderCell>> {

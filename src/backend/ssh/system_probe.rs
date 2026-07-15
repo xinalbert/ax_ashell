@@ -36,6 +36,18 @@ pub(super) async fn sample_remote_system_with_handle(
     remote_snapshot_from_kv(&output)
 }
 
+pub(super) async fn check_ssh_connection_with_handle(
+    handle: Arc<tokio::sync::Mutex<russh::client::Handle<ClientHandler>>>,
+) -> Result<()> {
+    let _channel = handle
+        .lock()
+        .await
+        .channel_open_session()
+        .await
+        .context("open SSH health-check session")?;
+    Ok(())
+}
+
 const REMOTE_SYSTEM_PROBE: &str = r#"sh -lc '
 os=$(uname -s 2>/dev/null || echo unknown)
 

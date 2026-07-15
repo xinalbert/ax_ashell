@@ -214,9 +214,6 @@ impl AxShell {
         if page == WorkspacePage::Sftp {
             self.restore_active_local_sftp_path(cx);
         }
-        if page == WorkspacePage::Sftp && self.active_sftp_should_sync_shell_dir_on_entry() {
-            self.sync_active_sftp_to_shell_working_dir(cx);
-        }
         self.ensure_active_workspace_tab_visible();
         cx.notify();
     }
@@ -537,76 +534,54 @@ impl AxShell {
         };
         let Some(backend) = (|| {
             let tab = self.tabs.iter().find(|t| t.id == *tab_id)?;
-            if !tab.connected {
+            if !tab.connected || tab.connection_may_be_stale {
                 return None;
             }
             Some(tab.backend.clone())
         })() else {
             return;
         };
-        if self.monitoring.remote_sample_in_flight {
+        let Some(generation) = self.monitoring.begin_remote_sample(false) else {
             return;
-        }
-        self.monitoring.remote_sample_in_flight = true;
+        };
         if let Ok(backend) = backend.lock() {
-            backend.send(BackendCommand::SampleMetrics);
+            backend.send(BackendCommand::SampleMetrics { generation });
+        } else {
+            self.monitoring.finish_remote_sample(generation);
         }
     }
 
-    pub(crate) fn sync_active_sftp_to_shell_working_dir(&mut self, cx: &mut Context<Self>) {
-        if self.pending_sftp_selection_path.is_some() || self.active_sftp_has_configured_path() {
-            return;
+    pub(crate) fn request_active_ssh_resume_health_check(&mut self) -> bool {
+        if !self.lifecycle.is_foreground() || self.workspace_page != WorkspacePage::Terminal {
+            return false;
         }
-        if self.workspace_page != WorkspacePage::Sftp {
-            return;
-        }
-        let Some(active_group_id) = self.active_group.clone() else {
-            return;
+        let Some(tab_id) = self.active_tab.clone() else {
+            return false;
         };
-        let Some(tab_id) = self.group_primary_ssh_tab_id(&active_group_id) else {
-            return;
+        let Some((backend, backend_generation)) = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == tab_id)
+            .and_then(|tab| {
+                (tab.kind == TabKind::Ssh && tab.connected && tab.connection_may_be_stale)
+                    .then(|| (tab.backend.clone(), tab.backend_generation))
+            })
+        else {
+            return false;
         };
-        let Some(tab_index) = self.tabs.iter().position(|tab| tab.id == tab_id) else {
-            return;
+        let Some(generation) = self.monitoring.begin_remote_sample(true) else {
+            return false;
         };
-        let shell_working_dir = self.tabs[tab_index].shell_working_dir.clone();
-        if let Some(path) = shell_working_dir {
-            let already_current = self
-                .active_sftp()
-                .is_some_and(|sftp| sftp.current_path == path);
-            if !already_current {
-                self.navigate_sftp(path, cx);
-            }
-            return;
+        if let Ok(backend) = backend.lock() {
+            backend.send(BackendCommand::CheckConnection {
+                generation,
+                backend_generation,
+            });
+            return true;
         }
 
-        self.tabs[tab_index].send_backend(BackendCommand::QueryWorkingDirectory);
-    }
-
-    pub(crate) fn sync_sftp_to_shell_working_dir_for_tab(
-        &mut self,
-        tab_id: &str,
-        path: &str,
-        cx: &mut Context<Self>,
-    ) {
-        if self.pending_sftp_selection_path.is_some() || self.active_sftp_has_configured_path() {
-            return;
-        }
-        if self.workspace_page != WorkspacePage::Sftp {
-            return;
-        }
-        let Some(active_group_id) = self.active_group.clone() else {
-            return;
-        };
-        if self.group_primary_ssh_tab_id(&active_group_id).as_deref() != Some(tab_id) {
-            return;
-        }
-        let already_current = self
-            .active_sftp()
-            .is_some_and(|sftp| sftp.current_path == path);
-        if !already_current {
-            self.navigate_sftp(path.to_string(), cx);
-        }
+        let _ = self.monitoring.finish_remote_sample(generation);
+        false
     }
 
     pub(crate) fn group_primary_ssh_tab_id(&self, group_id: &str) -> Option<String> {

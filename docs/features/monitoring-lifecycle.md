@@ -19,6 +19,10 @@ The configurable delay is Off, 1, 5, 15, or 30 minutes; the default is 5 minutes
 
 After the delay, AxShell keeps only low-frequency backend event handling. Deep sleep does not disconnect local terminals or SSH sessions. Refocusing the window restores rendering, monitoring, theme updates, and the active page immediately.
 
+## System Resume
+
+AxShell detects a long pause in its event loop as a possible system resume. It refreshes the visible context conservatively: the current SSH terminal receives one short connection check, while idle SFTP pages reconnect only when you next refresh or use them. It does not reconnect all SSH tabs or restart SFTP transfers automatically. If an SSH session was lost, use the existing reconnect action; use `tmux` or `screen` remotely when commands must survive a disconnect.
+
 For implementation boundaries and lifecycle rationale, see [Resource Lifecycle](../resource-lifecycle.md).
 
 <!-- Screenshot target: ../images/features/monitoring-dashboard.png -->

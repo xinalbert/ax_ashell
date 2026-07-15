@@ -40,6 +40,7 @@ use crate::sftp::{
 pub(super) async fn run_sftp(
     tab_id: String,
     session: Session,
+    initial_path: Option<String>,
     mut commands: UnboundedReceiver<SftpCommand>,
     commands_tx: UnboundedSender<SftpCommand>,
     events: BackendEventSender,
@@ -76,7 +77,7 @@ pub(super) async fn run_sftp(
         })
         .await;
 
-    let initial_path = sftp_initial_path(&session, &home);
+    let initial_path = sftp_initial_path(initial_path.as_deref(), &home);
     let mut browse_cursor = None;
     open_and_emit_browser_page(&events, &tab_id, &handle, &initial_path, &mut browse_cursor)
         .await?;
@@ -463,7 +464,16 @@ pub(super) async fn run_sftp(
                     let _ = commands_tx_clone.send(SftpCommand::TransferFinished(id));
                 });
             }
-            SftpCommand::EditFile { remote_path, pin } => {
+            SftpCommand::OpenFile {
+                remote_path,
+                watch_changes,
+                pin,
+            } => {
+                let operation = if watch_changes {
+                    "edit_remote_file"
+                } else {
+                    "open_remote_file"
+                };
                 let id = uuid::Uuid::new_v4().to_string();
                 let config = crate::config::ConfigStore::load()
                     .unwrap_or_else(|_| crate::config::ConfigStore::in_memory());
@@ -483,11 +493,11 @@ pub(super) async fn run_sftp(
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
                         Err(err) => {
-                            log_sftp_error("edit_open_session", &tab_id_clone, &err);
+                            log_sftp_error(operation, &tab_id_clone, &err);
                             let _ = events_clone
                                 .send(BackendEvent::SftpStatus {
                                     tab_id: tab_id_clone.clone(),
-                                    text: format!("Edit download failed: {err:#}"),
+                                    text: format!("File download failed: {err:#}"),
                                 })
                                 .await;
                             return;
@@ -509,30 +519,34 @@ pub(super) async fn run_sftp(
                         None,
                         &events_clone,
                         &tab_id_clone,
-                        "edit-download",
+                        operation,
                         true,
                         false,
                     )
                     .await
                     {
-                        log_sftp_error("edit_download", &tab_id_clone, &err);
+                        log_sftp_error(operation, &tab_id_clone, &err);
                         let _ = events_clone
                             .send(BackendEvent::SftpStatus {
                                 tab_id: tab_id_clone.clone(),
-                                text: format!("Edit download failed: {err:#}"),
+                                text: format!("File download failed: {err:#}"),
                             })
                             .await;
                         return;
                     }
 
                     if let Err(err) = open::that(&local_path) {
-                        log_sftp_error("edit_open_editor", &tab_id_clone, &err);
+                        log_sftp_error(operation, &tab_id_clone, &err);
                         let _ = events_clone
                             .send(BackendEvent::SftpStatus {
                                 tab_id: tab_id_clone.clone(),
-                                text: format!("Failed to open editor: {err:#}"),
+                                text: format!("Failed to open file: {err:#}"),
                             })
                             .await;
+                        return;
+                    }
+
+                    if !watch_changes {
                         return;
                     }
 
@@ -807,8 +821,11 @@ fn queue_list_dir(
     let _ = commands.send(SftpCommand::ListDir { path, pin });
 }
 
-fn sftp_initial_path(session: &Session, home: &str) -> String {
-    crate::sftp::resolve_remote_path(home, &session.sftp_path, home)
+fn sftp_initial_path(initial_path: Option<&str>, home: &str) -> String {
+    if let Some(path) = initial_path.filter(|path| !path.trim().is_empty()) {
+        return crate::sftp::resolve_remote_path(home, path, home);
+    }
+    home.to_string()
 }
 
 async fn cancel_sftp_child_tasks(
@@ -829,30 +846,25 @@ mod lifecycle_tests {
 
     use tokio::task::JoinSet;
 
-    use crate::session::Session;
-
     use super::{SftpWorkTracker, TransferStateFlag, cancel_sftp_child_tasks, sftp_initial_path};
 
     #[test]
-    fn sftp_initial_path_uses_the_session_path_or_server_home() {
-        let mut session = Session::password(
-            "example.com".into(),
-            22,
-            "administrator".into(),
-            "password".into(),
-        );
+    fn sftp_initial_path_uses_the_selected_path_or_server_home() {
         let home = "/C:/Users/Administrator";
 
-        assert_eq!(sftp_initial_path(&session, home), home);
-
-        session.sftp_path = "~/2026".into();
+        assert_eq!(sftp_initial_path(None, home), home);
         assert_eq!(
-            sftp_initial_path(&session, home),
+            sftp_initial_path(Some("/srv/last-opened"), home),
+            "/srv/last-opened"
+        );
+        assert_eq!(
+            sftp_initial_path(Some("~/2026"), home),
             "/C:/Users/Administrator/2026"
         );
-
-        session.sftp_path = "/G:/albertxin/2026".into();
-        assert_eq!(sftp_initial_path(&session, home), "/G:/albertxin/2026");
+        assert_eq!(
+            sftp_initial_path(Some("/G:/albertxin/2026"), home),
+            "/G:/albertxin/2026"
+        );
     }
 
     #[tokio::test]
