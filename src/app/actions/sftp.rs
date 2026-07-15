@@ -1747,4 +1747,25 @@ mod idle_reclaim_tests {
         assert!(!should_mark_sftp_connection_stale(0, true, false));
         assert!(!should_mark_sftp_connection_stale(0, false, true));
     }
+
+    #[test]
+    fn sftp_worker_initial_path_prefers_active_then_configured_then_remembered() {
+        assert_eq!(
+            sftp_worker_initial_path(
+                Some("/srv/current".into()),
+                "/srv/configured",
+                Some("/srv/remembered".into()),
+            ),
+            Some("/srv/current".into())
+        );
+        assert_eq!(
+            sftp_worker_initial_path(None, "/srv/configured", Some("/srv/remembered".into()),),
+            Some("/srv/configured".into())
+        );
+        assert_eq!(
+            sftp_worker_initial_path(None, "  ", Some("/srv/remembered".into())),
+            Some("/srv/remembered".into())
+        );
+        assert_eq!(sftp_worker_initial_path(None, "", None), None);
+    }
 }

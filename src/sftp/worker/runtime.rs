@@ -808,8 +808,11 @@ fn queue_list_dir(
     let _ = commands.send(SftpCommand::ListDir { path, pin });
 }
 
-fn sftp_initial_path(session: &Session, home: &str) -> String {
-    crate::sftp::resolve_remote_path(home, &session.sftp_path, home)
+fn sftp_initial_path(initial_path: Option<&str>, home: &str) -> String {
+    if let Some(path) = initial_path.filter(|path| !path.trim().is_empty()) {
+        return crate::sftp::resolve_remote_path(home, path, home);
+    }
+    home.to_string()
 }
 
 async fn cancel_sftp_child_tasks(
