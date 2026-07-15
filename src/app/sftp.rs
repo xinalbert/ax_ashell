@@ -89,6 +89,7 @@ pub(crate) struct LocalFileBrowserState {
 #[derive(Clone)]
 pub(crate) enum SftpContextMenuTarget {
     Remote { path: String, is_dir: bool },
+    RemoteDirectory,
     Local { path: String, is_dir: bool },
 }
 

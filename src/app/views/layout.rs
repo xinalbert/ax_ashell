@@ -373,7 +373,14 @@ impl Render for AxShell {
                 let menu_radius = cx.theme().radius;
                 let menu_fg = cx.theme().popover_foreground;
                 let menu_width = px(190.);
-                let menu_height = px(128.);
+                let menu_item_count = match &menu.target {
+                    SftpContextMenuTarget::Remote { path, is_dir } => {
+                        7 + usize::from(!is_dir && is_editable_text_file(path))
+                    }
+                    SftpContextMenuTarget::RemoteDirectory => 4,
+                    SftpContextMenuTarget::Local { .. } => 3,
+                };
+                let menu_height = px(8. + 30. * menu_item_count as f32);
                 let menu_margin = px(8.);
                 let viewport_size = window.viewport_size();
                 let max_left = (viewport_size.width - menu_width - menu_margin).max(menu_margin);
@@ -414,6 +421,21 @@ impl Render for AxShell {
                                             cx.stop_propagation();
                                         }),
                                     ))
+                            })
+                            .when(!is_dir, |this| {
+                                this.child(
+                                    menu_item(
+                                        "sftp-context-open-remote-file",
+                                        t!("open_file").to_string(),
+                                    )
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.trigger_sftp_context_open_remote_file(cx);
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
+                                )
                             })
                             .child(
                                 menu_item("sftp-context-download", download_label).on_mouse_down(
@@ -494,6 +516,58 @@ impl Render for AxShell {
                             )
                             .into_any_element()
                     }
+                    SftpContextMenuTarget::RemoteDirectory => v_flex()
+                        .w_full()
+                        .child(
+                            menu_item("sftp-context-directory-refresh", t!("refresh").to_string())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _, _, cx| {
+                                        this.trigger_sftp_context_refresh(cx);
+                                        cx.stop_propagation();
+                                    }),
+                                ),
+                        )
+                        .child(
+                            menu_item(
+                                "sftp-context-directory-new-folder",
+                                t!("new_folder").to_string(),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    this.trigger_sftp_context_new_folder(window, cx);
+                                    cx.stop_propagation();
+                                }),
+                            ),
+                        )
+                        .child(
+                            menu_item(
+                                "sftp-context-directory-upload-file",
+                                t!("upload_file").to_string(),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    this.trigger_sftp_context_upload_file(window, cx);
+                                    cx.stop_propagation();
+                                }),
+                            ),
+                        )
+                        .child(
+                            menu_item(
+                                "sftp-context-directory-upload-folder",
+                                t!("upload_folder").to_string(),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    this.trigger_sftp_context_upload_folder(window, cx);
+                                    cx.stop_propagation();
+                                }),
+                            ),
+                        )
+                        .into_any_element(),
                     SftpContextMenuTarget::Local { is_dir, .. } => v_flex()
                         .w_full()
                         .child(

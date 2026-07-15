@@ -1263,6 +1263,21 @@ impl AxShell {
         cx.notify();
     }
 
+    pub(crate) fn open_sftp_directory_context_menu(
+        &mut self,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.sftp_transfer_context_menu = None;
+        self.saved_session_context_menu = None;
+        self.saved_group_context_menu = None;
+        self.sftp_context_menu = Some(SftpContextMenuState {
+            target: SftpContextMenuTarget::RemoteDirectory,
+            position,
+        });
+        cx.notify();
+    }
+
     pub(crate) fn open_local_sftp_context_menu(
         &mut self,
         local_path: String,
@@ -1331,6 +1346,28 @@ impl AxShell {
         cx.notify();
     }
 
+    pub(crate) fn trigger_sftp_context_open_remote_file(&mut self, cx: &mut Context<Self>) {
+        let Some(menu) = self.sftp_context_menu.take() else {
+            return;
+        };
+        if let SftpContextMenuTarget::Remote {
+            path,
+            is_dir: false,
+        } = menu.target
+            && let Some(handle) = self.ensure_active_sftp_handle()
+        {
+            self.mark_active_sftp_activity();
+            tracing::info!(
+                component = "sftp",
+                operation = "open_remote_file",
+                remote_path = %crate::diagnostics::mask_path(&path),
+                "Downloading remote file for the default system application"
+            );
+            handle.open_file(path);
+        }
+        cx.notify();
+    }
+
     pub(crate) fn trigger_sftp_context_open(&mut self, cx: &mut Context<Self>) {
         let Some(menu) = self.sftp_context_menu.take() else {
             return;
@@ -1341,6 +1378,7 @@ impl AxShell {
                     self.navigate_sftp(path, cx);
                 }
             }
+            SftpContextMenuTarget::RemoteDirectory => {}
             SftpContextMenuTarget::Local { path, is_dir } => {
                 self.open_local_file_browser_entry(path, is_dir, cx);
             }
@@ -1353,7 +1391,9 @@ impl AxShell {
             return;
         };
         match menu.target {
-            SftpContextMenuTarget::Remote { .. } => self.refresh_sftp(cx),
+            SftpContextMenuTarget::Remote { .. } | SftpContextMenuTarget::RemoteDirectory => {
+                self.refresh_sftp(cx);
+            }
             SftpContextMenuTarget::Local { .. } => self.refresh_local_file_browser(cx),
         }
         cx.notify();
@@ -1367,7 +1407,10 @@ impl AxShell {
         let Some(menu) = self.sftp_context_menu.take() else {
             return;
         };
-        if matches!(menu.target, SftpContextMenuTarget::Remote { .. }) {
+        if matches!(
+            menu.target,
+            SftpContextMenuTarget::Remote { .. } | SftpContextMenuTarget::RemoteDirectory
+        ) {
             self.sftp_creating_folder = true;
             self.sftp_new_folder_input.update(cx, |input, cx| {
                 input.set_value("", window, cx);
@@ -1385,7 +1428,10 @@ impl AxShell {
         let Some(menu) = self.sftp_context_menu.take() else {
             return;
         };
-        if matches!(menu.target, SftpContextMenuTarget::Remote { .. }) {
+        if matches!(
+            menu.target,
+            SftpContextMenuTarget::Remote { .. } | SftpContextMenuTarget::RemoteDirectory
+        ) {
             self.upload_sftp_files(window, cx);
         }
         cx.notify();

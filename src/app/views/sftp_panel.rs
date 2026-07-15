@@ -475,6 +475,14 @@ impl AxShell {
                     .relative()
                     .min_h(px(0.))
                     .when(remote_ready, |this| {
+                        this.on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                                this.open_sftp_directory_context_menu(event.position, cx);
+                            }),
+                        )
+                    })
+                    .when(remote_ready, |this| {
                         this.child({
                             let entries = remote_entries.clone();
                             let selected_entries = remote_selected_entries.clone();
@@ -559,6 +567,7 @@ impl AxShell {
                                                                     event.position,
                                                                     cx,
                                                                 );
+                                                                cx.stop_propagation();
                                                             }
                                                         }),
                                                     )
@@ -1089,6 +1098,7 @@ impl AxShell {
                                                                 event.position,
                                                                 cx,
                                                             );
+                                                            cx.stop_propagation();
                                                             }
                                                         }),
                                                     )

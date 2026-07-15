@@ -464,7 +464,16 @@ pub(super) async fn run_sftp(
                     let _ = commands_tx_clone.send(SftpCommand::TransferFinished(id));
                 });
             }
-            SftpCommand::EditFile { remote_path, pin } => {
+            SftpCommand::OpenFile {
+                remote_path,
+                watch_changes,
+                pin,
+            } => {
+                let operation = if watch_changes {
+                    "edit_remote_file"
+                } else {
+                    "open_remote_file"
+                };
                 let id = uuid::Uuid::new_v4().to_string();
                 let config = crate::config::ConfigStore::load()
                     .unwrap_or_else(|_| crate::config::ConfigStore::in_memory());
@@ -484,11 +493,11 @@ pub(super) async fn run_sftp(
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
                         Err(err) => {
-                            log_sftp_error("edit_open_session", &tab_id_clone, &err);
+                            log_sftp_error(operation, &tab_id_clone, &err);
                             let _ = events_clone
                                 .send(BackendEvent::SftpStatus {
                                     tab_id: tab_id_clone.clone(),
-                                    text: format!("Edit download failed: {err:#}"),
+                                    text: format!("File download failed: {err:#}"),
                                 })
                                 .await;
                             return;
@@ -510,30 +519,34 @@ pub(super) async fn run_sftp(
                         None,
                         &events_clone,
                         &tab_id_clone,
-                        "edit-download",
+                        operation,
                         true,
                         false,
                     )
                     .await
                     {
-                        log_sftp_error("edit_download", &tab_id_clone, &err);
+                        log_sftp_error(operation, &tab_id_clone, &err);
                         let _ = events_clone
                             .send(BackendEvent::SftpStatus {
                                 tab_id: tab_id_clone.clone(),
-                                text: format!("Edit download failed: {err:#}"),
+                                text: format!("File download failed: {err:#}"),
                             })
                             .await;
                         return;
                     }
 
                     if let Err(err) = open::that(&local_path) {
-                        log_sftp_error("edit_open_editor", &tab_id_clone, &err);
+                        log_sftp_error(operation, &tab_id_clone, &err);
                         let _ = events_clone
                             .send(BackendEvent::SftpStatus {
                                 tab_id: tab_id_clone.clone(),
-                                text: format!("Failed to open editor: {err:#}"),
+                                text: format!("Failed to open file: {err:#}"),
                             })
                             .await;
+                        return;
+                    }
+
+                    if !watch_changes {
                         return;
                     }
 

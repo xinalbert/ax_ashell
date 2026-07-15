@@ -38,8 +38,9 @@ enum SftpCommand {
         local_dir: String,
         pin: SftpWorkPin,
     },
-    EditFile {
+    OpenFile {
         remote_path: String,
+        watch_changes: bool,
         pin: SftpWorkPin,
     },
     CreateDir {
@@ -167,7 +168,19 @@ impl SftpHandle {
     }
 
     pub(crate) fn edit_file(&self, remote_path: String) -> bool {
-        self.send_work_command(|pin| SftpCommand::EditFile { remote_path, pin })
+        self.send_work_command(|pin| SftpCommand::OpenFile {
+            remote_path,
+            watch_changes: true,
+            pin,
+        })
+    }
+
+    pub(crate) fn open_file(&self, remote_path: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::OpenFile {
+            remote_path,
+            watch_changes: false,
+            pin,
+        })
     }
 
     pub(crate) fn create_dir(&self, path: String) -> bool {
