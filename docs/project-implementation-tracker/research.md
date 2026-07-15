@@ -1,5 +1,15 @@
 # 外部检索记录
 
+## 2026-07-15 高刷新率与自适应帧率调度
+
+- 时间：2026-07-15 11:58 +0800
+- 检索问题：AxShell 是否应自行读取 120Hz / VRR 显示器刷新率，如何在不增加空闲资源消耗的前提下让活动终端刷新适配实际帧率。
+- 检索原因：实现依赖锁定 GPUI 对平台帧回调、VRR 和热压力的实际语义，不能按通用 GUI 框架假设设计。
+- 来源列表：Zed / GPUI `window.rs` <https://github.com/zed-industries/zed/blob/main/crates/gpui/src/window.rs>；Zed `gpui_wgpu/wgpu_renderer.rs` <https://github.com/zed-industries/zed/blob/main/crates/gpui_wgpu/src/wgpu_renderer.rs>；Zed macOS window backend <https://github.com/zed-industries/zed/blob/main/crates/gpui_macos/src/window.rs>；Zed Linux X11 client <https://github.com/zed-industries/zed/blob/main/crates/gpui_linux/src/linux/x11/client.rs>；WGPU `PresentMode` <https://wgpu.rs/doc/wgpu/enum.PresentMode.html>。
+- 关键结论：GPUI 上游仅在窗口 dirty 时重建场景，并在高频输入时选择性保持 presentation 以支持 VRR；非活跃窗口约限 30Hz，严重/临界热压力约限 60Hz。WGPU 默认 FIFO VSync；macOS 帧源跟随窗口当前屏幕，Linux X11 读取当前 mode 的刷新周期。GPUI 没有适合 AxShell 直接跨平台读取并持久化显示器 Hz 的公开 API。
+- 对实施计划的影响：保留 GPUI / WGPU 的平台帧源和保护策略。AxShell 只在新前台活动 burst 中请求三个 animation frame 采样实际间隔；采样有效后将终端/UI 合帧间隔限制在 8.333ms 至 33ms。无效、陈旧或无活动时回退当前 16ms，不创建常驻 animation loop。
+- 未解决问题：锁定依赖是 Git 提交而不是版本化稳定 API；跨显示器移动、不同 VRR 策略和 Windows 组合器行为需要三平台实机帧率、CPU、GPU 与功耗采样确认。
+
 ## 2026-07-14 WinSCP 多文件传输队列模型
 
 - 时间：2026-07-14 19:42 +0800

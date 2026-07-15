@@ -2,57 +2,54 @@
 
 ## 当前目标
 
-- 目标：实现不依赖原生平台 API 的系统 suspend/resume MVP 兜底，在长时间未调度后安全恢复应用状态，避免旧监控结果、假活连接和恢复风暴。
-- 交付物：基于长调度间隙的恢复检测、幂等恢复 reducer、远程监控代次隔离、仅活动 SSH 的单次健康探测、活动 SFTP 的可能失效标记、单元测试和双语资源生命周期文档。
+- 目标：让前台活动终端和 UI 刷新跟随实际显示帧节奏，最高 120Hz，同时保持空闲、后台和深睡的既有资源策略。
+- 交付物：有界帧节奏采样状态、前台活动合帧间隔适配、单元测试、双语资源策略说明和验证记录。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/state/lifecycle.rs`、`src/app/state/monitoring.rs`、`src/app/lifecycle/event_loop.rs`、`src/app/workspace.rs`、`src/events.rs`、`src/backend/ssh.rs`、`src/app/actions/sftp.rs`、`docs/resource-lifecycle.md`、`docs/resource-lifecycle.zh.md`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：macOS `NSWorkspace`、Windows `WM_POWERBROADCAST`、Linux logind D-Bus 原生事件；自动重连 SSH；自动重启或续传 SFTP；终端/SFTP 架构重构；依赖、`Cargo.toml`、`Cargo.lock`、CI workflow 与退出流程重构。
+- 当前范围：`src/app/state/runtime.rs`、`src/app/lifecycle/event_loop.rs`、`src/app/views/layout.rs`、`docs/resource-lifecycle.md`、`docs/resource-lifecycle.zh.md`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：`Cargo.toml` / `Cargo.lock`、GPUI 或 WGPU 依赖升级、平台私有显示器枚举、常驻动画循环、用户可配置帧率、后台/深睡时的高刷新、SSH/SFTP 架构调整。
 
 ## 当前状态
 
 - 阶段：已完成
 - 开工判定：允许开工
-- 是否需要联网：否
+- 是否需要联网：是，已完成
 - 多 agent：未使用
 
 ## 活动计划
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 环境预检、现有生命周期/监控/SSH/SFTP 边界和 MVP 范围 | 环境记录、项目地图、源码审查 | 固定 10 秒调度间隙作为跨平台恢复兜底，避免误判后台节流 |
-| P2 | completed | 恢复 reducer、调度间隙检测和监控代次隔离 | 4 项恢复相关单元测试、`cargo check` | 旧 probe 结果不能影响恢复后的当前页面 |
-| P3 | completed | 当前上下文单次健康检查与 SFTP 可能失效状态 | SSH/SFTP action 与 event-loop 审查、完整测试 | 不自动重连、不批量采样、不续传 |
-| P4 | completed | 文档、完整验证与记录收口 | `cargo test --quiet`、`git diff --check`、tracking validator | 原生三平台电源事件作为正式阶段后续工作 |
+| P1 | completed | 锁定 GPUI 帧回调、VRR / VSync 及平台刷新策略结论 | 上游源码与 WGPU 文档核对 | 不在 AxShell 内新增显示器 Hz 枚举 |
+| P2 | completed | 有界帧节奏采样状态和前台事件泵接线 | 6 项单元测试、`cargo check` | 三个 GPUI animation frame 仅用于新活动 burst 校准 |
+| P3 | completed | 根视图采样、双语资源策略与边界文档 | 代码审查、文档检查 | 无活动时不请求 animation frame |
+| P4 | completed | 格式化、聚焦/完整测试、空白检查和跟踪记录收口 | `rustfmt`、`cargo test`、`cargo check`、validator | 真实 60/120Hz / VRR GUI 验收保留 |
 
 ## 已完成
 
-- 已完成 Rust 2024 / Cargo 施工前预检；本机 `rustc 1.96.1`、`cargo 1.96.1` 满足仓库 `rust-version = 1.88.0`。
-- 已确认 `Foreground / Background / DeepSleep` 使用 GPUI 窗口激活事件，后台 250ms、深睡 1s；尚未接入 OS suspend/resume。
-- 已确认 SSH/SFTP 关闭使用 2 秒 timeout/abort，SFTP worker 使用 work pin；这些机制不需要重构。
-- 已确认系统恢复后风险集中在过期 remote probe、监控 in-flight 标记、SFTP server-side handle 假活和恢复风暴。
-- 恢复兜底同时比较单调时钟和墙上时钟的 10 秒事件泵间隙；恢复后监控代次递增，旧 remote probe 结果被忽略。
-- 仅当前可见 terminal SSH 会发起一次 5 秒 SSH session-open 健康检查。检查事件还绑定 terminal backend 代次，用户重连后的旧结果不能关闭或改写新连接。
-- 空闲 SFTP worker 被标记为下次用户操作时重建；有 work pin、活动/暂停传输、远程编辑或排队操作的 worker 保持不动，且不会自动恢复传输。
+- 已确认前台终端/UI 事件泵固定以 16ms 合并刷新，空闲前台为约 1Hz 保活，后台为 250ms，深睡为 1s。
+- 已确认锁定 GPUI 仅在窗口 dirty 时重建场景；上游对非活跃窗口和热压力已有 30Hz / 60Hz 保护。
+- 已确认 WGPU FIFO VSync 和 macOS / Linux 平台帧源已由 GPUI 负责；应用层无需读取或持久化显示器刷新率。
+- 已实现三帧校准、60–120Hz 合帧钳制、2 秒样本过期和窗口移动/缩放、失焦、系统恢复时的样本失效。
+- 已保留 idle 33ms、后台 250ms、深睡 1s 和 GPUI 的直接输入 / VRR、非活动窗口、热压力保护路径。
 
 ## 验证
 
-- 已完成：环境预检、实施记录与项目地图审查、生命周期/监控/SSH/SFTP worker 恢复边界审查、受影响 Rust 文件 `rustfmt --edition 2024`、恢复相关单元测试（4 项）、`cargo check`、完整 `cargo test --quiet`（194 项）、`git diff --check` 与 tracking docs validator。
-- 未完成：macOS、Windows、Linux 的睡眠、可用时休眠、睡眠期间网络变化、活动 SSH、空闲 SFTP 页面和带 pin 传输的实机验收；正式原生电源事件接入。
+- 已完成：环境记录、实施记录、项目地图、当前事件泵/运行时/根视图和锁定 GPUI 帧回调路径审查；上游联网研究；受影响 Rust 文件 `rustfmt --edition 2024`、帧节奏测试（6 项）、`cargo check`、完整 `cargo test --quiet`（200 项）、`git diff --check` 与 tracking docs validator。
+- 未完成：60Hz / 120Hz / VRR 实机采样。
 
 ## 风险与阻塞
 
-- 风险：长调度间隙是通用兜底，不能区分系统睡眠、调试器暂停或极端主线程阻塞；正式阶段必须接入每个平台原生电源事件。
-- 风险：标准 SSH 不能恢复断开的交互 shell；MVP 只能提示并提供已有的用户主动重连路径。
-- 风险：SFTP 传输的安全续传需要单独的断点、远端大小校验和覆盖策略设计；本轮仅标记可能失效，不自动重新开始。
+- 风险：持续满载输出在 120Hz 显示器上可增加前台 CPU/GPU 消耗；本轮只保证无活动、后台和深睡不增加常驻工作。
+- 风险：跨屏切换和某些 VRR / 合成器组合可能暂时给出不稳定帧间隔；无效或过期样本必须回退现有 16ms。
 - 无阻塞。
 
 ## 下一步
 
-- 在三平台实机按资源生命周期文档执行睡眠/唤醒与断网矩阵；之后单独设计 `PowerEvent::Suspend/Resume` 的原生事件适配层，继续保留本轮 10 秒兜底。
+- 在 macOS、Windows 和 Linux 的 60Hz / 120Hz / VRR 显示器上采集前台持续输出与静止窗口的 FPS、CPU、GPU 和功耗；确认跨屏移动后下一 burst 重新校准。
 
 ## 最后更新时间
 
-- 2026-07-15 11:09 +0800
+- 2026-07-15 12:10 +0800

@@ -1,3 +1,11 @@
+## 2026-07-15 高刷新率自适应刷新环境验证
+
+- 时间：2026-07-15 12:10 +0800
+- 变化摘要：前台 terminal/UI 变化会启动最多 3 帧的 GPUI animation frame 校准；有效样本将应用层合帧周期限定在 60–120Hz。窗口移动/缩放、失焦和系统恢复会清除样本；没有变化时不保留 animation frame 请求，后台 250ms、深睡 1s 和空闲低频通知不变。
+- 受影响文件：`src/app/state/runtime.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/lifecycle/init.rs`，`src/app/views/layout.rs`，`docs/resource-lifecycle*.md`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo 和锁定 GPUI；不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`。上游 GPUI / WGPU 帧调度资料已联网确认。
+- 验证结果：`rustfmt --edition 2024` 通过；帧节奏测试 6 项通过；`cargo check` 通过；完整 `cargo test --quiet` 200 项通过；`git diff --check` 和 tracking validator 通过。仅保留依赖 `block v0.1.6` 的 future-incompat warning。
+
 ## 2026-07-14 SFTP 下载任务文件明细预检
 
 - 日期：2026-07-14 19:42 +0800
