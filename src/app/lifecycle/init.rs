@@ -458,6 +458,7 @@ impl AxShell {
             tabs: Vec::new(),
             active_tab: None,
             tab_groups: Vec::new(),
+            workspace_group_instance_counts: std::collections::HashMap::new(),
             active_group: None,
             pane_root: PaneLayout::Single(String::new()),
             focused_pane_path: Vec::new(),

@@ -17,7 +17,7 @@
 | --- | --- | --- | --- |
 | `AGENTS.md` | Codex 仓库级持久指令 | 改 agent 默认约束、Rust 模块布局规则、Settings 下拉/hover 性能规则、验证/提交/tag 习惯或长期项目工作约定时 | Codex 默认读取 `AGENTS.md`；`.agent` 不是默认加载文件名，除非客户端配置了 fallback |
 | `.agents/skills/` | 项目本地 agent skill 目录 | 需要给后续 agent 固化项目专用工作流、交互规范或可复用检查清单时 | 当前包含 `ax-ashell-fast-hover`，用于统一 AxShell 下拉、长列表和菜单行快速 hover 规则 |
-| `src/app.rs` | 应用壳入口，声明 app 子模块、`AxShell` 状态结构和 type re-export | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel、Settings generation、saved context menu state、模块出口或跨模块共享类型时 | 现代 Rust 具名入口；不再使用 `src/app/mod.rs` |
+| `src/app.rs` | 应用壳入口，声明 app 子模块、`AxShell` 状态结构和 type re-export | 新增/调整应用级状态字段、输入实体、scroll handle、runtime/event channel、workspace group 实例号、Settings generation、saved context menu state、模块出口或跨模块共享类型时 | 现代 Rust 具名入口；不再使用 `src/app/mod.rs` |
 | `src/app/` | 应用壳、功能状态、动作、视图、对话框、输入和生命周期实现 | 调整 AxShell 状态、工作区、SFTP UI、terminal UI、搜索、同步、菜单、启动、共享 hover、Settings 快速菜单或事件泵时 | `input.rs` / `lifecycle.rs` 是真实父模块入口；单文件功能直接位于 `app/` |
 | `src/events.rs` | backend、SFTP、监控和同步共用的有界应用事件总线 | 改事件载荷、发送端类型、队列容量或 app event loop 接线时 | 256 条 Tokio channel；远程监控和 SSH 恢复检查事件携带 generation；SFTP 下载文件以 `TransferFileStarted` / `TransferFileFinished` 附着于批量 transfer；terminal `Output` 由 event loop 在连续输出段中批处理 |
 | `src/diagnostics.rs` | 跨模块日志脱敏与诊断 helper | 改主机、用户、路径、错误链已知敏感值脱敏或统一诊断字段时 | 不得记录密码、私钥内容、token 或终端输入输出 |
@@ -81,7 +81,7 @@
 | `src/app/lifecycle/event_loop.rs` | 输入事件、后台事件分发、系统采样、主题同步和恢复兜底 | `on_input_event`，`start_event_pump`，`detect_system_resume`，`handle_system_resume`，`drain_backend_events`，`TransferStarted` / `TransferProgress`，`flush_terminal_output` | 连续 `Output` 段按 tab 聚合；不执行文件图标解析；长时间未调度仅恢复当前上下文，不自动重连 |
 | `src/app/constants.rs` | app 尺寸、快捷键 context、仓库 URL 和版本展示 | layout constants，`TERMINAL_KEY_CONTEXT`，`public_version_label` | 改 UI 固定尺寸、入口链接或公开版本文案时 |
 | `src/app/pane.rs` | pane tree 数据模型 | `PaneLayout` | 改 split tree、tab 查找、替换、删除或 pane 统计时 |
-| `src/app/workspace.rs` | 工作区页面、tab/group 模型、连接进度、远程采样和布局持久化 | `TabGroup`，`WorkspacePage`，`workspace_tabs`，`set_workspace_page`，`open_settings_page`，`open_about_page`，`request_active_ssh_resume_health_check` | 改 terminal/SFTP/settings tab、SFTP-only group 可见性和关闭回退、当前 tab 可见性、Settings 重开状态重置或指定分页跳转、页面关闭、连接重试、恢复健康检查或监控采样时 |
+| `src/app/workspace.rs` | 工作区页面、tab/group 模型、会话组重排和同名实例号、连接进度、远程采样和布局持久化 | `TabGroup`，`WorkspacePage`，`workspace_tabs`，`next_workspace_group_instance`，`move_workspace_group_before`，`set_workspace_page`，`open_settings_page`，`open_about_page`，`request_active_ssh_resume_health_check` | 改 terminal/SFTP/settings tab、同名会话实例标识、会话组顺序、SFTP-only group 可见性和关闭回退、当前 tab 可见性、Settings 重开状态重置或指定分页跳转、页面关闭、连接重试、恢复健康检查或监控采样时 |
 | `src/app/sftp.rs` | app 层 SFTP 页面、本地浏览、排序和右键菜单状态 | `SftpUiState`，`LocalFileBrowserState`，`SftpContextMenuState`，`SftpTransferContextMenuState` | 改 SFTP UI 状态模型、文件/传输右键菜单而非协议 worker 时 |
 | `src/app/terminal.rs` | app 层 terminal 字体/滚动条/链接视觉状态 | `TerminalFontMetrics`，`TerminalScrollbarHandle`，`HoveredUrl`，`terminal_link_visual_active` | 改 terminal UI metrics、scrollbar adapter、URL/path hover 或 Command/Ctrl 激活提示时 |
 | `src/app/session_ui.rs` | session selector 与连接进度 UI 模型 | `SelectorEntry`，`ConnectionProgress` | 改 session selector 条目或连接进度遮罩状态时 |
@@ -111,7 +111,7 @@
 | `src/app/views/sftp_panel/transfer_panel.rs` | SFTP 页面传输标签、固定列表列和传输行渲染 | `render_sftp_transfer_panel`，`render_sftp_transfer_header`，`render_sftp_transfer_row`，任务当前文件/文件数、时间/速度 helper | 改当前 group 传输隔离、状态页计数、固定列、下载文件清单入口、列表专用 hover、更多/右键操作或传输状态文案时 |
 | `src/app/views/sidebar.rs` | 展开/收起侧栏和 saved session entry 渲染 | `sidebar`，`render_collapsed_sidebar`，saved sidebar row renderers | 展开/折叠会话行分别缓存 tooltip 和右键复制信息；改 SAVED 列表、`uniform_list` 可见行、分组展开/重命名、分组/单条 SSH 右键入口、折叠态入口或本地终端固定入口时 |
 | `src/app/views/monitoring.rs` | 底部/侧栏监控面板 | `render_monitoring_panel`，`render_sidebar_monitoring_panel` | 改 CPU/MEM/NET/DISK 展示、sparkline、监控位置或滚动条时 |
-| `src/app/views/tab_bar.rs` | 顶部 tab bar 和 split/search 操作按钮 | `render_tab_bar`，`tabs_scroll_handle` | 改编号 terminal/SFTP 标签、当前 tab 自动可见、SFTP 标签关闭、tab 选择/关闭、settings tab、split pane 按钮或 tab bar 搜索按钮时 |
+| `src/app/views/tab_bar.rs` | 顶部 tab bar、会话组拖放、同名实例标签和 split/search 操作按钮 | `render_tab_bar`，`WorkspaceTabDrag`，`tabs_scroll_handle` | 改编号 terminal/SFTP 标签、同名会话实例标识、会话组拖放重排、当前 tab 自动可见、SFTP 标签关闭、tab 选择/关闭、settings tab、split pane 按钮或 tab bar 搜索按钮时 |
 | `src/app/views/terminal_panel.rs` | 终端工作区、SFTP 页面、settings 页面承载和 pane tree 渲染 | `render_terminal_panel`，`render_pane_tree`，terminal link cursor gate | SFTP 页面复用保存 SSH 的动态连接快捷键；改终端 focus/key/mouse、Command/Ctrl 链接手型、右侧滚动槽、pane splitter、disconnect overlay、SFTP 页面挂载或 settings 页面承载时 |
 | `src/app/views/helpers.rs` | views 内部小 helper | `bind_titlebar_drag`，`collapsed_sidebar_abbrev`，`render_home_page` | 改集成标题栏拖动、折叠侧栏简称或空首页时 |
 | `src/backend/auth.rs` | SSH / SFTP 共用私钥解析和 public key 算法 fallback helper | `load_session_private_key`，`private_keys_with_algs` | 改 inline key、key path、passphrase 或 RSA SHA512/SHA256/none fallback 顺序时 |

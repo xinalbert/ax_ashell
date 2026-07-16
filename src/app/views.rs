@@ -28,7 +28,7 @@ use crate::{
     },
     app::{
         LocalFileEntry, SftpContextMenuTarget, SftpSortColumn, SftpTransferTab, SortDirection,
-        WorkspacePage,
+        WorkspacePage, workspace_group_tab_label,
     },
     monitoring::format_bytes,
     sftp::format_mtime,

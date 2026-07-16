@@ -1,5 +1,23 @@
 use super::*;
 
+#[derive(Clone)]
+struct WorkspaceTabDrag {
+    group_id: String,
+}
+
+impl Render for WorkspaceTabDrag {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .rounded_sm()
+            .bg(gpui::black().opacity(0.75))
+            .text_size(rems(0.833))
+            .text_color(gpui::white())
+            .child("Move workspace tab")
+    }
+}
+
 impl AxShell {
     pub(super) fn render_tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let workspace_tabs = self.workspace_tabs();
@@ -132,24 +150,38 @@ impl AxShell {
                                                 let title = group
                                                     .map(|group| group.title.clone())
                                                     .unwrap_or_else(|| "Unknown".to_string());
-                                                if pane_ids.len() > 1 {
-                                                    format!(
-                                                        "{} {} ({})",
-                                                        group_index + 1,
-                                                        title,
-                                                        pane_ids.len()
-                                                    )
-                                                } else {
-                                                    format!("{} {}", group_index + 1, title)
-                                                }
+                                                let instance_number = group
+                                                    .map(|group| group.instance_number)
+                                                    .unwrap_or(1);
+                                                workspace_group_tab_label(
+                                                    group_index,
+                                                    &title,
+                                                    instance_number,
+                                                    WorkspacePage::Terminal,
+                                                    pane_ids.len(),
+                                                )
                                             }
                                             WorkspacePage::Sftp => {
-                                                format!("{} SFTP", group_index + 1)
+                                                let title = group
+                                                    .map(|group| group.title.clone())
+                                                    .unwrap_or_else(|| "Unknown".to_string());
+                                                let instance_number = group
+                                                    .map(|group| group.instance_number)
+                                                    .unwrap_or(1);
+                                                workspace_group_tab_label(
+                                                    group_index,
+                                                    &title,
+                                                    instance_number,
+                                                    WorkspacePage::Sftp,
+                                                    0,
+                                                )
                                             }
                                             WorkspacePage::Settings => unreachable!(),
                                         };
                                         let target_page = page;
                                         let target_group_id = group_id.clone();
+                                        let drop_target_group_id = group_id.clone();
+                                        let dragged_group_id = group_id.clone();
                                         let close_sftp_group_id = group_id.clone();
                                         let is_terminal_tab =
                                             target_page == WorkspacePage::Terminal;
@@ -185,6 +217,34 @@ impl AxShell {
                                                     cx,
                                                 );
                                             }))
+                                            .cursor_move()
+                                            .on_drag(
+                                                WorkspaceTabDrag {
+                                                    group_id: dragged_group_id,
+                                                },
+                                                |drag, _, _, cx| cx.new(|_| drag.clone()),
+                                            )
+                                            .drag_over::<WorkspaceTabDrag>({
+                                                let drop_target_group_id =
+                                                    drop_target_group_id.clone();
+                                                move |this, drag, _, cx| {
+                                                    if drag.group_id == drop_target_group_id {
+                                                        this
+                                                    } else {
+                                                        this.border_l_2()
+                                                            .border_color(cx.theme().drag_border)
+                                                    }
+                                                }
+                                            })
+                                            .on_drop(cx.listener(
+                                                move |this, drag: &WorkspaceTabDrag, _, cx| {
+                                                    this.move_workspace_group_before(
+                                                        &drag.group_id,
+                                                        Some(&drop_target_group_id),
+                                                        cx,
+                                                    );
+                                                },
+                                            ))
                                             .when(is_terminal_tab, |this| {
                                                 this.suffix(
                                                     Button::new(("tab-close", ix))
@@ -243,22 +303,45 @@ impl AxShell {
                                     }
                                 }
                             }))
-                            .when(is_integrated || is_linux_native_drag_bar, |this| {
-                                this.suffix(
-                                    div()
-                                        .id("tab-bar-drag-spacer")
-                                        .w(px(56.))
-                                        .h_full()
-                                        .flex_shrink_0()
-                                        .when(is_integrated, |this| {
-                                            this.window_control_area(gpui::WindowControlArea::Drag)
-                                        })
-                                        .when(is_linux_native_drag_bar, |this| {
-                                            Self::bind_titlebar_drag(this, cx)
-                                        }),
-                                )
-                            })
-                            .last_empty_space(div().w_3())
+                            .suffix(h_flex().h_full().flex_none().when(
+                                is_integrated || is_linux_native_drag_bar,
+                                |this| {
+                                    this.child(
+                                        div()
+                                            .id("tab-bar-drag-spacer")
+                                            .w(px(56.))
+                                            .h_full()
+                                            .flex_shrink_0()
+                                            .when(is_integrated, |this| {
+                                                this.window_control_area(
+                                                    gpui::WindowControlArea::Drag,
+                                                )
+                                            })
+                                            .when(is_linux_native_drag_bar, |this| {
+                                                Self::bind_titlebar_drag(this, cx)
+                                            }),
+                                    )
+                                },
+                            ))
+                            .last_empty_space(
+                                div()
+                                    .id("tab-bar-drop-at-end")
+                                    .w(px(16.))
+                                    .h_full()
+                                    .flex_none()
+                                    .drag_over::<WorkspaceTabDrag>(|this, _, _, cx| {
+                                        this.bg(cx.theme().drop_target)
+                                    })
+                                    .on_drop(cx.listener(
+                                        |this, drag: &WorkspaceTabDrag, _, cx| {
+                                            this.move_workspace_group_before(
+                                                &drag.group_id,
+                                                None,
+                                                cx,
+                                            );
+                                        },
+                                    )),
+                            )
                             .w_full()
                             .h_full()
                     }),

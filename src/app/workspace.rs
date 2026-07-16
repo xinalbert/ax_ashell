@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{collections::HashMap, ops::Range};
 
 use gpui::{Bounds, Context, Pixels, Window, point, px, size};
 use gpui_component::WindowExt as _;
@@ -19,6 +19,7 @@ use crate::{
 pub(crate) struct TabGroup {
     pub(crate) id: String,
     pub(crate) title: String,
+    pub(crate) instance_number: usize,
     pub(crate) pane_root: PaneLayout,
     pub(crate) sftp: Option<SftpUiState>,
     pub(crate) sftp_page_open: bool,
@@ -73,7 +74,68 @@ fn active_workspace_tab_index_for(
         .unwrap_or(0)
 }
 
+/// Move an item before a target item, or to the end when no target is supplied.
+fn move_item_before<T>(
+    items: &mut Vec<T>,
+    source_index: usize,
+    target_index: Option<usize>,
+) -> bool {
+    if source_index >= items.len() {
+        return false;
+    }
+
+    let target_index = target_index.unwrap_or(items.len());
+    if target_index > items.len() || target_index == source_index {
+        return false;
+    }
+
+    let insertion_index = target_index - usize::from(source_index < target_index);
+    if insertion_index == source_index {
+        return false;
+    }
+
+    let item = items.remove(source_index);
+    items.insert(insertion_index, item);
+    true
+}
+
+fn next_workspace_group_instance(
+    instance_counts: &mut HashMap<String, usize>,
+    title: &str,
+) -> usize {
+    let instance_number = instance_counts.entry(title.to_string()).or_default();
+    *instance_number += 1;
+    *instance_number
+}
+
+pub(crate) fn workspace_group_tab_label(
+    group_index: usize,
+    title: &str,
+    instance_number: usize,
+    page: WorkspacePage,
+    pane_count: usize,
+) -> String {
+    let tab_number = group_index + 1;
+    match page {
+        WorkspacePage::Terminal => {
+            let instance_label = format!("{title} #{instance_number}");
+            if pane_count > 1 {
+                format!("{tab_number} {instance_label} ({pane_count})")
+            } else {
+                format!("{tab_number} {instance_label}")
+            }
+        }
+        WorkspacePage::Sftp => format!("{tab_number} {title} #{instance_number} SFTP"),
+        WorkspacePage::Settings => unreachable!("settings is not a workspace group tab"),
+    }
+}
+
 impl AxShell {
+    /// Allocate a stable, per-window instance number for a workspace title.
+    pub(crate) fn next_workspace_group_instance(&mut self, title: &str) -> usize {
+        next_workspace_group_instance(&mut self.workspace_group_instance_counts, title)
+    }
+
     pub(crate) fn workspace_tabs(&self) -> Vec<WorkspaceTabDescriptor> {
         let mut tabs = Vec::new();
 
@@ -104,6 +166,40 @@ impl AxShell {
         }
 
         tabs
+    }
+
+    /// Reorder an entire workspace group so its Terminal and SFTP pages stay adjacent.
+    pub(crate) fn move_workspace_group_before(
+        &mut self,
+        source_group_id: &str,
+        target_group_id: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(source_index) = self
+            .tab_groups
+            .iter()
+            .position(|group| group.id == source_group_id)
+        else {
+            return;
+        };
+        let target_index = match target_group_id {
+            Some(target_group_id) => {
+                let Some(target_index) = self
+                    .tab_groups
+                    .iter()
+                    .position(|group| group.id == target_group_id)
+                else {
+                    return;
+                };
+                Some(target_index)
+            }
+            None => None,
+        };
+
+        if move_item_before(&mut self.tab_groups, source_index, target_index) {
+            self.ensure_active_workspace_tab_visible();
+            cx.notify();
+        }
     }
 
     pub(crate) fn workspace_tab_selected(&self, entry: &WorkspaceTabDescriptor) -> bool {
@@ -988,7 +1084,11 @@ impl AxShell {
 
 #[cfg(test)]
 mod tests {
-    use super::{WorkspacePage, WorkspaceTabDescriptor, active_workspace_tab_index_for};
+    use super::{
+        WorkspacePage, WorkspaceTabDescriptor, active_workspace_tab_index_for, move_item_before,
+        next_workspace_group_instance, workspace_group_tab_label,
+    };
+    use std::collections::HashMap;
 
     fn workspace_tab(group_id: Option<&str>, page: WorkspacePage) -> WorkspaceTabDescriptor {
         WorkspaceTabDescriptor {
@@ -1022,6 +1122,58 @@ mod tests {
         assert_eq!(
             active_workspace_tab_index_for(&tabs, WorkspacePage::Settings, None, true),
             3
+        );
+    }
+
+    #[test]
+    fn move_item_before_reorders_forward_backward_and_to_end() {
+        let mut items = vec!["a", "b", "c", "d"];
+
+        assert!(move_item_before(&mut items, 0, Some(3)));
+        assert_eq!(items, ["b", "c", "a", "d"]);
+
+        assert!(move_item_before(&mut items, 3, Some(1)));
+        assert_eq!(items, ["b", "d", "c", "a"]);
+
+        assert!(move_item_before(&mut items, 1, None));
+        assert_eq!(items, ["b", "c", "a", "d"]);
+    }
+
+    #[test]
+    fn move_item_before_ignores_noop_and_invalid_targets() {
+        let mut items = vec!["a", "b", "c"];
+
+        assert!(!move_item_before(&mut items, 0, Some(0)));
+        assert!(!move_item_before(&mut items, 0, Some(1)));
+        assert!(!move_item_before(&mut items, 2, None));
+        assert!(!move_item_before(&mut items, 3, None));
+        assert!(!move_item_before(&mut items, 1, Some(4)));
+        assert_eq!(items, ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn workspace_group_instances_are_stable_per_title() {
+        let mut counts = HashMap::new();
+
+        assert_eq!(next_workspace_group_instance(&mut counts, "Local"), 1);
+        assert_eq!(next_workspace_group_instance(&mut counts, "prod-web"), 1);
+        assert_eq!(next_workspace_group_instance(&mut counts, "Local"), 2);
+        assert_eq!(next_workspace_group_instance(&mut counts, "prod-web"), 2);
+    }
+
+    #[test]
+    fn workspace_group_tab_labels_include_stable_instance_numbers() {
+        assert_eq!(
+            workspace_group_tab_label(0, "Local", 1, WorkspacePage::Terminal, 1),
+            "1 Local #1"
+        );
+        assert_eq!(
+            workspace_group_tab_label(1, "prod-web", 2, WorkspacePage::Terminal, 3),
+            "2 prod-web #2 (3)"
+        );
+        assert_eq!(
+            workspace_group_tab_label(2, "prod-web", 2, WorkspacePage::Sftp, 0),
+            "3 prod-web #2 SFTP"
         );
     }
 }

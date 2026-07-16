@@ -175,9 +175,12 @@ impl AxShell {
                 self.pane_root = PaneLayout::Single(id.clone());
                 self.focused_pane_path = vec![];
                 let group_id = Uuid::new_v4().to_string();
+                let title = "Local".to_string();
+                let instance_number = self.next_workspace_group_instance(&title);
                 self.tab_groups.push(TabGroup {
                     id: group_id.clone(),
-                    title: "Local".to_string(),
+                    title,
+                    instance_number,
                     pane_root: PaneLayout::Single(id),
                     sftp: None,
                     sftp_page_open: false,
@@ -881,9 +884,12 @@ impl AxShell {
         }
 
         let group_id = Uuid::new_v4().to_string();
+        let title = session.name.clone();
+        let instance_number = self.next_workspace_group_instance(&title);
         self.tab_groups.push(TabGroup {
             id: group_id.clone(),
-            title: session.name.clone(),
+            title,
+            instance_number,
             pane_root: PaneLayout::Single(String::new()),
             sftp: Some(crate::app::SftpUiState {
                 current_path: "/".into(),
@@ -971,9 +977,12 @@ impl AxShell {
         self.pane_root = PaneLayout::Single(id.clone());
         self.focused_pane_path = vec![];
         let group_id = Uuid::new_v4().to_string();
+        let title = session.name.clone();
+        let instance_number = self.next_workspace_group_instance(&title);
         self.tab_groups.push(TabGroup {
             id: group_id.clone(),
-            title: session.name.clone(),
+            title,
+            instance_number,
             pane_root: PaneLayout::Single(id.clone()),
             sftp: Some(crate::app::SftpUiState {
                 current_path: "/".into(),

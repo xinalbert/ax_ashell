@@ -53,7 +53,7 @@ pub(crate) use terminal::{
     HoverTargetKind, HoveredUrl, TerminalFontMetrics, TerminalScrollbarHandle,
     terminal_link_activation_modifier_pressed, terminal_link_visual_active,
 };
-pub(crate) use workspace::{TabGroup, WorkspacePage};
+pub(crate) use workspace::{TabGroup, WorkspacePage, workspace_group_tab_label};
 
 #[derive(Clone)]
 pub(crate) struct SavedSessionContextMenuState {
@@ -127,6 +127,7 @@ pub(crate) struct AxShell {
     pub(crate) tabs: Vec<TerminalTab>,
     pub(crate) active_tab: Option<String>,
     pub(crate) tab_groups: Vec<TabGroup>,
+    pub(crate) workspace_group_instance_counts: HashMap<String, usize>,
     pub(crate) active_group: Option<String>,
     pub(crate) selector_selection: usize,
     pub(crate) workspace_panels: Entity<ResizableState>,
