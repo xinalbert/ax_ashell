@@ -86,6 +86,7 @@ pub(crate) struct AxShell {
     pub(crate) proxy_password_input: Entity<InputState>,
     pub(crate) session_sftp_path_input: Entity<InputState>,
     pub(crate) session_x11_forwarding: bool,
+    pub(crate) ssh_advanced_options_visible: bool,
     pub(crate) session_shortcut: String,
     pub(crate) recording_session_shortcut: bool,
     pub(crate) session_shortcut_error: Option<String>,

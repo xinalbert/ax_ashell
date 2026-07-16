@@ -346,6 +346,7 @@ impl AxShell {
         self.session_import_error = None;
         self.session_shortcut.clear();
         self.ssh_auth_method = AuthMethod::Password;
+        self.ssh_advanced_options_visible = false;
         Self::set_input_value(&self.session_name_input, "", window, cx);
         Self::set_input_value(&self.session_group_input, "", window, cx);
         Self::set_input_value(&self.host_input, "", window, cx);
@@ -440,6 +441,10 @@ impl AxShell {
             cx,
         );
         self.session_x11_forwarding = session.x11_forwarding;
+        self.ssh_advanced_options_visible = session.proxy_type != "none"
+            || !session.sftp_path.trim().is_empty()
+            || !session.shortcut.trim().is_empty()
+            || !session.x11_forwarding;
         self.recording_session_shortcut = false;
         self.session_shortcut_error = None;
         self.session_import_error = None;

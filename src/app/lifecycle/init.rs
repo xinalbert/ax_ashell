@@ -22,7 +22,7 @@ impl AxShell {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let host_input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("host")));
         let session_name_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("name (optional)"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("connection_name_optional")));
         let session_group_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("session_group_optional")));
         let port_input = cx.new(|cx| InputState::new(window, cx).default_value("22"));
@@ -42,7 +42,7 @@ impl AxShell {
         });
         let passphrase_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("SSH private key passphrase (optional)")
+                .placeholder(t!("private_key_passphrase_optional"))
                 .masked(true)
         });
         let proxy_host_input =
@@ -400,6 +400,7 @@ impl AxShell {
             proxy_password_input,
             session_sftp_path_input,
             session_x11_forwarding: true,
+            ssh_advanced_options_visible: false,
             global_proxy_type: config.global_proxy_type().to_string(),
             global_proxy_host_input,
             global_proxy_port_input,
