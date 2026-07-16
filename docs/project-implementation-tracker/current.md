@@ -2,53 +2,50 @@
 
 ## 当前目标
 
-- 目标：支持已保存和新建的串口、Telnet 会话；新建串口会话时自动枚举当前已连接端口。
-- 交付物：兼容会话模型、串口与 Telnet 后端、统一会话表单、端口自动检测、非 SSH 能力边界、测试与验证记录。
+- 目标：让 SFTP 远端文件双击以系统默认应用打开，并在用户完成编辑或关闭 SFTP 页面时确认是否上传修改。
+- 交付物：受管编辑工作副本、跨平台文件变化检测、双击列表交互、上传确认对话框、页面关闭保护、测试与验证记录。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`Cargo.toml`、`Cargo.lock`、`src/session.rs`、`src/backend/`、`src/terminal/`、`src/app/`、`locales/`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：SSH/SFTP 协议变更、Telnet 身份认证自动化、串口设备驱动安装、跨进程端口占用恢复。
+- 当前范围：`src/app/`、`src/sftp/`、`src/events.rs`、`locales/`、`docs/features/`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：更换系统默认文件关联、可靠探测任意默认应用的关闭事件、远端多人编辑合并、SFTP 协议或依赖升级。
 
 ## 当前状态
 
-- 阶段：已完成
+- 阶段：实施中
 - 开工判定：允许开工
-- 是否需要联网：是，已完成
+- 是否需要联网：否
 - 多 agent：未使用
 
 ## 活动计划
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 审查现有会话/终端架构与参考项目 | 源码、依赖与参考实现核对 | AxShell 事件总线可复用；采用 `serialport` 同步 I/O 与 TCP Telnet 路径 |
-| P2 | completed | 扩展会话模型与实现 Serial/Telnet 后端 | 单元测试、`cargo check` | Serial 采用阻塞设备线程；Telnet 采用最小 RFC 854 协商 |
-| P3 | completed | 新建/编辑表单、端口检测和非 SSH UI 边界 | 静态审计、全量测试 | 串口仅在表单打开、切换到串口或手动刷新时枚举；SFTP 仅限 SSH |
-| P4 | completed | 完成格式化、回归、跟踪记录与验证 | `cargo test --quiet`、差异检查、tracking validator | 保留实体串口与 Telnet server 手工验收 |
+| P1 | completed | 审查 SFTP 打开、编辑、关闭与默认应用边界 | 源码、依赖和平台打开器审计 | `open::that` 不可等待，必须显式完成编辑或在关闭 SFTP 时确认 |
+| P2 | in_progress | 受管编辑会话、双击和上传确认 | 聚焦单元测试、`cargo check` | 文件变化只标记待上传，绝不在保存时静默覆盖远端 |
+| P3 | pending | 页面关闭保护、文案和用户文档 | 静态审计、文档检查 | 关闭 SFTP 前逐项确认待上传的工作副本 |
+| P4 | pending | 格式化、回归与跟踪记录 | `cargo test --quiet`、差异检查、tracking validator | 保留真实系统默认编辑器与真实 SFTP 手工验收 |
 
 ## 已完成
 
-- `SessionKind` 增加 `Ssh`、`Serial`、`Telnet`，旧保存会话和 v1 share 文件自动回退到 SSH；串口参数包含端口、波特率、数据位、校验、停止位和流控。
-- 新增 `serialport` 后端：设备打开与读写均在非 UI 线程，50ms 读取超时允许可控关闭；表单打开、切换到串口或点击刷新时才枚举当前端口。
-- 新增 Telnet 后端：通过现有直连/SOCKS5/HTTP 代理通道连接，支持 IAC 转义、NAWS、SGA 和保守的 RFC 854 选项回应；空端口默认 23。
-- 统一连接表单、会话选择器、侧栏、会话分屏、断线重连和无凭据 share JSON；非 SSH 会话不创建 SFTP 页面、不参与 SSH 密码提示、远程监控或连接健康检查。
-- 连接进度失败后的“重试”按 Serial/Telnet/SSH 分派，复用保留 terminal scrollback 的后端重建路径；仅 SSH 重启关联 SFTP。
-- 串口端口下拉使用共享 `fast_menu` 惰性候选构造，保存会话选择列表保持 `uniform_list` 虚拟渲染。
+- 确认远端右键“打开文件”只下载临时副本且不回传；“编辑文件”会保存即上传，但无法识别默认应用关闭、会直接覆盖远端文件。
+- 确认 `open 5.1` 通过 macOS `open`、Windows `start` 和 Linux `xdg-open` 等系统启动器打开默认应用，不提供可等待的实际编辑器进程；不能把启动器退出作为文件关闭。
+- 确认仓库已有 `notify` 与 `sha2`，可监听工作副本目录并以内容指纹判定真实修改，无需改动依赖清单。
 
 ## 验证
 
-- 已完成：受影响 Rust 文件 `rustfmt --edition 2024`；`cargo test --quiet`（220 项）；`cargo check`；`git diff --check`；fast hover/list 静态审计；tracking docs validator。
-- 未完成：在 macOS、Windows、Linux 分别以真实已连接串口测试自动枚举、收发、设备拔出和重连；以可访问 Telnet server 测试登录、协商、窗口大小与断线重试。
+- 已完成：源码、事件路由、页面关闭、窗口迁移、`open` 平台实现、`notify` 事件模型和已有跟踪记录审查。
+- 未完成：Rust 格式化、聚焦及完整测试、`cargo check`、hover/list 静态审计、真实默认编辑器保存、真实 SFTP 上传和关闭页面流程验收。
 
 ## 风险与阻塞
 
-- 无代码阻塞；串口权限、设备驱动、其他进程占用和 Telnet 服务端协商差异依赖目标系统与服务端环境。
+- 默认应用的真实关闭事件没有跨平台通用 API；以“完成编辑”与关闭 SFTP 页面时的确认替代。无法在用户不交互的情况下可靠判断应用是否已退出。
 
 ## 下一步
 
-- 执行三平台实体串口与 Telnet GUI 验收，并依据实际设备/服务端兼容结果补充诊断或协议选项。
+- 完成受管编辑会话、双击、确认对话框和关闭保护，实现后运行自动化验证并进行真实 GUI / SFTP 验收。
 
 ## 最后更新时间
 
-- 2026-07-16 17:00 +0800
+- 2026-07-16 18:10 +0800

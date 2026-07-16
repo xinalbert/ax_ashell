@@ -30,7 +30,10 @@ These local paths stay on the current computer and are not included in WebDAV or
 - Download files or folders; directory downloads use a temporary archive when appropriate.
 - Drag remote files into the local pane to download them first. The current GPUI runtime does not support dragging files out of AxShell to Finder or Explorer, including files that already exist locally.
 - Create folders and recursively delete selected paths.
-- Open a remote file in the system editor and upload changes after save.
+- Double-click a remote file to create a managed local edit copy and open it with the system default application. Double-click folders to enter them; double-click local files to open them with the system default application.
+- A changed managed copy is shown by **Finish editing**. After closing the editor, choose **Finish editing** to confirm whether to upload the change. Closing the SFTP page also asks before it leaves changed managed copies behind.
+- **Upload changes** writes to the original remote path. **Keep local copy** leaves the managed copy in AxShell's local `sftp-edits` folder and does not upload it.
+- Default applications do not provide a portable, reliable document-closed event. AxShell therefore does not mistake a normal save for editor exit; use **Finish editing** after closing the editor.
 - Preview supported files and bounded directory contents.
 
 ## Large Directories
@@ -46,7 +49,7 @@ Remote listings load on demand instead of reading the entire directory into the 
 
 Transfer tasks support pause, resume, and cancel. Completed, failed, interrupted, and active tasks are shown in transfer history, which keeps up to 100 records.
 
-Closing an SFTP page with active work uses the configured confirmation flow so ongoing transfers are not discarded silently.
+Closing an SFTP page first asks about changed managed edit copies, then uses the configured confirmation flow for active transfers so work is not discarded silently.
 
 <!-- Screenshot target: ../images/features/sftp-browser.png -->
 <!-- Screenshot target: ../images/features/sftp-transfer-panel.png -->

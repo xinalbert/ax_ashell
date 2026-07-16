@@ -527,12 +527,55 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.has_dirty_sftp_edit_sessions(&group_id) {
+            self.request_sftp_edit_uploads(&group_id, true, cx);
+            return;
+        }
+        let has_uploading_edit = self
+            .tab_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .and_then(|group| group.sftp.as_ref())
+            .is_some_and(|sftp| sftp.edit_sessions.iter().any(|session| session.uploading));
+        if has_uploading_edit {
+            self.sftp_edit_close_group_id = Some(group_id);
+            return;
+        }
         if !self.group_has_active_sftp_transfer(&group_id) {
             self.close_sftp_page_now(group_id, window, cx);
             return;
         }
 
         self.show_sftp_transfer_close_dialog(group_id, window, cx);
+    }
+
+    pub(crate) fn finish_pending_sftp_edit_close(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(group_id) = self.sftp_edit_close_group_id.clone() else {
+            return;
+        };
+        let has_uploading = self
+            .tab_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .and_then(|group| group.sftp.as_ref())
+            .is_some_and(|sftp| sftp.edit_sessions.iter().any(|session| session.uploading));
+        let request_is_pending = self
+            .sftp_edit_upload_request
+            .as_ref()
+            .is_some_and(|request| request.group_id == group_id)
+            || self
+                .sftp_edit_upload_requests
+                .iter()
+                .any(|request| request.group_id == group_id);
+        if self.has_dirty_sftp_edit_sessions(&group_id) || has_uploading || request_is_pending {
+            return;
+        }
+        self.sftp_edit_close_group_id = None;
+        self.close_sftp_page(group_id, window, cx);
     }
 
     pub(crate) fn confirm_sftp_close_with_shortcut(
@@ -600,6 +643,8 @@ impl AxShell {
             && self.active_group.as_deref() == Some(group_id.as_str());
         let has_terminal_tab = self.group_has_terminal_tab(&group_id);
         let keep_for_transfer = self.group_has_active_sftp_transfer(&group_id);
+
+        self.discard_all_sftp_edit_sessions(&group_id);
 
         if let Some(group) = self
             .tab_groups

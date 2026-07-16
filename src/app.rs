@@ -48,7 +48,8 @@ pub(crate) use pane::PaneLayout;
 pub(crate) use session_ui::{ConnectionProgress, SelectorEntry, TerminalPasswordPrompt};
 pub(crate) use sftp::{
     LocalFileBrowserState, LocalFileEntry, SftpContextMenuState, SftpContextMenuTarget,
-    SftpSortColumn, SftpTransferContextMenuState, SftpTransferTab, SftpUiState, SortDirection,
+    SftpEditSession, SftpEditUploadRequest, SftpSortColumn, SftpTransferContextMenuState,
+    SftpTransferTab, SftpUiState, SortDirection,
 };
 pub(crate) use terminal::{
     HoverTargetKind, HoveredUrl, TerminalFontMetrics, TerminalScrollbarHandle,
@@ -190,6 +191,9 @@ pub(crate) struct AxShell {
     pub(crate) sftp_creating_folder: bool,
     pub(crate) sftp_close_remember_choice: bool,
     pub(crate) sftp_close_confirm_group_id: Option<String>,
+    pub(crate) sftp_edit_close_group_id: Option<String>,
+    pub(crate) sftp_edit_upload_requests: VecDeque<SftpEditUploadRequest>,
+    pub(crate) sftp_edit_upload_request: Option<SftpEditUploadRequest>,
     pub(crate) sftp_overwrite_requests: VecDeque<crate::sftp::SftpOverwriteRequest>,
     pub(crate) sftp_replace_all_for_run: bool,
     pub(crate) sftp_new_folder_input: Entity<InputState>,

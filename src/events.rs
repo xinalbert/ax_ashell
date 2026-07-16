@@ -132,6 +132,28 @@ pub(crate) enum BackendEvent {
         tab_id: String,
         text: String,
     },
+    SftpEditOpened {
+        tab_id: String,
+        remote_path: String,
+        local_path: String,
+    },
+    SftpEditOpenFailed {
+        tab_id: String,
+        remote_path: String,
+        reason: String,
+    },
+    SftpEditChanged {
+        tab_id: String,
+        remote_path: String,
+        local_path: String,
+        dirty: bool,
+    },
+    SftpEditUploadFinished {
+        tab_id: String,
+        remote_path: String,
+        local_path: String,
+        result: Result<(), String>,
+    },
     SftpOverwriteConflict {
         request: crate::sftp::SftpOverwriteRequest,
     },
@@ -212,6 +234,10 @@ impl BackendEvent {
             | Self::SftpEntries { tab_id, .. }
             | Self::SftpPreview { tab_id, .. }
             | Self::SftpStatus { tab_id, .. }
+            | Self::SftpEditOpened { tab_id, .. }
+            | Self::SftpEditOpenFailed { tab_id, .. }
+            | Self::SftpEditChanged { tab_id, .. }
+            | Self::SftpEditUploadFinished { tab_id, .. }
             | Self::RemoteSystem { tab_id, .. }
             | Self::RemoteSystemUnavailable { tab_id, .. }
             | Self::ConnectionHealthy { tab_id, .. }

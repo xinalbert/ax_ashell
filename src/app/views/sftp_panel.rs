@@ -160,6 +160,15 @@ impl AxShell {
 
         let remote_ready = active_sftp.is_some();
         let remote_selected_count = remote_selected_entries.len();
+        let remote_dirty_edit_count = active_sftp
+            .as_ref()
+            .map(|sftp| {
+                sftp.edit_sessions
+                    .iter()
+                    .filter(|session| session.dirty)
+                    .count()
+            })
+            .unwrap_or_default();
         let local_selected_count = local_selected_entries.len();
         let can_upload_local_selection = remote_ready && local_selected_count > 0;
         let view = cx.entity();
@@ -208,7 +217,33 @@ impl AxShell {
                                 this.config.save_logged("set_show_hidden_files");
                                 cx.notify();
                             })),
-                    ),
+                    )
+                    .when(remote_dirty_edit_count > 0, |this| {
+                        this.child(
+                            Button::new("sftp-finish-edits")
+                                .ghost()
+                                .small()
+                                .label(
+                                    t!(
+                                        "sftp_finish_edits",
+                                        count = remote_dirty_edit_count
+                                    )
+                                    .to_string(),
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    if let Some(group_id) = this.active_group.clone()
+                                        && !this.request_sftp_edit_uploads(
+                                            &group_id,
+                                            false,
+                                            cx,
+                                        )
+                                    {
+                                        this.status = t!("sftp_no_pending_edits").into();
+                                        cx.notify();
+                                    }
+                                })),
+                        )
+                    }),
             )
             .child(
                 h_flex()
@@ -545,9 +580,15 @@ impl AxShell {
                                                         MouseButton::Left,
                                                         list_window.listener_for(&view, {
                                                             let entry = entry.clone();
-                                                            move |this, _, _, cx| {
+                                                            move |this, event: &MouseDownEvent, _, cx| {
                                                                 this.dismiss_sftp_context_menu(cx);
                                                                 this.select_sftp_entry(entry.clone(), cx);
+                                                                if event.click_count == 2 {
+                                                                    this.open_sftp_entry_on_double_click(
+                                                                        entry.clone(),
+                                                                        cx,
+                                                                    );
+                                                                }
                                                             }
                                                         }),
                                                     )
@@ -1076,9 +1117,15 @@ impl AxShell {
                                                     MouseButton::Left,
                                                     list_window.listener_for(&view, {
                                                         let entry = entry.clone();
-                                                        move |this, _, _, cx| {
+                                                        move |this, event: &MouseDownEvent, _, cx| {
                                                             this.dismiss_sftp_context_menu(cx);
                                                             this.select_local_file_entry(entry.clone(), cx);
+                                                            if event.click_count == 2 {
+                                                                this.open_local_sftp_entry_on_double_click(
+                                                                    entry.clone(),
+                                                                    cx,
+                                                                );
+                                                            }
                                                         }
                                                     }),
                                                 )

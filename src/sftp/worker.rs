@@ -56,6 +56,12 @@ enum SftpCommand {
         remote_path: String,
         pin: SftpWorkPin,
     },
+    FinishEditFile {
+        local_path: String,
+    },
+    EditWatcherFinished {
+        local_path: String,
+    },
     UploadPaths {
         locals: Vec<String>,
         remote_dir: String,
@@ -187,6 +193,20 @@ impl SftpHandle {
             watch_changes: false,
             pin,
         })
+    }
+
+    pub(crate) fn upload_edited_file(&self, local_path: String, remote_path: String) -> bool {
+        self.send_work_command(|pin| SftpCommand::UploadEditedFile {
+            local_path,
+            remote_path,
+            pin,
+        })
+    }
+
+    pub(crate) fn finish_edit_file(&self, local_path: String) {
+        let _ = self
+            .commands
+            .send(SftpCommand::FinishEditFile { local_path });
     }
 
     pub(crate) fn create_dir(&self, path: String) -> bool {

@@ -2,6 +2,7 @@ use std::time::{Duration, SystemTime};
 
 use gpui::{Context, Window, px};
 use gpui_component::input::{InputEvent, InputState};
+use rust_i18n::t;
 
 use crate::{
     AxShell,
@@ -531,6 +532,113 @@ impl AxShell {
                             }
                             if self.active_group.as_ref() == Some(&tab_id) {
                                 self.status = text.into();
+                            }
+                        }
+                        BackendEvent::SftpEditOpened {
+                            tab_id,
+                            remote_path,
+                            local_path,
+                        } => {
+                            result.ui_changed = true;
+                            self.mark_sftp_activity_for_group(&tab_id);
+                            if let Some(sftp) = self
+                                .tab_groups
+                                .iter_mut()
+                                .find(|group| group.id == tab_id)
+                                .and_then(|group| group.sftp.as_mut())
+                            {
+                                sftp.opening_edit_paths.remove(&remote_path);
+                                if !sftp
+                                    .edit_sessions
+                                    .iter()
+                                    .any(|session| session.local_path == local_path)
+                                {
+                                    sftp.edit_sessions.push(crate::app::SftpEditSession {
+                                        remote_path,
+                                        local_path,
+                                        dirty: false,
+                                        uploading: false,
+                                    });
+                                }
+                            }
+                        }
+                        BackendEvent::SftpEditOpenFailed {
+                            tab_id,
+                            remote_path,
+                            reason,
+                        } => {
+                            result.ui_changed = true;
+                            if let Some(sftp) = self
+                                .tab_groups
+                                .iter_mut()
+                                .find(|group| group.id == tab_id)
+                                .and_then(|group| group.sftp.as_mut())
+                            {
+                                sftp.opening_edit_paths.remove(&remote_path);
+                                sftp.edit_sessions
+                                    .retain(|session| session.remote_path != remote_path);
+                                sftp.status = format!("{}: {reason}", t!("sftp_edit_open_failed"));
+                            }
+                            if self.active_group.as_deref() == Some(tab_id.as_str()) {
+                                self.status =
+                                    format!("{}: {reason}", t!("sftp_edit_open_failed")).into();
+                            }
+                        }
+                        BackendEvent::SftpEditChanged {
+                            tab_id,
+                            remote_path,
+                            local_path,
+                            dirty,
+                        } => {
+                            result.ui_changed = true;
+                            if let Some(session) = self
+                                .tab_groups
+                                .iter_mut()
+                                .find(|group| group.id == tab_id)
+                                .and_then(|group| group.sftp.as_mut())
+                                .and_then(|sftp| {
+                                    sftp.edit_sessions.iter_mut().find(|session| {
+                                        session.remote_path == remote_path
+                                            && session.local_path == local_path
+                                    })
+                                })
+                            {
+                                session.dirty = dirty;
+                            }
+                        }
+                        BackendEvent::SftpEditUploadFinished {
+                            tab_id,
+                            remote_path,
+                            local_path,
+                            result: upload_result,
+                        } => {
+                            result.ui_changed = true;
+                            let mut upload_succeeded = false;
+                            if let Some(sftp) = self
+                                .tab_groups
+                                .iter_mut()
+                                .find(|group| group.id == tab_id)
+                                .and_then(|group| group.sftp.as_mut())
+                            {
+                                if let Some(session) =
+                                    sftp.edit_sessions.iter_mut().find(|session| {
+                                        session.remote_path == remote_path
+                                            && session.local_path == local_path
+                                    })
+                                {
+                                    session.uploading = false;
+                                    upload_succeeded = upload_result.is_ok();
+                                }
+                            }
+                            if !upload_succeeded {
+                                if let Err(error) = upload_result {
+                                    self.status =
+                                        format!("{}: {error}", t!("sftp_edit_upload_failed"))
+                                            .into();
+                                }
+                                self.sftp_edit_close_group_id = None;
+                            } else {
+                                self.discard_sftp_edit_session(&tab_id, &local_path);
                             }
                         }
                         BackendEvent::SftpOverwriteConflict { request } => {

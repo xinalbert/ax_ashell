@@ -32,6 +32,7 @@ mod selector;
 pub(super) mod settings;
 mod settings_close_confirm;
 mod sftp_close_confirm;
+mod sftp_edit_upload_confirm;
 mod sftp_overwrite_confirm;
 mod ssh;
 mod transfers;
@@ -44,6 +45,7 @@ pub(crate) enum DialogKind {
     NewSsh,
     SettingsCloseConfirm,
     SftpCloseConfirm,
+    SftpEditUploadConfirm,
     SftpOverwriteConfirm,
 }
 

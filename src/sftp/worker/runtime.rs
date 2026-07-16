@@ -6,9 +6,10 @@ use std::{
     },
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use russh::Disconnect;
 use rust_i18n::t;
+use sha2::{Digest, Sha256};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
     task::JoinSet,
@@ -103,6 +104,8 @@ pub(super) async fn run_sftp(
 
     let mut active_transfers: std::collections::HashMap<String, TransferStateFlag> =
         std::collections::HashMap::new();
+    let mut edit_watchers: std::collections::HashMap<String, tokio::sync::oneshot::Sender<()>> =
+        std::collections::HashMap::new();
     let mut child_tasks = JoinSet::new();
 
     loop {
@@ -151,6 +154,14 @@ pub(super) async fn run_sftp(
             }
             SftpCommand::TransferFinished(id) => {
                 active_transfers.remove(&id);
+            }
+            SftpCommand::FinishEditFile { local_path } => {
+                if let Some(stop) = edit_watchers.remove(&local_path) {
+                    let _ = stop.send(());
+                }
+            }
+            SftpCommand::EditWatcherFinished { local_path } => {
+                edit_watchers.remove(&local_path);
             }
             SftpCommand::ListDir { path, pin: _pin } => {
                 let actual_path = if path == "~" {
@@ -494,18 +505,43 @@ pub(super) async fn run_sftp(
                 let id = uuid::Uuid::new_v4().to_string();
                 let config = crate::config::ConfigStore::load()
                     .unwrap_or_else(|_| crate::config::ConfigStore::in_memory());
-                let tmp_dir = config.tmp_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+                let local_dir = if watch_changes {
+                    config
+                        .sftp_edit_dir()
+                        .unwrap_or_else(|| std::env::temp_dir().join("ax-shell-sftp-edits"))
+                } else {
+                    config.tmp_dir().unwrap_or_else(std::env::temp_dir)
+                };
                 let base = base_name(&remote_path);
-                let local_path = tmp_dir.join(format!("{}-{}", id, base));
+                let local_path = local_dir.join(format!("{}-{}", id, base));
 
                 let handle_clone = handle.clone();
-                let commands_tx_clone = commands_tx.clone();
                 let events_clone = events.clone();
                 let tab_id_clone = tab_id.clone();
-                let work_tracker_clone = work_tracker.clone();
+                let edit_watcher_path = local_path.to_string_lossy().to_string();
+                let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel();
+                if watch_changes {
+                    edit_watchers.insert(edit_watcher_path.clone(), stop_tx);
+                }
+                let watcher_cleanup = watch_changes.then(|| EditWatcherCleanup {
+                    commands: commands_tx.clone(),
+                    local_path: edit_watcher_path,
+                });
 
                 child_tasks.spawn(async move {
                     let _edit_watcher_pin = pin;
+                    let _watcher_cleanup = watcher_cleanup;
+                    if watch_changes && let Err(err) = tokio::fs::create_dir_all(&local_dir).await {
+                        log_sftp_error("create_edit_directory", &tab_id_clone, &err);
+                        let _ = events_clone
+                            .send(BackendEvent::SftpEditOpenFailed {
+                                tab_id: tab_id_clone.clone(),
+                                remote_path,
+                                reason: format!("{err:#}"),
+                            })
+                            .await;
+                        return;
+                    }
                     let flag = TransferStateFlag::new();
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
@@ -517,6 +553,15 @@ pub(super) async fn run_sftp(
                                     text: format!("File download failed: {err:#}"),
                                 })
                                 .await;
+                            if watch_changes {
+                                let _ = events_clone
+                                    .send(BackendEvent::SftpEditOpenFailed {
+                                        tab_id: tab_id_clone.clone(),
+                                        remote_path,
+                                        reason: format!("{err:#}"),
+                                    })
+                                    .await;
+                            }
                             return;
                         }
                     };
@@ -549,31 +594,55 @@ pub(super) async fn run_sftp(
                                 text: format!("File download failed: {err:#}"),
                             })
                             .await;
-                        return;
-                    }
-
-                    if let Err(err) = open::that(&local_path) {
-                        log_sftp_error(operation, &tab_id_clone, &err);
-                        let _ = events_clone
-                            .send(BackendEvent::SftpStatus {
-                                tab_id: tab_id_clone.clone(),
-                                text: format!("Failed to open file: {err:#}"),
-                            })
-                            .await;
+                        if watch_changes {
+                            let _ = events_clone
+                                .send(BackendEvent::SftpEditOpenFailed {
+                                    tab_id: tab_id_clone.clone(),
+                                    remote_path,
+                                    reason: format!("{err:#}"),
+                                })
+                                .await;
+                        }
                         return;
                     }
 
                     if !watch_changes {
+                        if let Err(err) = open::that(&local_path) {
+                            log_sftp_error(operation, &tab_id_clone, &err);
+                            let _ = events_clone
+                                .send(BackendEvent::SftpStatus {
+                                    tab_id: tab_id_clone.clone(),
+                                    text: format!("Failed to open file: {err:#}"),
+                                })
+                                .await;
+                        }
                         return;
                     }
+
+                    let original_fingerprint = match local_file_fingerprint(&local_path).await {
+                        Ok(fingerprint) => fingerprint,
+                        Err(err) => {
+                            log_sftp_error("edit_fingerprint", &tab_id_clone, &err);
+                            let _ = events_clone
+                                .send(BackendEvent::SftpEditOpenFailed {
+                                    tab_id: tab_id_clone.clone(),
+                                    remote_path,
+                                    reason: format!("{err:#}"),
+                                })
+                                .await;
+                            return;
+                        }
+                    };
+                    let local_path_string = local_path.to_string_lossy().to_string();
 
                     use notify::Watcher;
                     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
                     let watcher_tab_id = tab_id_clone.clone();
+                    let watched_file = local_path.clone();
                     let mut watcher = match notify::recommended_watcher(
                         move |res: notify::Result<notify::Event>| match res {
-                            Ok(event) if event.kind.is_modify() => {
-                                let _ = tx.send(());
+                            Ok(event) if is_edit_file_event(&event, &watched_file) => {
+                                let _ = tx.send(EditWatcherSignal::Changed);
                             }
                             Ok(_) => {}
                             Err(err) => {
@@ -594,8 +663,8 @@ pub(super) async fn run_sftp(
                         }
                     };
 
-                    if let Err(err) =
-                        watcher.watch(&local_path, notify::RecursiveMode::NonRecursive)
+                    let watch_path = local_path.parent().unwrap_or_else(|| Path::new("."));
+                    if let Err(err) = watcher.watch(watch_path, notify::RecursiveMode::NonRecursive)
                     {
                         log_sftp_error("edit_watch_file", &tab_id_clone, &err);
                         let _ = events_clone
@@ -607,20 +676,47 @@ pub(super) async fn run_sftp(
                         return;
                     }
 
-                    while let Some(_) = rx.recv().await {
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        while let Ok(_) = rx.try_recv() {} // drain pending
-
-                        let upload_pin = work_tracker_clone.pin();
-                        if commands_tx_clone
-                            .send(SftpCommand::UploadEditedFile {
-                                local_path: local_path.to_string_lossy().to_string(),
-                                remote_path: remote_path.clone(),
-                                pin: upload_pin,
+                    let _ = events_clone
+                        .send(BackendEvent::SftpEditOpened {
+                            tab_id: tab_id_clone.clone(),
+                            remote_path: remote_path.clone(),
+                            local_path: local_path_string.clone(),
+                        })
+                        .await;
+                    if let Err(err) = open::that(&local_path) {
+                        log_sftp_error(operation, &tab_id_clone, &err);
+                        let _ = events_clone
+                            .send(BackendEvent::SftpEditOpenFailed {
+                                tab_id: tab_id_clone.clone(),
+                                remote_path,
+                                reason: format!("{err:#}"),
                             })
-                            .is_err()
-                        {
-                            break;
+                            .await;
+                        return;
+                    }
+
+                    let mut dirty = false;
+                    loop {
+                        tokio::select! {
+                            _ = &mut stop_rx => break,
+                            signal = rx.recv() => if signal.is_none() { break },
+                        };
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                        while rx.try_recv().is_ok() {}
+
+                        if let Ok(fingerprint) = local_file_fingerprint(&local_path).await {
+                            let changed = fingerprint != original_fingerprint;
+                            if changed != dirty {
+                                dirty = changed;
+                                let _ = events_clone
+                                    .send(BackendEvent::SftpEditChanged {
+                                        tab_id: tab_id_clone.clone(),
+                                        remote_path: remote_path.clone(),
+                                        local_path: local_path_string.clone(),
+                                        dirty,
+                                    })
+                                    .await;
+                            }
                         }
                     }
                 });
@@ -640,11 +736,20 @@ pub(super) async fn run_sftp(
                     let sftp_session = match open_transfer_sftp_session(&handle_clone).await {
                         Ok(session) => session,
                         Err(err) => {
+                            let message = format!("{err:#}");
                             log_sftp_error("edit_upload_session", &tab_id_clone, &err);
                             let _ = events_clone
                                 .send(BackendEvent::SftpStatus {
                                     tab_id: tab_id_clone.clone(),
-                                    text: format!("Auto-upload failed: {err:#}"),
+                                    text: format!("Upload failed: {message}"),
+                                })
+                                .await;
+                            let _ = events_clone
+                                .send(BackendEvent::SftpEditUploadFinished {
+                                    tab_id: tab_id_clone.clone(),
+                                    remote_path,
+                                    local_path,
+                                    result: Err(message),
                                 })
                                 .await;
                             return;
@@ -652,7 +757,7 @@ pub(super) async fn run_sftp(
                     };
 
                     let transferred = Arc::new(AtomicU64::new(0));
-                    match upload_file_impl(
+                    let result = upload_file_impl(
                         &sftp_session,
                         Path::new(&local_path),
                         &remote_path,
@@ -663,8 +768,8 @@ pub(super) async fn run_sftp(
                         transferred,
                         None,
                     )
-                    .await
-                    {
+                    .await;
+                    match result {
                         Ok(_) => {
                             let now = chrono::Local::now().format("%H:%M:%S");
                             let _ = events_clone
@@ -680,13 +785,30 @@ pub(super) async fn run_sftp(
                                     ),
                                 })
                                 .await;
+                            let _ = events_clone
+                                .send(BackendEvent::SftpEditUploadFinished {
+                                    tab_id: tab_id_clone.clone(),
+                                    remote_path,
+                                    local_path,
+                                    result: Ok(()),
+                                })
+                                .await;
                         }
                         Err(err) => {
+                            let message = format!("{err:#}");
                             log_sftp_error("edit_upload", &tab_id_clone, &err);
                             let _ = events_clone
                                 .send(BackendEvent::SftpStatus {
                                     tab_id: tab_id_clone.clone(),
-                                    text: format!("Auto-upload failed: {err:#}"),
+                                    text: format!("Upload failed: {message}"),
+                                })
+                                .await;
+                            let _ = events_clone
+                                .send(BackendEvent::SftpEditUploadFinished {
+                                    tab_id: tab_id_clone.clone(),
+                                    remote_path,
+                                    local_path,
+                                    result: Err(message),
                                 })
                                 .await;
                         }
@@ -857,13 +979,50 @@ async fn cancel_sftp_child_tasks(
     while child_tasks.join_next().await.is_some() {}
 }
 
+#[derive(Clone, Copy)]
+enum EditWatcherSignal {
+    Changed,
+}
+
+struct EditWatcherCleanup {
+    commands: UnboundedSender<SftpCommand>,
+    local_path: String,
+}
+
+impl Drop for EditWatcherCleanup {
+    fn drop(&mut self) {
+        let _ = self.commands.send(SftpCommand::EditWatcherFinished {
+            local_path: self.local_path.clone(),
+        });
+    }
+}
+
+fn is_edit_file_event(event: &notify::Event, local_path: &Path) -> bool {
+    (event.kind.is_create() || event.kind.is_modify() || event.kind.is_remove())
+        && event.paths.iter().any(|path| path == local_path)
+}
+
+async fn local_file_fingerprint(path: &Path) -> Result<[u8; 32]> {
+    let contents = tokio::fs::read(path)
+        .await
+        .with_context(|| format!("read local edit copy {}", path.display()))?;
+    Ok(Sha256::digest(contents).into())
+}
+
 #[cfg(test)]
 mod lifecycle_tests {
-    use std::{collections::HashMap, sync::atomic::Ordering};
+    use std::{collections::HashMap, path::PathBuf, sync::atomic::Ordering};
 
+    use notify::{
+        Event, EventKind,
+        event::{CreateKind, ModifyKind, RemoveKind},
+    };
     use tokio::task::JoinSet;
 
-    use super::{SftpWorkTracker, TransferStateFlag, cancel_sftp_child_tasks, sftp_initial_path};
+    use super::{
+        SftpWorkTracker, TransferStateFlag, cancel_sftp_child_tasks, is_edit_file_event,
+        sftp_initial_path,
+    };
 
     #[test]
     fn sftp_initial_path_uses_the_selected_path_or_server_home() {
@@ -882,6 +1041,27 @@ mod lifecycle_tests {
             sftp_initial_path(Some("/G:/albertxin/2026"), home),
             "/G:/albertxin/2026"
         );
+    }
+
+    #[test]
+    fn edit_watcher_only_reacts_to_the_managed_copy() {
+        let managed = PathBuf::from("/tmp/sftp-edits/managed.txt");
+        let other = PathBuf::from("/tmp/sftp-edits/other.txt");
+
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Modify(ModifyKind::Any),
+            EventKind::Remove(RemoveKind::File),
+        ] {
+            assert!(is_edit_file_event(
+                &Event::new(kind).add_path(managed.clone()),
+                &managed
+            ));
+            assert!(!is_edit_file_event(
+                &Event::new(kind).add_path(other.clone()),
+                &managed
+            ));
+        }
     }
 
     #[tokio::test]

@@ -343,6 +343,12 @@ impl ConfigStore {
         self.path.parent().map(|p| p.join("tmp"))
     }
 
+    /// Managed SFTP edit copies must survive a restart until the user chooses
+    /// to remove them or uploads their changes.
+    pub fn sftp_edit_dir(&self) -> Option<PathBuf> {
+        self.path.parent().map(|p| p.join("sftp-edits"))
+    }
+
     pub fn follow_system_theme(&self) -> bool {
         self.cache.follow_system_theme
     }

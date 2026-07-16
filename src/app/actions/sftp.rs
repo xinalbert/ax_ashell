@@ -927,20 +927,206 @@ impl AxShell {
     }
 
     pub(crate) fn select_sftp_entry(&mut self, entry: RemoteEntry, cx: &mut Context<Self>) {
-        let was_selected = self
-            .active_sftp()
-            .and_then(|sftp| sftp.selected_path.as_deref())
-            == Some(entry.full_path.as_str());
-        if entry.is_dir && was_selected {
-            self.navigate_sftp(entry.full_path, cx);
-            return;
-        }
         if let Some(sftp) = self.active_sftp_mut() {
             sftp.selected_path = Some(entry.full_path.clone());
             sftp.selected_entries.clear();
             sftp.selected_entries.insert(entry.full_path);
         }
         cx.notify();
+    }
+
+    pub(crate) fn open_sftp_entry_on_double_click(
+        &mut self,
+        entry: RemoteEntry,
+        cx: &mut Context<Self>,
+    ) {
+        if entry.is_dir {
+            self.navigate_sftp(entry.full_path, cx);
+            return;
+        }
+
+        let Some(group_id) = self.active_group.clone() else {
+            return;
+        };
+        let already_opening = self
+            .active_sftp()
+            .is_some_and(|sftp| sftp.opening_edit_paths.contains(&entry.full_path));
+        let already_open = self.active_sftp().is_some_and(|sftp| {
+            sftp.edit_sessions
+                .iter()
+                .any(|session| session.remote_path == entry.full_path)
+        });
+        if already_opening || already_open {
+            self.status = t!("sftp_edit_already_open", path = entry.name).into();
+            cx.notify();
+            return;
+        }
+
+        let Some(handle) = self.ensure_sftp_handle_for_group(&group_id) else {
+            return;
+        };
+        if let Some(sftp) = self.active_sftp_mut() {
+            sftp.opening_edit_paths.insert(entry.full_path.clone());
+            sftp.selected_path = Some(entry.full_path.clone());
+            sftp.selected_entries.clear();
+            sftp.selected_entries.insert(entry.full_path.clone());
+        }
+        self.mark_sftp_activity_for_group(&group_id);
+        tracing::info!(
+            component = "sftp",
+            operation = "edit_remote_file",
+            remote_path = %crate::diagnostics::mask_path(&entry.full_path),
+            "Opening remote file in the default system application"
+        );
+        if !handle.edit_file(entry.full_path.clone()) {
+            if let Some(sftp) = self.active_sftp_mut() {
+                sftp.opening_edit_paths.remove(&entry.full_path);
+            }
+            self.status = t!("sftp_edit_open_failed").into();
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn has_dirty_sftp_edit_sessions(&self, group_id: &str) -> bool {
+        self.tab_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .and_then(|group| group.sftp.as_ref())
+            .is_some_and(|sftp| sftp.edit_sessions.iter().any(|session| session.dirty))
+    }
+
+    pub(crate) fn request_sftp_edit_uploads(
+        &mut self,
+        group_id: &str,
+        close_after: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let paths = self
+            .tab_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .and_then(|group| group.sftp.as_ref())
+            .map(|sftp| {
+                sftp.edit_sessions
+                    .iter()
+                    .filter(|session| session.dirty && !session.uploading)
+                    .map(|session| session.local_path.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if paths.is_empty() {
+            return false;
+        }
+
+        if close_after {
+            self.sftp_edit_close_group_id = Some(group_id.to_string());
+        }
+        for local_path in paths {
+            self.enqueue_sftp_edit_upload_request(group_id, local_path);
+        }
+        cx.notify();
+        true
+    }
+
+    pub(crate) fn enqueue_sftp_edit_upload_request(&mut self, group_id: &str, local_path: String) {
+        let request = crate::app::SftpEditUploadRequest {
+            group_id: group_id.to_string(),
+            local_path,
+        };
+        if self.sftp_edit_upload_request.as_ref() == Some(&request)
+            || self
+                .sftp_edit_upload_requests
+                .iter()
+                .any(|queued| queued == &request)
+        {
+            return;
+        }
+        self.sftp_edit_upload_requests.push_back(request);
+    }
+
+    pub(crate) fn cancel_sftp_edit_upload_requests(&mut self, group_id: &str) {
+        self.sftp_edit_upload_requests
+            .retain(|request| request.group_id != group_id);
+    }
+
+    pub(crate) fn discard_sftp_edit_session(&mut self, group_id: &str, local_path: &str) {
+        let Some(group) = self
+            .tab_groups
+            .iter_mut()
+            .find(|group| group.id == group_id)
+        else {
+            return;
+        };
+        let Some(sftp) = group.sftp.as_mut() else {
+            return;
+        };
+        if let Some(index) = sftp
+            .edit_sessions
+            .iter()
+            .position(|session| session.local_path == local_path)
+        {
+            sftp.edit_sessions.remove(index);
+        }
+        if let Some(handle) = self.sftp_handles.get(group_id) {
+            handle.finish_edit_file(local_path.to_string());
+        }
+    }
+
+    pub(crate) fn discard_all_sftp_edit_sessions(&mut self, group_id: &str) {
+        let paths = self
+            .tab_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .and_then(|group| group.sftp.as_ref())
+            .map(|sftp| {
+                sftp.edit_sessions
+                    .iter()
+                    .map(|session| session.local_path.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for local_path in paths {
+            self.discard_sftp_edit_session(group_id, &local_path);
+        }
+    }
+
+    pub(crate) fn upload_sftp_edit_session(&mut self, group_id: &str, local_path: &str) {
+        let Some((local_path, remote_path)) = self
+            .tab_groups
+            .iter_mut()
+            .find(|group| group.id == group_id)
+            .and_then(|group| group.sftp.as_mut())
+            .and_then(|sftp| {
+                sftp.edit_sessions
+                    .iter_mut()
+                    .find(|session| session.local_path == local_path)
+                    .map(|session| {
+                        session.uploading = true;
+                        (session.local_path.clone(), session.remote_path.clone())
+                    })
+            })
+        else {
+            return;
+        };
+        if let Some(handle) = self.ensure_sftp_handle_for_group(group_id) {
+            self.mark_sftp_activity_for_group(group_id);
+            if handle.upload_edited_file(local_path.clone(), remote_path) {
+                return;
+            }
+        }
+        if let Some(session) = self
+            .tab_groups
+            .iter_mut()
+            .find(|group| group.id == group_id)
+            .and_then(|group| group.sftp.as_mut())
+            .and_then(|sftp| {
+                sftp.edit_sessions
+                    .iter_mut()
+                    .find(|session| session.local_path == local_path)
+            })
+        {
+            session.uploading = false;
+        }
     }
 
     pub(crate) fn mark_sftp_entry_selected(&mut self, path: &str, cx: &mut Context<Self>) {
@@ -1130,32 +1316,20 @@ impl AxShell {
         entry: LocalFileEntry,
         cx: &mut Context<Self>,
     ) {
-        let was_selected =
-            self.local_file_browser.selected_path.as_deref() == Some(entry.full_path.as_str());
-        if entry.is_dir && was_selected {
-            self.navigate_local_file_browser(entry.full_path, cx);
-            return;
-        }
-
-        if !entry.is_dir && was_selected {
-            match open::that(&entry.full_path) {
-                Ok(()) => {
-                    self.local_file_browser.status = entry.full_path;
-                }
-                Err(err) => {
-                    self.local_file_browser.status = format!("open failed: {err:#}");
-                }
-            }
-            cx.notify();
-            return;
-        }
-
         self.local_file_browser.selected_path = Some(entry.full_path.clone());
         self.local_file_browser.selected_entries.clear();
         self.local_file_browser
             .selected_entries
             .insert(entry.full_path);
         cx.notify();
+    }
+
+    pub(crate) fn open_local_sftp_entry_on_double_click(
+        &mut self,
+        entry: LocalFileEntry,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_local_file_browser_entry(entry.full_path, entry.is_dir, cx);
     }
 
     pub(crate) fn toggle_local_file_entry(

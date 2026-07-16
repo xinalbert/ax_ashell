@@ -63,10 +63,30 @@ pub(crate) struct SftpUiState {
     pub(crate) selected_path: Option<String>,
     pub(crate) preview: Option<PreviewData>,
     pub(crate) selected_entries: HashSet<String>,
+    /// Files opened through the remote browser that are still being managed
+    /// locally. They intentionally stay with the SFTP group when it moves to
+    /// another workspace window.
+    pub(crate) edit_sessions: Vec<SftpEditSession>,
+    /// Prevent duplicate downloads while the worker is preparing an edit copy.
+    pub(crate) opening_edit_paths: HashSet<String>,
     pub(crate) home_dir: String,
     /// A system resume can invalidate the server-side SFTP handle. It is
     /// recreated only when the user next needs this idle connection.
     pub(crate) connection_may_be_stale: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SftpEditSession {
+    pub(crate) remote_path: String,
+    pub(crate) local_path: String,
+    pub(crate) dirty: bool,
+    pub(crate) uploading: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SftpEditUploadRequest {
+    pub(crate) group_id: String,
+    pub(crate) local_path: String,
 }
 
 #[derive(Clone, Debug)]
