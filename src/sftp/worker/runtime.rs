@@ -19,7 +19,7 @@ use crate::{
     session::Session,
 };
 
-use super::{SftpCommand, SftpWorkPin, SftpWorkTracker};
+use super::{SftpCommand, SftpInitialRequest, SftpWorkPin, SftpWorkTracker};
 use crate::sftp::{
     auth::connect_and_authenticate,
     browse::{
@@ -40,7 +40,7 @@ use crate::sftp::{
 pub(super) async fn run_sftp(
     tab_id: String,
     session: Session,
-    initial_path: Option<String>,
+    initial_request: SftpInitialRequest,
     mut commands: UnboundedReceiver<SftpCommand>,
     commands_tx: UnboundedSender<SftpCommand>,
     events: BackendEventSender,
@@ -77,11 +77,28 @@ pub(super) async fn run_sftp(
         })
         .await;
 
-    let initial_path = sftp_initial_path(initial_path.as_deref(), &home);
     let mut browse_cursor = None;
-    open_and_emit_browser_page(&events, &tab_id, &handle, &initial_path, &mut browse_cursor)
-        .await?;
-    let mut browse_path = initial_path;
+    let mut browse_path = match initial_request {
+        SftpInitialRequest::Browse(initial_path) => {
+            let initial_path = sftp_initial_path(initial_path.as_deref(), &home);
+            open_and_emit_browser_page(
+                &events,
+                &tab_id,
+                &handle,
+                &initial_path,
+                &mut browse_cursor,
+            )
+            .await?;
+            initial_path
+        }
+        SftpInitialRequest::Reveal(path) => {
+            let target_path = sftp_initial_path(Some(&path), &home);
+            let directory = reveal_path_target(&handle, &target_path).await?;
+            open_and_emit_browser_page(&events, &tab_id, &handle, &directory, &mut browse_cursor)
+                .await?;
+            directory
+        }
+    };
     drop(initial_pin);
 
     let mut active_transfers: std::collections::HashMap<String, TransferStateFlag> =

@@ -103,6 +103,12 @@ pub(crate) struct SftpHandle {
     worker: Arc<SftpWorker>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SftpInitialRequest {
+    Browse(Option<String>),
+    Reveal(String),
+}
+
 struct SftpWorker {
     runtime: tokio::runtime::Handle,
     task_tracker: RuntimeTaskTracker,
@@ -240,12 +246,12 @@ impl SftpHandle {
     }
 }
 
-pub fn spawn_sftp(
+pub(crate) fn spawn_sftp(
     runtime: &tokio::runtime::Handle,
     task_tracker: RuntimeTaskTracker,
     tab_id: String,
     session: Session,
-    initial_path: Option<String>,
+    initial_request: SftpInitialRequest,
     events: BackendEventSender,
 ) -> SftpHandle {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
@@ -271,7 +277,7 @@ pub fn spawn_sftp(
         if let Err(err) = run_sftp(
             tab_id.clone(),
             session,
-            initial_path,
+            initial_request,
             cmd_rx,
             cmd_tx_clone,
             events.clone(),

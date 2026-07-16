@@ -887,6 +887,7 @@ impl AxShell {
             pane_root: PaneLayout::Single(String::new()),
             sftp: Some(crate::app::SftpUiState {
                 current_path: "/".into(),
+                has_opened_directory: false,
                 status: rust_i18n::t!("sftp_connecting").to_string(),
                 entries: Vec::new(),
                 has_more_entries: false,
@@ -976,6 +977,7 @@ impl AxShell {
             pane_root: PaneLayout::Single(id.clone()),
             sftp: Some(crate::app::SftpUiState {
                 current_path: "/".into(),
+                has_opened_directory: false,
                 status: rust_i18n::t!("sftp_connecting").to_string(),
                 entries: Vec::new(),
                 has_more_entries: false,

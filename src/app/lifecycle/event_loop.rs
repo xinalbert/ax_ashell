@@ -458,11 +458,11 @@ impl AxShell {
                         } => {
                             result.ui_changed = true;
                             self.mark_sftp_activity_for_group(&tab_id);
-                            let mut opened_path = None;
                             if let Some(group) = self.tab_groups.iter_mut().find(|g| g.id == tab_id)
                                 && let Some(sftp) = group.sftp.as_mut()
                             {
                                 sftp.current_path = path;
+                                sftp.has_opened_directory = true;
                                 if append {
                                     sftp.entries.extend(entries);
                                 } else {
@@ -497,10 +497,6 @@ impl AxShell {
                                     }
                                 }
                                 self.pending_sftp_path_sync = Some(sftp.current_path.clone());
-                                opened_path = Some(sftp.current_path.clone());
-                            }
-                            if let Some(path) = opened_path {
-                                self.persist_sftp_path_for_group(&tab_id, &path);
                             }
                         }
                         BackendEvent::SftpPreview { tab_id, preview } => {

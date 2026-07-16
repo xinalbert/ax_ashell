@@ -14,10 +14,9 @@ pub use self::{
         TransferState, TransferType,
     },
     path::format_mtime,
-    worker::spawn_sftp,
 };
 pub(crate) use self::{
     model::{SftpOverwriteDecision, SftpOverwriteRequest, unix_timestamp_secs},
     path::{join_remote, resolve_remote_path},
-    worker::SftpHandle,
+    worker::{SftpHandle, SftpInitialRequest, spawn_sftp},
 };

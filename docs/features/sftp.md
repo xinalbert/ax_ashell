@@ -10,9 +10,9 @@ Open SFTP from an active SSH session. The page combines a remote browser, a loca
 
 When creating or editing a saved SSH session, set **SFTP Path (optional)** to choose the remote directory opened by that session's SFTP page. An absolute path is used directly; `~` and relative paths are resolved from the server's home directory.
 
-For saved sessions without this setting, AxShell reopens the last successfully listed remote directory. New or unsaved sessions, or saved sessions without a remembered directory, open the server home directory. The initial directory is selected before the SFTP listing starts, so opening the page does not briefly show the home directory before navigating elsewhere.
+When SFTP opens without an explicit target, AxShell uses the saved session's **SFTP Path (optional)** when it is set; otherwise it opens the server home directory. A path explicitly opened from the terminal takes priority and is resolved before the first directory listing, so the page does not briefly show the configured directory or home first. If an existing SFTP page reconnects after its idle worker is reclaimed, it restores the directory already shown on that page.
 
-Use **Open Terminal Directory** beside the remote path bar when you explicitly want to browse the connected SSH terminal's current directory. Changing directories in the terminal does not automatically move the SFTP browser.
+Use **Open Terminal Directory** beside the remote path bar when you explicitly want to browse the connected SSH terminal's current directory. It and a path entered in the remote path bar open the requested target directly when they create the SFTP connection. Changing directories in the terminal does not automatically move the SFTP browser.
 
 ## Local Directory Memory
 

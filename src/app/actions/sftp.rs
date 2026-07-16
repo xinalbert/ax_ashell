@@ -13,7 +13,7 @@ use crate::{
     AxShell, SftpContextMenuState,
     app::{LocalFileEntry, SftpContextMenuTarget, WorkspacePage},
     config::ConfigStore,
-    sftp::{RemoteEntry, SftpHandle},
+    sftp::{RemoteEntry, SftpHandle, SftpInitialRequest},
 };
 
 pub(crate) fn is_editable_text_file(filename: &str) -> bool {
@@ -244,19 +244,16 @@ impl AxShell {
         self.config.get(&session.id).map(|_| session.id)
     }
 
-    pub(crate) fn persist_sftp_path_for_group(&mut self, group_id: &str, path: &str) {
-        let Some(session_id) = self
-            .session_for_sftp_group(group_id)
-            .and_then(|session| self.config.get(&session.id).map(|_| session.id))
-        else {
-            return;
-        };
-        if self.config.set_last_remote_sftp_path(&session_id, path) {
-            self.config.save_logged("set_last_remote_sftp_path");
-        }
+    pub(crate) fn ensure_sftp_handle_for_group(&mut self, group_id: &str) -> Option<SftpHandle> {
+        self.ensure_sftp_handle_for_group_with_initial_reveal(group_id, None)
+            .map(|(handle, _)| handle)
     }
 
-    pub(crate) fn ensure_sftp_handle_for_group(&mut self, group_id: &str) -> Option<SftpHandle> {
+    fn ensure_sftp_handle_for_group_with_initial_reveal(
+        &mut self,
+        group_id: &str,
+        initial_reveal_path: Option<String>,
+    ) -> Option<(SftpHandle, bool)> {
         if self
             .tab_groups
             .iter()
@@ -275,7 +272,7 @@ impl AxShell {
             if let Some(handle) = self.sftp_handles.get(group_id)
                 && !handle.commands_closed()
             {
-                return Some(handle.clone());
+                return Some((handle.clone(), false));
             }
         }
         if let Some(handle) = self.sftp_handles.remove(group_id) {
@@ -288,22 +285,18 @@ impl AxShell {
             .iter()
             .find(|group| group.id == group_id)
             .and_then(|group| group.sftp.as_ref())
-            .filter(|sftp| !sftp.current_path.is_empty())
-            .filter(|sftp| sftp.current_path != "/" || sftp.home_dir != "/")
-            .map(|sftp| sftp.current_path.clone());
-        let remembered_path = self
-            .config
-            .last_remote_sftp_path(&session.id)
-            .map(str::to_string);
-        let initial_path =
-            sftp_worker_initial_path(restore_path, &session.sftp_path, remembered_path);
+            .and_then(|sftp| {
+                sftp_worker_restore_path(&sftp.current_path, sftp.has_opened_directory)
+            });
+        let initial_request =
+            sftp_worker_initial_request(initial_reveal_path, restore_path, &session.sftp_path);
         let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
         let handle = crate::sftp::spawn_sftp(
             &runtime,
             task_tracker,
             group_id.to_string(),
             session,
-            initial_path,
+            initial_request,
             self.runtime_state.events_tx.clone(),
         );
         self.sftp_handles
@@ -321,7 +314,7 @@ impl AxShell {
             sftp.reached_entries_limit = false;
             sftp.connection_may_be_stale = false;
         }
-        Some(handle)
+        Some((handle, true))
     }
 
     pub(crate) fn ensure_active_sftp_handle(&mut self) -> Option<SftpHandle> {
@@ -826,7 +819,12 @@ impl AxShell {
 
     pub(crate) fn navigate_sftp(&mut self, path: String, cx: &mut Context<Self>) {
         let resolved = self.resolve_active_sftp_path(&path);
-        if let Some(handle) = self.ensure_active_sftp_handle() {
+        let Some(group_id) = self.active_group.clone() else {
+            return;
+        };
+        if let Some((handle, started_for_target)) =
+            self.ensure_sftp_handle_for_group_with_initial_reveal(&group_id, Some(resolved.clone()))
+        {
             self.mark_active_sftp_activity();
             tracing::info!(
                 component = "sftp",
@@ -834,7 +832,9 @@ impl AxShell {
                 remote_path = %crate::diagnostics::mask_path(&resolved),
                 "Navigating SFTP directory"
             );
-            handle.list_dir(resolved.clone());
+            if !started_for_target {
+                handle.list_dir(resolved.clone());
+            }
             if let Some(sftp) = self.active_sftp_mut() {
                 sftp.status = resolved;
                 sftp.has_more_entries = false;
@@ -899,11 +899,18 @@ impl AxShell {
         }
 
         self.pending_sftp_selection_path = Some(resolved);
-        self.activate_group_page(active_group_id, WorkspacePage::Sftp, window, cx);
-        if let Some(handle) = self.ensure_active_sftp_handle() {
+        self.activate_group_page(active_group_id.clone(), WorkspacePage::Sftp, window, cx);
+        if let Some((handle, started_for_target)) = self
+            .ensure_sftp_handle_for_group_with_initial_reveal(
+                &active_group_id,
+                self.pending_sftp_selection_path.clone(),
+            )
+        {
             if let Some(target_path) = self.pending_sftp_selection_path.clone() {
-                self.mark_active_sftp_activity();
-                handle.reveal_path(target_path.clone());
+                if !started_for_target {
+                    self.mark_active_sftp_activity();
+                    handle.reveal_path(target_path.clone());
+                }
                 if let Some(sftp) = self.active_sftp_mut() {
                     sftp.status = target_path;
                 }
@@ -1708,14 +1715,34 @@ fn should_mark_sftp_connection_stale(
     active_work_pins == 0 && !has_active_transfer && !already_stale
 }
 
-fn sftp_worker_initial_path(
+fn sftp_worker_initial_request(
+    explicit_reveal_path: Option<String>,
     active_path: Option<String>,
     configured_path: &str,
-    remembered_path: Option<String>,
+) -> SftpInitialRequest {
+    if let Some(path) = explicit_reveal_path.filter(|path| !path.trim().is_empty()) {
+        return SftpInitialRequest::Reveal(path);
+    }
+
+    SftpInitialRequest::Browse(sftp_worker_initial_browse_path(
+        active_path,
+        configured_path,
+    ))
+}
+
+fn sftp_worker_initial_browse_path(
+    active_path: Option<String>,
+    configured_path: &str,
 ) -> Option<String> {
     active_path
         .or_else(|| (!configured_path.trim().is_empty()).then(|| configured_path.to_string()))
-        .or(remembered_path)
+}
+
+fn sftp_worker_restore_path(current_path: &str, has_opened_directory: bool) -> Option<String> {
+    has_opened_directory
+        .then(|| current_path.trim())
+        .filter(|path| !path.is_empty())
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -1726,9 +1753,10 @@ mod idle_reclaim_tests {
     };
 
     use super::{
-        download_targets_for_context, sftp_worker_initial_path, should_mark_sftp_connection_stale,
-        should_reclaim_sftp_worker,
+        download_targets_for_context, sftp_worker_initial_request, sftp_worker_restore_path,
+        should_mark_sftp_connection_stale, should_reclaim_sftp_worker,
     };
+    use crate::sftp::SftpInitialRequest;
 
     #[test]
     fn context_download_uses_the_selected_group_only_for_a_selected_item() {
@@ -1795,23 +1823,36 @@ mod idle_reclaim_tests {
     }
 
     #[test]
-    fn sftp_worker_initial_path_prefers_active_then_configured_then_remembered() {
+    fn sftp_worker_initial_request_prefers_explicit_then_active_then_configured_then_home() {
         assert_eq!(
-            sftp_worker_initial_path(
+            sftp_worker_initial_request(
+                Some("/srv/explicit".into()),
                 Some("/srv/current".into()),
                 "/srv/configured",
-                Some("/srv/remembered".into()),
             ),
+            SftpInitialRequest::Reveal("/srv/explicit".into())
+        );
+        assert_eq!(
+            sftp_worker_initial_request(None, Some("/srv/current".into()), "/srv/configured"),
+            SftpInitialRequest::Browse(Some("/srv/current".into()))
+        );
+        assert_eq!(
+            sftp_worker_initial_request(None, None, "/srv/configured"),
+            SftpInitialRequest::Browse(Some("/srv/configured".into()))
+        );
+        assert_eq!(
+            sftp_worker_initial_request(None, None, "  "),
+            SftpInitialRequest::Browse(None)
+        );
+    }
+
+    #[test]
+    fn sftp_worker_restores_only_a_directory_the_page_has_opened() {
+        assert_eq!(sftp_worker_restore_path("/", false), None);
+        assert_eq!(
+            sftp_worker_restore_path("/srv/current", true),
             Some("/srv/current".into())
         );
-        assert_eq!(
-            sftp_worker_initial_path(None, "/srv/configured", Some("/srv/remembered".into()),),
-            Some("/srv/configured".into())
-        );
-        assert_eq!(
-            sftp_worker_initial_path(None, "  ", Some("/srv/remembered".into())),
-            Some("/srv/remembered".into())
-        );
-        assert_eq!(sftp_worker_initial_path(None, "", None), None);
+        assert_eq!(sftp_worker_restore_path("/", true), Some("/".into()));
     }
 }

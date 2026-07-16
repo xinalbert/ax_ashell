@@ -54,6 +54,7 @@ impl Default for SftpTransferTab {
 #[derive(Clone, Default)]
 pub(crate) struct SftpUiState {
     pub(crate) current_path: String,
+    pub(crate) has_opened_directory: bool,
     pub(crate) status: String,
     pub(crate) entries: Vec<RemoteEntry>,
     pub(crate) has_more_entries: bool,
