@@ -2,6 +2,9 @@
 
 # AxShell
 
+[![CI](https://github.com/xinalbert/axshell/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xinalbert/axshell/actions/workflows/ci.yml)
+[![Release](https://github.com/xinalbert/axshell/actions/workflows/release.yml/badge.svg)](https://github.com/xinalbert/axshell/actions/workflows/release.yml)
+
 ![AxShell workspace preview](preview.png)
 
 AxShell is a Rust and GPUI desktop terminal workspace for local shells, SSH sessions, SFTP file management, and repeatable remote operations.

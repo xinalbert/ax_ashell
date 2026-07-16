@@ -2,6 +2,9 @@
 
 # AxShell
 
+[![CI](https://github.com/xinalbert/axshell/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xinalbert/axshell/actions/workflows/ci.yml)
+[![Release](https://github.com/xinalbert/axshell/actions/workflows/release.yml/badge.svg)](https://github.com/xinalbert/axshell/actions/workflows/release.yml)
+
 ![AxShell 工作区预览](preview.png)
 
 AxShell 是一个基于 Rust 和 GPUI 的桌面终端工作区，用于统一管理本地 Shell、SSH 会话、SFTP 文件与日常远程运维操作。
