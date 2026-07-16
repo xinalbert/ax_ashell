@@ -15,7 +15,8 @@ This directory contains task-focused user guides, development notes, and design 
 | Feature | Guide |
 | --- | --- |
 | Local terminal and SSH sessions | [Terminal And SSH](features/terminal-ssh.md) |
-| Tabs, panes, search, and keybindings | [Workspace](features/workspace.md) |
+| Serial consoles and Telnet sessions | [Serial And Telnet](features/serial-telnet.md) |
+| Tabs, panes, standalone windows, search, and keybindings | [Workspace](features/workspace.md) |
 | Remote files and transfers | [SFTP](features/sftp.md) |
 | Themes, fonts, tab colors, and settings behavior | [Appearance And Settings](features/appearance-settings.md) |
 | Built-in font families and upstream repositories | [Bundled Fonts](features/bundled-fonts.md) |

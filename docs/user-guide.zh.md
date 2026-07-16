@@ -6,6 +6,7 @@
 
 - [快速入门](getting-started.zh.md)
 - [终端与 SSH](features/terminal-ssh.zh.md)
+- [串口与 Telnet](features/serial-telnet.zh.md)
 - [工作区](features/workspace.zh.md)
 - [SFTP](features/sftp.zh.md)
 - [外观与设置](features/appearance-settings.zh.md)

@@ -49,7 +49,7 @@
 | `assets/icons/terminal_icon_all_formats/` | 应用图标资源目录 | 改 `build.rs` Windows icon、macOS bundle icon、Linux desktop/deb icon、非 macOS runtime window icon 或 release 打包图标路径时 | 批量图标不逐项索引；`terminal_icon_256.png` 是 `startup.rs` 非 macOS runtime window icon 的编译期资源 |
 | `README.md` / `README.zh.md` | 英文默认项目入口与中文入口 | 改项目定位、快速开始、文档入口、贡献或支持信息时 | 保持简短并在顶部互链；详细功能放入 `docs/` |
 | `docs/README.md` / `docs/README.zh.md` | 英文默认文档导航与中文文档导航 | 新增、删除、移动用户/开发/设计文档时 | 用户功能页位于 `docs/features/`，两种语言结构对齐 |
-| `docs/features/` | 按功能拆分的双语用户文档 | 改终端/SSH、工作区、SFTP、设置、内置字体、同步、代理/X11、监控或本地数据行为时 | 默认英文 `.md`，中文 `.zh.md`；`bundled-fonts*.md` 记录内置字体上游仓库、版本、样式和授权；截图建议路径记录在各页和 `docs/images/README.md` |
+| `docs/features/` | 按功能拆分的双语用户文档 | 改终端/SSH、串口/Telnet、工作区、SFTP、设置、内置字体、同步、代理/X11、监控或本地数据行为时 | 默认英文 `.md`，中文 `.zh.md`；`serial-telnet*.md` 说明端口参数、Telnet 边界与 SSH-only 功能；`bundled-fonts*.md` 记录内置字体上游仓库、版本、样式和授权；截图建议路径记录在各页和 `docs/images/README.md` |
 | `docs/` | 用户/开发文档、资源生命周期设计、环境审计和实施跟踪 | 改项目名称、配置目录、同步文件名、休眠策略、打包命令或验证边界时 | 根导航为 `docs/README*.md`；英语 `resource-lifecycle.md` 与中文 `resource-lifecycle.zh.md` 记录深睡分期与资源边界 |
 
 ## 关键文件
@@ -60,6 +60,7 @@
 | `.agents/skills/ax-ashell-fast-hover/SKILL.md` | 项目本地 AxShell 快速 hover skill | `FastHoverExt` / `FastHoverOptions` 使用规则，Settings `fast_menu`，`uniform_list`，禁用旧 hover 路径，验证清单 | 后续修改 hover_list、Settings 下拉、UI/Terminal Font 菜单、SFTP/sidebar/selector 长列表或自绘 context menu hover 时 |
 | `docs/resource-lifecycle.md` | English resource lifecycle, deep-sleep and resume MVP design | State machine, phases, resource policy, resume fallback, verification | Keep English documentation aligned with the Chinese lifecycle design |
 | `docs/resource-lifecycle.zh.md` | 中文资源生命周期、深度休眠与恢复 MVP 设计 | 状态机、阶段路线、资源策略、恢复兜底、验证边界 | 实现或评审后台降载、SFTP pin、backend shutdown 与系统睡眠恢复时 |
+| `docs/features/serial-telnet.md` / `docs/features/serial-telnet.zh.md` | 串口控制台与 Telnet 双语用户指南 | Connection Type，Serial Console，Telnet，SSH-Only Features | 改串口参数、Telnet 连接行为、非 SSH 功能边界或会话入口文案时 |
 | `src/config/model.rs` | 配置文件与值模型、默认值和规范化规则 | `ConfigFile`，`LocalShellProfile`，global SFTP local-directory setting，`default_local_shell_profiles`，`default_rayon_threads`，theme/profile/window types | 改配置 serde、local shell profile/argv、全局 SFTP 本机目录、Rayon `1–64` 范围、默认值、theme profile、窗口/标题栏/光标或 custom theme 模型时 |
 | `src/config/store.rs` | 本地配置路径、迁移、getter/setter 和 `ConfigStore` | `ConfigStore::load/save`，`file_icons_path`，`tmp_dir`，`sftp_edit_dir`，`normalize_local_shell_profiles`，global SFTP local-directory accessor，`rayon_threads`，`normalize_theme_profiles` | 改配置目录、独立文件图标缓存路径、受管 SFTP 编辑副本目录、旧目录迁移、local shell profile、全局 SFTP 本机目录、Rayon worker 设置、Settings 二次快捷键动作、sync 默认对象名、theme profile 或 custom theme draft 时 |
 | `src/backend/proxy.rs` | SSH/SFTP transport proxy | `ProxyStream`，`ENV_PROXY`，`connect`，`active` | 改 SOCKS5/HTTP/direct 连接、环境代理或 session/global proxy 优先级时 |
@@ -191,8 +192,8 @@
 ## 刷新规则
 
 - 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、启动初始化、独立文件图标缓存、local shell profile/PTY argv、Rayon worker 配置或自定义值范围、日志/crash hook、Tokio runtime 生命周期、terminal Output batching / dirty generation / `TermDamage` / snapshot / highlight cache / URL-path modifier visuals、terminal backend 类型、SSH/Serial/Telnet 会话模型和端口检测、非 SSH SFTP/监控边界、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、内置字体 family/字重/授权/排序、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、内置 theme JSON、设置页字段分组、Settings 下拉菜单、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、系统恢复兜底/远程监控代次/SSH 健康检查、workspace page / tab 模型、Settings About 菜单入口、会话 `sftp_path` / `x11_forwarding` / `shortcut`、无凭据 session JSON 剪贴板往返、本机 X server 检测、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 递归下载/覆盖确认/传输标签面板、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`AGENTS.md`，`.agents/skills/ax-ashell-fast-hover/SKILL.md`，`Cargo.toml`，`src/session.rs`，`src/backend/serial.rs`，`src/backend/telnet.rs`，`src/app/actions/session.rs`，`src/app/actions/saved_sessions.rs`，`src/app/dialogs/ssh.rs`，`docs/project-env-audit/current.md`
+- 最近依据：`AGENTS.md`，`.agents/skills/ax-ashell-fast-hover/SKILL.md`，`Cargo.toml`，`src/session.rs`，`src/backend/serial.rs`，`src/backend/telnet.rs`，`src/app/actions/session.rs`，`src/app/actions/saved_sessions.rs`，`src/app/dialogs/ssh.rs`，`README.md`，`docs/features/serial-telnet.md`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-16 17:00 +0800
+- 2026-07-17 07:45 +0800

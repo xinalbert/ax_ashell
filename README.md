@@ -7,14 +7,14 @@
 
 ![AxShell workspace preview](preview.png)
 
-AxShell is a Rust and GPUI desktop terminal workspace for local shells, SSH sessions, SFTP file management, and repeatable remote operations.
+AxShell is a Rust and GPUI desktop terminal workspace for local shells, SSH, serial, and Telnet sessions, SFTP file management, and repeatable remote operations.
 
 Forked from <https://github.com/rust-kotlin/ashell.git>. The current project is maintained at <https://github.com/xinalbert/axshell>.
 
 ## Highlights
 
-- Local terminals and saved SSH sessions with password or private-key authentication
-- Multi-tab and multi-pane workspaces with configurable keybindings and search
+- Local terminals plus saved SSH, serial, and Telnet sessions; SSH supports password or private-key authentication
+- Multi-tab and multi-pane workspaces with draggable session groups, detachable terminal windows, configurable keybindings, and search
 - Built-in SFTP browsing, transfer control, remote editing, large-directory pagination, and batch download file details
 - Themes, fonts, tab color behavior, monitoring, and workspace preferences
 - Encrypted session sync over WebDAV or S3-compatible storage
@@ -39,6 +39,8 @@ cargo dev-reload
 - [Documentation index](docs/README.md)
 - [Getting started](docs/getting-started.md)
 - [Feature guides](docs/README.md#feature-guides)
+- [Serial and Telnet](docs/features/serial-telnet.md)
+- [Workspace tabs and windows](docs/features/workspace.md)
 - [Bundled fonts](docs/features/bundled-fonts.md)
 - [Development and packaging](docs/development.md)
 - [GitHub releases](https://github.com/xinalbert/axshell/releases)

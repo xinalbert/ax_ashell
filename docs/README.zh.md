@@ -15,7 +15,8 @@
 | 功能 | 文档 |
 | --- | --- |
 | 本地终端和 SSH 会话 | [终端与 SSH](features/terminal-ssh.zh.md) |
-| 标签、Pane、搜索和快捷键 | [工作区](features/workspace.zh.md) |
+| 串口控制台和 Telnet 会话 | [串口与 Telnet](features/serial-telnet.zh.md) |
+| 标签、Pane、独立窗口、搜索和快捷键 | [工作区](features/workspace.zh.md) |
 | 远程文件和传输 | [SFTP](features/sftp.zh.md) |
 | 主题、字体、标签颜色和设置行为 | [外观与设置](features/appearance-settings.zh.md) |
 | 内置字体家族和上游仓库 | [内置字体](features/bundled-fonts.zh.md) |

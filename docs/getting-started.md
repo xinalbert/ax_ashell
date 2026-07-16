@@ -24,7 +24,7 @@ Packaging prerequisites and platform commands are documented in [Development and
 
 ## Main Workspace
 
-- **Saved sessions:** open local terminals, organize SSH connections by group, and create connections.
+- **Saved sessions:** open local terminals, organize saved SSH, serial, and Telnet connections by group, and create connections.
 - **Terminal workspace:** work with tabs, split panes, terminal search, and configurable keybindings.
 - **SFTP page:** browse remote files and manage transfers from an SSH session.
 - **Monitoring:** inspect local or remote CPU, memory, network, disk, and system information.
@@ -33,6 +33,7 @@ Packaging prerequisites and platform commands are documented in [Development and
 ## Next Steps
 
 - Connect to a host: [Terminal And SSH](features/terminal-ssh.md)
+- Open a serial console or Telnet session: [Serial And Telnet](features/serial-telnet.md)
 - Learn workspace controls: [Workspace](features/workspace.md)
 - Transfer remote files: [SFTP](features/sftp.md)
 - Find config and logs: [Local Data And Troubleshooting](features/local-data-troubleshooting.md)

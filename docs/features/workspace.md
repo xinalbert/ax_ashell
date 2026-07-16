@@ -14,6 +14,13 @@ AxShell can keep local terminals, SSH terminals, SFTP pages, monitoring, and set
 
 Inactive tabs use a neutral indicator by default. Enable **Color inactive tabs** in workspace settings to keep status colors visible on every tab.
 
+## Tab Groups And Standalone Windows
+
+- Drag a terminal or SFTP tab onto another tab position to reorder the whole session group. A group's terminal panes and SFTP page move together.
+- Groups with the same title receive a stable `#` instance number, so local terminals or repeated saved-session connections remain distinguishable after reordering.
+- Use **Move to New Window** on a terminal tab to move its terminal group, panes, and running backend into a dedicated terminal window. Use **Return to Main Window** in that window's title bar or Window menu to bring it back.
+- A standalone window is terminal-only; return it to the main window to use its SFTP page, settings, or monitoring. Groups with active or paused SFTP transfers cannot be moved until the transfer is resolved.
+
 ## Search
 
 Open terminal search with `Cmd/Ctrl + F`. Search covers the terminal buffer, highlights matches, and lets you move between results.

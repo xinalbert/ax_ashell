@@ -6,6 +6,7 @@ The former single-page guide has been split into focused pages so each workflow 
 
 - [Getting Started](getting-started.md)
 - [Terminal And SSH](features/terminal-ssh.md)
+- [Serial And Telnet](features/serial-telnet.md)
 - [Workspace](features/workspace.md)
 - [SFTP](features/sftp.md)
 - [Appearance And Settings](features/appearance-settings.md)

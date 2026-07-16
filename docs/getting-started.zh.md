@@ -24,7 +24,7 @@ cargo dev-reload
 
 ## 主工作区
 
-- **已保存会话：** 打开本地终端、按组管理 SSH 连接并新建连接。
+- **已保存会话：** 打开本地终端、按组管理已保存的 SSH、串口和 Telnet 连接，并新建连接。
 - **终端工作区：** 使用标签、拆分 Pane、终端搜索和可配置快捷键。
 - **SFTP 页面：** 从 SSH 会话浏览远程文件并管理传输。
 - **系统监控：** 查看本地或远端 CPU、内存、网络、磁盘和系统信息。
@@ -33,6 +33,7 @@ cargo dev-reload
 ## 下一步
 
 - 连接远程主机：[终端与 SSH](features/terminal-ssh.zh.md)
+- 打开串口控制台或 Telnet 会话：[串口与 Telnet](features/serial-telnet.zh.md)
 - 了解工作区操作：[工作区](features/workspace.zh.md)
 - 传输远程文件：[SFTP](features/sftp.zh.md)
 - 查找配置和日志：[本地数据与故障排查](features/local-data-troubleshooting.zh.md)

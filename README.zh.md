@@ -7,14 +7,14 @@
 
 ![AxShell 工作区预览](preview.png)
 
-AxShell 是一个基于 Rust 和 GPUI 的桌面终端工作区，用于统一管理本地 Shell、SSH 会话、SFTP 文件与日常远程运维操作。
+AxShell 是一个基于 Rust 和 GPUI 的桌面终端工作区，用于统一管理本地 Shell、SSH、串口和 Telnet 会话、SFTP 文件与日常远程运维操作。
 
 项目 Fork 自 <https://github.com/rust-kotlin/ashell.git>，当前仓库为 <https://github.com/xinalbert/axshell>。
 
 ## 主要能力
 
-- 本地终端和已保存 SSH 会话，支持密码与私钥认证
-- 多标签、多 Pane 工作区，支持快捷键配置和终端搜索
+- 本地终端以及已保存的 SSH、串口和 Telnet 会话；SSH 支持密码与私钥认证
+- 多标签、多 Pane 工作区，支持会话组拖放、独立终端窗口、快捷键配置和终端搜索
 - 内置 SFTP 浏览、传输控制、远程编辑、超大目录分页和批量下载文件明细
 - 主题、字体、标签颜色、监控和工作区偏好设置
 - 通过 WebDAV 或 S3 兼容存储加密同步会话配置
@@ -39,6 +39,8 @@ cargo dev-reload
 - [文档导航](docs/README.zh.md)
 - [快速入门](docs/getting-started.zh.md)
 - [功能指南](docs/README.zh.md#功能指南)
+- [串口与 Telnet](docs/features/serial-telnet.zh.md)
+- [工作区标签与窗口](docs/features/workspace.zh.md)
 - [内置字体](docs/features/bundled-fonts.zh.md)
 - [开发与打包](docs/development.zh.md)
 - [GitHub Releases](https://github.com/xinalbert/axshell/releases)

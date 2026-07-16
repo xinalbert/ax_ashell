@@ -12,13 +12,16 @@ Profiles are editable and can be duplicated before customization. New local term
 
 ## Create An SSH Session
 
-1. Open **New SSH** or the session selector.
-2. Enter a host, port, and username.
-3. Choose password or private-key authentication.
-4. Optionally set a group and per-session proxy.
-5. Use **Save** or **Save & Connect**.
+1. Open **New Connection** or the session selector and choose **SSH**.
+2. Enter a host, port, and username in the **Connection** section.
+3. Choose password or private-key authentication in **Authentication**.
+4. Optionally set a connection name or group in **Organization**.
+5. Expand **Advanced SSH Options** for proxy, SFTP path, X11 forwarding, and a connection shortcut.
+6. Use **Save** or **Save & Connect**.
 
 Private-key authentication supports a key file path or inline key content and an optional passphrase.
+
+See [Serial And Telnet](serial-telnet.md) for non-SSH terminal sessions.
 
 ## Saved Sessions
 
