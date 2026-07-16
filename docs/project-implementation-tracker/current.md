@@ -2,50 +2,50 @@
 
 ## 当前目标
 
-- 目标：为同名本地和 SSH 工作区 Tab 显示稳定实例号。
-- 交付物：`Local #1` / `Local #2` 与同名 SSH 实例标签，SFTP 标签同步显示，单元测试与验证记录。
+- 目标：重构新建 SSH 连接表单，使核心连接信息、认证、组织和高级选项清晰分层。
+- 交付物：分区 SSH 表单、明确字段文案、保留现有代理/SFTP/X11/快捷键行为，以及验证记录。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/workspace.rs`、`src/app/actions/session.rs`、`src/app/views/tab_bar.rs`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：Terminal/SFTP 连接生命周期、会话持久化 schema、Settings Tab 顺序、`Cargo.toml` / `Cargo.lock`。
+- 当前范围：`src/app/dialogs/ssh.rs`、`src/app/lifecycle/init.rs`、`locales/en.yml`、`locales/zh-CN.yml`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：SSH backend 行为、会话持久化 schema、跳板机/ProxyJump、压缩/keepalive 等尚未实现的 SSH 参数、`Cargo.toml` / `Cargo.lock`。
 
 ## 当前状态
 
 - 阶段：已完成
 - 开工判定：允许开工
-- 是否需要联网：否
+- 是否需要联网：是，已完成
 - 多 agent：未使用
 
 ## 活动计划
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 为新会话组分配稳定同名实例号并渲染至 Terminal/SFTP Tab | 工作区聚焦单元测试、`cargo check` | 实例号不随 Tab 重排改变 |
-| P2 | completed | 格式化、构建、回归并收口跟踪记录 | 完整测试、差异检查、tracking validator | GUI 文本截断另需手工验证 |
+| P1 | completed | 重构新建 SSH 表单的分区、字段文案与高级选项层级 | Rust 格式化、`cargo check` | 保留现有 Session 字段与交互 |
+| P2 | completed | 完成回归、差异检查与跟踪记录 | `cargo test --quiet`、tracking validator | GUI 交互仍需手工确认 |
 
 ## 已完成
 
-- 已确认当前 Tab 标题仅使用 `TabGroup::title`，多个 Local 或同名已保存 SSH 会话只能由可变位置序号区分。
-- 已确认会话组在创建时集中构造，适合将实例号保存在运行时组模型中，让拖动重排不影响标签。
-- 已为 `TabGroup` 保存运行时实例号，并为每个会话标题维护单调递增的窗口内计数器。
-- 已接入本地终端、SSH 终端与仅 SFTP 页面三个组创建入口；Terminal/SFTP 标签共同显示标题和实例号。
-- 已将标签格式提取为可测试 helper，覆盖 Local、SSH 多 pane 与 SFTP 文本，并更新项目地图。
+- 已确认现有 Session 模型已经支持密码/私钥、代理、SFTP 初始目录、X11 和连接快捷键，无需扩展 schema。
+- 已确认 backend 未实现跳板机、ProxyJump、压缩、用户态 keepalive、Agent forwarding 等行为；本轮不展示无效参数。
+- 已完成 Termius、MobaXterm 与 Royal TS 的只读信息架构调研：核心连接字段优先，分组独立于连接参数，代理/X11 等进入高级层级。
+- 已完成表单重构：`Host | Port` 同行、用户名独占下一行；连接、认证、组织和高级 SSH 选项以独立卡片区分。
+- 已将连接名称、保存分组、选择既有分组、私钥口令和 SFTP 初始目录替换为明确的中英文文案；高级选项默认收起，编辑含高级配置的既有会话时自动展开。
 
 ## 验证
 
-- 已完成：受影响 Rust 文件 `rustfmt --edition 2024`；`cargo test --quiet workspace::tests`（5 项）；`cargo check`；完整 `cargo test --quiet`（212 项）；`git diff --check`；tracking docs validator。
-- 未完成：真实桌面窗口的文本截断与拖放后实例号稳定性验证。
+- 已完成：项目环境、实施记录、项目地图、SSH 表单/会话模型和快速 hover 规范的静态核对；受影响 Rust 文件 `rustfmt --edition 2024`；`cargo check`；完整 `cargo test --quiet`（212 项）；`git diff --check`；tracking docs validator。
+- 未完成：真实桌面窗口的表单可视高度、键盘 Tab 顺序、密码/私钥切换、分组菜单和高级选项展开验收。
 
 ## 风险与阻塞
 
-- 无阻塞；较长会话名加实例号可能更早触发 Tab 文本省略，需 GUI 手工确认。
+- 无阻塞；表单分区后的实际可视高度、键盘 Tab 顺序和弹窗滚动体验需要 GUI 手工确认。
 
 ## 下一步
 
-- 手工确认较长名称下的 Tab 文本省略、Terminal/SFTP 实例对应关系，以及拖放重排后实例号不变。
+- 在桌面应用中手工确认新建和编辑 SSH 会话的分区、保存和连接流程。
 
 ## 最后更新时间
 
-- 2026-07-16 14:20 +0800
+- 2026-07-16 14:37 +0800
