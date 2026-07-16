@@ -377,6 +377,18 @@ impl AxShell {
             let Ok(event) = self.runtime_state.events_rx.try_recv() else {
                 break;
             };
+            if let Some(resource_id) = event.resource_id()
+                && !self.owns_event_resource(resource_id)
+                && !self
+                    .runtime_state
+                    .events_tx
+                    .is_routed_to_current_window(&event)
+            {
+                // The event was queued immediately before this resource moved
+                // to another window. Re-route it using the current owner.
+                let _ = self.runtime_state.events_tx.try_send(event);
+                continue;
+            }
             match event {
                 BackendEvent::Output { tab_id, bytes } => {
                     terminal_output.push(tab_id, bytes);
@@ -919,9 +931,14 @@ impl AxShell {
             self.schedule_terminal_refresh();
         }
         if transfers_changed {
-            self.config.set_transfers(self.transfers.clone());
+            self.persist_transfers();
         }
         result
+    }
+
+    fn owns_event_resource(&self, resource_id: &str) -> bool {
+        self.tabs.iter().any(|tab| tab.id == resource_id)
+            || self.tab_groups.iter().any(|group| group.id == resource_id)
     }
 
     fn flush_terminal_output(

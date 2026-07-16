@@ -183,6 +183,7 @@ impl AxShell {
                                         let drop_target_group_id = group_id.clone();
                                         let dragged_group_id = group_id.clone();
                                         let close_sftp_group_id = group_id.clone();
+                                        let move_terminal_group_id = group_id.clone();
                                         let is_terminal_tab =
                                             target_page == WorkspacePage::Terminal;
                                         let is_sftp_tab = target_page == WorkspacePage::Sftp;
@@ -247,57 +248,97 @@ impl AxShell {
                                             ))
                                             .when(is_terminal_tab, |this| {
                                                 this.suffix(
-                                                    Button::new(("tab-close", ix))
-                                                        .ghost()
-                                                        .xsmall()
-                                                        .icon(IconName::Close)
-                                                        .mr(px(5.))
-                                                        .on_mouse_down(
-                                                            MouseButton::Left,
-                                                            |_, window, cx| {
-                                                                window.prevent_default();
-                                                                cx.stop_propagation();
-                                                            },
+                                                    h_flex()
+                                                        .items_center()
+                                                        .child(
+                                                            Button::new(("tab-move-window", ix))
+                                                                .ghost()
+                                                                .xsmall()
+                                                                .icon(IconName::ExternalLink)
+                                                                .tooltip(
+                                                                    t!(
+                                                                        "move_workspace_to_new_window"
+                                                                    )
+                                                                    .to_string(),
+                                                                )
+                                                                .on_mouse_down(
+                                                                    MouseButton::Left,
+                                                                    |_, window, cx| {
+                                                                        window.prevent_default();
+                                                                        cx.stop_propagation();
+                                                                    },
+                                                                )
+                                                                .on_click(cx.listener(
+                                                                    move |this, _, window, cx| {
+                                                                        window.prevent_default();
+                                                                        cx.stop_propagation();
+                                                                        this.move_workspace_group_to_new_window(
+                                                                            move_terminal_group_id
+                                                                                .clone(),
+                                                                            window,
+                                                                            cx,
+                                                                        );
+                                                                    },
+                                                                )),
                                                         )
-                                                        .on_click(cx.listener(
-                                                            move |this, _, window, cx| {
-                                                                window.prevent_default();
-                                                                cx.stop_propagation();
-                                                                if !close_id.is_empty() {
-                                                                    this.close_tab(
-                                                                        close_id.clone(),
-                                                                        cx,
-                                                                    );
-                                                                }
-                                                            },
-                                                        )),
+                                                        .child(
+                                                            Button::new(("tab-close", ix))
+                                                                .ghost()
+                                                                .xsmall()
+                                                                .icon(IconName::Close)
+                                                                .mr(px(5.))
+                                                                .on_mouse_down(
+                                                                    MouseButton::Left,
+                                                                    |_, window, cx| {
+                                                                        window.prevent_default();
+                                                                        cx.stop_propagation();
+                                                                    },
+                                                                )
+                                                                .on_click(cx.listener(
+                                                                    move |this, _, window, cx| {
+                                                                        window.prevent_default();
+                                                                        cx.stop_propagation();
+                                                                        if !close_id.is_empty() {
+                                                                            this.close_tab(
+                                                                                close_id.clone(),
+                                                                                cx,
+                                                                            );
+                                                                        }
+                                                                    },
+                                                                )),
+                                                        ),
                                                 )
                                             })
                                             .when(is_sftp_tab, |this| {
                                                 this.suffix(
-                                                    Button::new(("sftp-tab-close", ix))
-                                                        .ghost()
-                                                        .xsmall()
-                                                        .icon(IconName::Close)
-                                                        .mr(px(5.))
-                                                        .on_mouse_down(
-                                                            MouseButton::Left,
-                                                            |_, window, cx| {
-                                                                window.prevent_default();
-                                                                cx.stop_propagation();
-                                                            },
-                                                        )
-                                                        .on_click(cx.listener(
-                                                            move |this, _, window, cx| {
-                                                                window.prevent_default();
-                                                                cx.stop_propagation();
-                                                                this.close_sftp_page(
-                                                                    close_sftp_group_id.clone(),
-                                                                    window,
-                                                                    cx,
-                                                                );
-                                                            },
-                                                        )),
+                                                    h_flex()
+                                                        .items_center()
+                                                        .child(
+                                                            Button::new(("sftp-tab-close", ix))
+                                                                .ghost()
+                                                                .xsmall()
+                                                                .icon(IconName::Close)
+                                                                .mr(px(5.))
+                                                                .on_mouse_down(
+                                                                    MouseButton::Left,
+                                                                    |_, window, cx| {
+                                                                        window.prevent_default();
+                                                                        cx.stop_propagation();
+                                                                    },
+                                                                )
+                                                                .on_click(cx.listener(
+                                                                    move |this, _, window, cx| {
+                                                                        window.prevent_default();
+                                                                        cx.stop_propagation();
+                                                                        this.close_sftp_page(
+                                                                            close_sftp_group_id
+                                                                                .clone(),
+                                                                            window,
+                                                                            cx,
+                                                                        );
+                                                                    },
+                                                                )),
+                                                        ),
                                                 )
                                             })
                                     }

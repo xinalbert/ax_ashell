@@ -1,3 +1,10 @@
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+use tokio::sync::mpsc::{self, error::TrySendError};
+
 use crate::{
     monitoring::SystemSnapshot,
     session::SshConnectionMode,
@@ -7,13 +14,88 @@ use crate::{
 };
 
 pub(crate) const BACKEND_EVENT_QUEUE_CAPACITY: usize = 256;
-pub(crate) type BackendEventSender = tokio::sync::mpsc::Sender<BackendEvent>;
 
-pub(crate) fn backend_event_channel() -> (
-    BackendEventSender,
-    tokio::sync::mpsc::Receiver<BackendEvent>,
-) {
-    tokio::sync::mpsc::channel(BACKEND_EVENT_QUEUE_CAPACITY)
+#[derive(Clone, Default)]
+pub(crate) struct BackendEventRouter(Arc<Mutex<HashMap<String, mpsc::Sender<BackendEvent>>>>);
+
+/// Sends backend events to the window that currently owns their terminal tab
+/// or SFTP group. A sender remains valid after that resource moves windows.
+#[derive(Clone)]
+pub(crate) struct BackendEventSender {
+    router: BackendEventRouter,
+    fallback: mpsc::Sender<BackendEvent>,
+}
+
+pub(crate) fn backend_event_channel() -> (BackendEventSender, mpsc::Receiver<BackendEvent>) {
+    backend_event_channel_with_router(BackendEventRouter::default())
+}
+
+pub(crate) fn backend_event_channel_with_router(
+    router: BackendEventRouter,
+) -> (BackendEventSender, mpsc::Receiver<BackendEvent>) {
+    let (fallback, receiver) = mpsc::channel(BACKEND_EVENT_QUEUE_CAPACITY);
+    (BackendEventSender { router, fallback }, receiver)
+}
+
+impl BackendEventSender {
+    pub(crate) fn router(&self) -> BackendEventRouter {
+        self.router.clone()
+    }
+
+    pub(crate) fn register_route(&self, resource_id: impl Into<String>) {
+        let mut routes = self
+            .router
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        routes.insert(resource_id.into(), self.fallback.clone());
+    }
+
+    pub(crate) fn register_routes<'a>(&self, resource_ids: impl IntoIterator<Item = &'a str>) {
+        let mut routes = self
+            .router
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for resource_id in resource_ids {
+            routes.insert(resource_id.to_string(), self.fallback.clone());
+        }
+    }
+
+    pub(crate) fn try_send(&self, event: BackendEvent) -> Result<(), TrySendError<BackendEvent>> {
+        self.destination_for(&event).try_send(event)
+    }
+
+    pub(crate) async fn send(
+        &self,
+        event: BackendEvent,
+    ) -> Result<(), mpsc::error::SendError<BackendEvent>> {
+        self.destination_for(&event).send(event).await
+    }
+
+    pub(crate) fn blocking_send(
+        &self,
+        event: BackendEvent,
+    ) -> Result<(), mpsc::error::SendError<BackendEvent>> {
+        self.destination_for(&event).blocking_send(event)
+    }
+
+    pub(crate) fn is_routed_to_current_window(&self, event: &BackendEvent) -> bool {
+        self.destination_for(event).same_channel(&self.fallback)
+    }
+
+    fn destination_for(&self, event: &BackendEvent) -> mpsc::Sender<BackendEvent> {
+        let Some(resource_id) = event.resource_id() else {
+            return self.fallback.clone();
+        };
+        self.router
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(resource_id)
+            .cloned()
+            .unwrap_or_else(|| self.fallback.clone())
+    }
 }
 
 #[derive(Debug)]
@@ -120,9 +202,41 @@ pub(crate) enum BackendEvent {
     SyncFinished(crate::sync::SyncResult),
 }
 
+impl BackendEvent {
+    pub(crate) fn resource_id(&self) -> Option<&str> {
+        match self {
+            Self::Output { tab_id, .. }
+            | Self::Status { tab_id, .. }
+            | Self::Connected { tab_id }
+            | Self::SshConnectionModeResolved { tab_id, .. }
+            | Self::SftpEntries { tab_id, .. }
+            | Self::SftpPreview { tab_id, .. }
+            | Self::SftpStatus { tab_id, .. }
+            | Self::RemoteSystem { tab_id, .. }
+            | Self::RemoteSystemUnavailable { tab_id, .. }
+            | Self::ConnectionHealthy { tab_id, .. }
+            | Self::ConnectionUnhealthy { tab_id, .. }
+            | Self::SftpHome { tab_id, .. }
+            | Self::TransferProgress { tab_id, .. }
+            | Self::TransferStarted { tab_id, .. }
+            | Self::TransferFileStarted { tab_id, .. }
+            | Self::TransferFileFinished { tab_id, .. }
+            | Self::Closed { tab_id, .. }
+            | Self::TerminalTitleChanged { tab_id, .. }
+            | Self::WorkingDirectoryChanged { tab_id, .. }
+            | Self::WorkingDirectoryResolved { tab_id, .. } => Some(tab_id),
+            Self::SftpOverwriteConflict { request } => Some(&request.tab_id),
+            Self::SyncFinished(_) => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{BACKEND_EVENT_QUEUE_CAPACITY, BackendEvent, backend_event_channel};
+    use super::{
+        BACKEND_EVENT_QUEUE_CAPACITY, BackendEvent, backend_event_channel,
+        backend_event_channel_with_router,
+    };
 
     #[test]
     fn backend_event_channel_has_a_fixed_capacity() {
@@ -143,5 +257,25 @@ mod tests {
                 })
                 .is_err()
         );
+    }
+
+    #[test]
+    fn registered_route_moves_existing_senders_to_the_new_receiver() {
+        let (source, mut source_events) = backend_event_channel();
+        source.register_route("terminal-a");
+        let (target, mut target_events) = backend_event_channel_with_router(source.router());
+        target.register_route("terminal-a");
+
+        source
+            .try_send(BackendEvent::Connected {
+                tab_id: "terminal-a".to_string(),
+            })
+            .expect("route accepts event");
+
+        assert!(source_events.try_recv().is_err());
+        assert!(matches!(
+            target_events.try_recv(),
+            Ok(BackendEvent::Connected { tab_id }) if tab_id == "terminal-a"
+        ));
     }
 }

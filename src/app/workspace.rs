@@ -489,7 +489,7 @@ impl AxShell {
         }
     }
 
-    fn activate_first_visible_group_or_home(
+    pub(crate) fn activate_first_visible_group_or_home(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -763,8 +763,22 @@ impl AxShell {
 
     pub(crate) fn remove_transfer(&mut self, transfer_id: &str, cx: &mut Context<Self>) {
         self.transfers.retain(|t| t.info.id != transfer_id);
-        self.config.set_transfers(self.transfers.clone());
+        self.persist_transfers();
         cx.notify();
+    }
+
+    pub(crate) fn persist_transfers(&mut self) {
+        let owned_group_ids = self
+            .tab_groups
+            .iter()
+            .map(|group| group.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        let mut persisted = ConfigStore::load()
+            .unwrap_or_else(|_| ConfigStore::in_memory())
+            .transfers();
+        persisted.retain(|transfer| !owned_group_ids.contains(transfer.tab_id.as_str()));
+        persisted.extend(self.transfers.iter().cloned());
+        self.config.set_transfers(persisted);
     }
 
     pub(crate) fn should_begin_terminal_password_prompt(&self, tab_id: &str, reason: &str) -> bool {
@@ -981,11 +995,11 @@ impl AxShell {
     }
 
     pub(crate) fn save_layout_state(&self, window: &mut gpui::Window, cx: &gpui::App) {
-        if self.is_layout_reset {
+        if self.is_layout_reset || !self.persist_window_layout {
             tracing::info!(
                 component = "workspace",
                 operation = "save_layout",
-                "Layout was reset; skipping layout save"
+                "Layout persistence is disabled; skipping layout save"
             );
             return;
         }

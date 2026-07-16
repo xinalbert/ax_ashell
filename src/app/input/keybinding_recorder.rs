@@ -36,7 +36,8 @@ gpui::actions!(
         SplitPaneDown,
         ClosePane,
         Copy,
-        Paste
+        Paste,
+        ReturnToMainWindow
     ]
 );
 

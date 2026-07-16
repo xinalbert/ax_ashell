@@ -3,7 +3,7 @@ use gpui::{
 };
 use gpui_component::{Theme, WindowExt as _, input::InputState};
 use rust_i18n::t;
-use std::rc::Rc;
+use std::{collections::HashSet, rc::Rc};
 use uuid::Uuid;
 
 use crate::{
@@ -25,6 +25,326 @@ pub(super) fn normalize_session_group_name(value: &str) -> String {
 }
 
 impl AxShell {
+    pub(crate) fn return_workspace_to_main_window(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_detached_workspace {
+            self.status = t!("workspace_return_unavailable").into();
+            cx.notify();
+            return;
+        }
+        let Some(main_workspace) = cx.try_global::<crate::app::MainWorkspace>() else {
+            self.status = t!("workspace_return_main_closed").into();
+            cx.notify();
+            return;
+        };
+        let main_view = main_workspace.view.clone();
+        let Some(group_id) = self.active_group.clone() else {
+            self.status = t!("workspace_return_unavailable").into();
+            cx.notify();
+            return;
+        };
+        let Some(transfer) = self.take_workspace_transfer(&group_id) else {
+            self.status = t!("workspace_return_unavailable").into();
+            cx.notify();
+            return;
+        };
+
+        let transfer = std::rc::Rc::new(std::cell::RefCell::new(Some(transfer)));
+        let target_transfer = transfer.clone();
+        let restored = cx
+            .with_window(main_view.entity_id(), |main_window, cx| {
+                let transfer = target_transfer
+                    .borrow_mut()
+                    .take()
+                    .expect("workspace transfer remains available for the main window");
+                main_view.update(cx, |main, cx| main.restore_workspace_transfer(transfer, cx));
+                main_window.activate_window();
+                let focus_handle = main_view.read(cx).focus_handle.clone();
+                main_window.focus(&focus_handle, cx);
+            })
+            .is_some();
+
+        if restored {
+            window.remove_window();
+            return;
+        }
+
+        let transfer = transfer
+            .borrow_mut()
+            .take()
+            .expect("failed return keeps the workspace transfer");
+        self.restore_workspace_transfer(transfer, cx);
+        self.status = t!("workspace_return_main_closed").into();
+        cx.notify();
+    }
+
+    pub(crate) fn move_workspace_group_to_new_window(
+        &mut self,
+        group_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_detached_workspace {
+            self.status = t!("workspace_move_already_detached").into();
+            cx.notify();
+            return;
+        }
+        if self.group_has_active_sftp_transfer(&group_id) {
+            self.status = t!("workspace_move_blocked_by_transfer").into();
+            cx.notify();
+            return;
+        }
+
+        let tab_ids = self
+            .tab_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .map(|group| {
+                group
+                    .pane_root
+                    .tab_ids()
+                    .into_iter()
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if tab_ids.is_empty()
+            && !self
+                .tab_groups
+                .iter()
+                .any(|group| group.id == group_id && group.sftp.is_some())
+        {
+            self.status = t!("workspace_move_unavailable").into();
+            cx.notify();
+            return;
+        }
+
+        let (events_tx, events_rx) =
+            crate::events::backend_event_channel_with_router(self.runtime_state.events_tx.router());
+        // Switch producers before removing UI ownership so queued source-window
+        // events are forwarded to the target window instead of being consumed here.
+        events_tx.register_route(group_id.clone());
+        events_tx.register_routes(tab_ids.iter().map(String::as_str));
+        let Some(transfer) = self.take_workspace_transfer(&group_id) else {
+            self.status = t!("workspace_move_unavailable").into();
+            cx.notify();
+            return;
+        };
+
+        if let Err((err, transfer)) =
+            crate::app::startup::open_workspace_window(transfer, events_tx, events_rx, cx)
+        {
+            self.restore_workspace_transfer(transfer, cx);
+            tracing::error!(
+                component = "workspace",
+                operation = "move_to_new_window",
+                error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                "Failed to open detached workspace window"
+            );
+            self.status = format!("{}: {err:#}", t!("workspace_move_failed")).into();
+            cx.notify();
+            return;
+        }
+
+        if self.active_group.is_none() {
+            self.activate_first_visible_group_or_home(window, cx);
+        }
+        self.sync_system_tab_to_active_group();
+        cx.notify();
+    }
+
+    pub(crate) fn restore_workspace_transfer(
+        &mut self,
+        transfer: crate::app::WorkspaceTransfer,
+        cx: &mut Context<Self>,
+    ) {
+        let crate::app::WorkspaceTransfer {
+            group,
+            tabs,
+            sftp_handle,
+            sftp_last_activity,
+            connection_progress,
+            terminal_password_prompt,
+            terminal_password_retry_tabs,
+            transfers,
+            active_tab,
+            focused_pane_path,
+            workspace_page,
+            runtime,
+        } = transfer;
+        let tab_ids = group
+            .pane_root
+            .tab_ids()
+            .into_iter()
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        self.runtime_state
+            .events_tx
+            .register_route(group.id.clone());
+        self.runtime_state
+            .events_tx
+            .register_routes(tab_ids.iter().map(String::as_str));
+        if let Some(runtime) = runtime {
+            self.runtime_state.adopt_shared_runtime(runtime);
+        }
+        self.active_tab = active_tab.or_else(|| tab_ids.first().cloned());
+        self.pane_root = group.pane_root.clone();
+        self.active_group = Some(group.id.clone());
+        self.workspace_page = workspace_page;
+        self.focused_pane_path = focused_pane_path;
+        self.tab_groups.push(group);
+        self.tabs.extend(tabs);
+        if let Some(handle) = sftp_handle {
+            let group_id = self.active_group.clone().expect("restored group exists");
+            self.sftp_handles.insert(group_id, handle);
+        }
+        if let Some(last_activity) = sftp_last_activity {
+            let group_id = self.active_group.clone().expect("restored group exists");
+            self.sftp_last_activity.insert(group_id, last_activity);
+        }
+        self.connection_progress = connection_progress;
+        self.terminal_password_prompt = terminal_password_prompt;
+        self.terminal_password_retry_tabs = terminal_password_retry_tabs;
+        self.transfers.extend(transfers);
+        self.sync_system_tab_to_active_group();
+        cx.notify();
+    }
+
+    fn take_workspace_transfer(&mut self, group_id: &str) -> Option<crate::app::WorkspaceTransfer> {
+        let workspace_page = if self.active_group.as_deref() == Some(group_id) {
+            self.workspace_page
+        } else {
+            WorkspacePage::Terminal
+        };
+        let group_index = self
+            .tab_groups
+            .iter()
+            .position(|group| group.id == group_id)?;
+        let group = self.tab_groups.remove(group_index);
+        let active_tab = self
+            .active_group
+            .as_deref()
+            .filter(|active_group| *active_group == group_id)
+            .and_then(|_| self.active_tab.clone());
+        let focused_pane_path = self
+            .active_group
+            .as_deref()
+            .filter(|active_group| *active_group == group_id)
+            .map(|_| self.focused_pane_path.clone())
+            .unwrap_or_default();
+        let tab_ids = group
+            .pane_root
+            .tab_ids()
+            .into_iter()
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+            .collect::<HashSet<_>>();
+        let all_tabs = std::mem::take(&mut self.tabs);
+        let (tabs, remaining_tabs): (Vec<_>, Vec<_>) = all_tabs
+            .into_iter()
+            .partition(|tab| tab_ids.contains(&tab.id));
+        self.tabs = remaining_tabs;
+        self.terminal_scrollbars
+            .retain(|tab_id, _| !tab_ids.contains(tab_id));
+        self.terminal_bounds
+            .retain(|tab_id, _| !tab_ids.contains(tab_id));
+        if self
+            .hovered_url
+            .as_ref()
+            .is_some_and(|hovered| tab_ids.contains(&hovered.tab_id))
+        {
+            self.hovered_url = None;
+        }
+        if self
+            .terminal_composition
+            .as_ref()
+            .is_some_and(|composition| tab_ids.contains(&composition.tab_id))
+        {
+            self.terminal_composition = None;
+        }
+        if self
+            .terminal_frozen_selection
+            .as_ref()
+            .is_some_and(|selection| tab_ids.contains(&selection.tab_id))
+        {
+            self.terminal_frozen_selection = None;
+        }
+        if self
+            .search
+            .target_tab
+            .as_ref()
+            .is_some_and(|tab_id| tab_ids.contains(tab_id))
+        {
+            self.search.active = false;
+            self.search.query.clear();
+            self.search.matches.clear();
+            self.search.current = 0;
+            self.search.target_tab = None;
+        }
+        if self
+            .active_tab
+            .as_ref()
+            .is_some_and(|tab_id| tab_ids.contains(tab_id))
+        {
+            self.active_tab = None;
+            self.terminal_selecting = false;
+        }
+        if self.active_group.as_deref() == Some(group_id) {
+            self.active_group = None;
+            self.pane_root = PaneLayout::Single(String::new());
+            self.focused_pane_path = Vec::new();
+            self.workspace_page = WorkspacePage::Terminal;
+        }
+
+        let connection_progress = self
+            .connection_progress
+            .as_ref()
+            .is_some_and(|progress| tab_ids.contains(&progress.tab_id))
+            .then(|| self.connection_progress.take())
+            .flatten();
+        let terminal_password_prompt = self
+            .terminal_password_prompt
+            .as_ref()
+            .is_some_and(|prompt| tab_ids.contains(&prompt.tab_id))
+            .then(|| self.terminal_password_prompt.take())
+            .flatten();
+        let retry_tabs = std::mem::take(&mut self.terminal_password_retry_tabs);
+        let (terminal_password_retry_tabs, remaining_retry_tabs): (HashSet<_>, HashSet<_>) =
+            retry_tabs
+                .into_iter()
+                .partition(|tab_id| tab_ids.contains(tab_id));
+        self.terminal_password_retry_tabs = remaining_retry_tabs;
+
+        let sftp_handle = self.sftp_handles.remove(group_id);
+        let sftp_last_activity = self.sftp_last_activity.remove(group_id);
+        let all_transfers = std::mem::take(&mut self.transfers);
+        let (transfers, remaining_transfers): (Vec<_>, Vec<_>) = all_transfers
+            .into_iter()
+            .partition(|transfer| transfer.tab_id == group_id);
+        self.transfers = remaining_transfers;
+        self.monitoring.invalidate_remote_samples();
+
+        Some(crate::app::WorkspaceTransfer {
+            group,
+            tabs,
+            sftp_handle,
+            sftp_last_activity,
+            connection_progress,
+            terminal_password_prompt,
+            terminal_password_retry_tabs,
+            transfers,
+            active_tab,
+            focused_pane_path,
+            workspace_page,
+            runtime: self.runtime_state.shared_runtime(),
+        })
+    }
+
     pub(crate) fn sync_local_shell_profile_inputs(
         &self,
         window: &mut Window,

@@ -141,8 +141,14 @@ impl Drop for RuntimeTaskLease {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct SharedRuntime {
+    runtime: Arc<Runtime>,
+    task_tracker: RuntimeTaskTracker,
+}
+
 pub(crate) struct RuntimeState {
-    runtime: Option<Runtime>,
+    runtime: Option<SharedRuntime>,
     task_tracker: RuntimeTaskTracker,
     pub(crate) events_rx: tokio::sync::mpsc::Receiver<BackendEvent>,
     pub(crate) events_tx: BackendEventSender,
@@ -195,27 +201,58 @@ impl RuntimeState {
     }
 
     pub(crate) fn runtime_handle_and_tracker(&mut self) -> (Handle, RuntimeTaskTracker) {
-        let runtime = self.runtime.get_or_insert_with(|| {
-            Builder::new_multi_thread()
-                .worker_threads(RUNTIME_WORKER_THREADS)
-                .max_blocking_threads(RUNTIME_MAX_BLOCKING_THREADS)
-                .enable_all()
-                .thread_name("ax-tokio")
-                .build()
-                .expect("create Tokio runtime")
+        let runtime = self.runtime.get_or_insert_with(|| SharedRuntime {
+            runtime: Arc::new(
+                Builder::new_multi_thread()
+                    .worker_threads(RUNTIME_WORKER_THREADS)
+                    .max_blocking_threads(RUNTIME_MAX_BLOCKING_THREADS)
+                    .enable_all()
+                    .thread_name("ax-tokio")
+                    .build()
+                    .expect("create Tokio runtime"),
+            ),
+            task_tracker: self.task_tracker.clone(),
         });
-        (runtime.handle().clone(), self.task_tracker.clone())
+        (
+            runtime.runtime.handle().clone(),
+            runtime.task_tracker.clone(),
+        )
+    }
+
+    pub(crate) fn shared_runtime(&self) -> Option<SharedRuntime> {
+        self.runtime.clone()
+    }
+
+    pub(crate) fn adopt_shared_runtime(&mut self, runtime: SharedRuntime) {
+        if let Some(existing) = &self.runtime {
+            // A returned workspace normally carries the exact runtime the
+            // main window already retains. Keep the existing owner handle.
+            debug_assert!(
+                Arc::ptr_eq(&existing.runtime, &runtime.runtime),
+                "a window cannot replace an unrelated Tokio runtime"
+            );
+            return;
+        }
+        self.task_tracker = runtime.task_tracker.clone();
+        self.runtime = Some(runtime);
     }
 
     pub(crate) fn release_runtime_if_idle(&mut self) -> bool {
         if self.task_tracker.active_tasks() != 0 {
             return false;
         }
-        let Some(runtime) = self.runtime.take() else {
+        let Some(shared_runtime) = self.runtime.take() else {
             return false;
         };
-        runtime.shutdown_background();
-        true
+        match Arc::try_unwrap(shared_runtime.runtime) {
+            Ok(runtime) => {
+                runtime.shutdown_background();
+                true
+            }
+            // Another window owns the same runtime. Drop this idle window's
+            // handle so the eventual final owner can shut it down.
+            Err(_) => false,
+        }
     }
 }
 

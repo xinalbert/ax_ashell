@@ -4,8 +4,8 @@ use gpui_component::GlobalState;
 use crate::{
     ClosePane, Copy, ExportSavedSessions, FocusPaneDown, FocusPaneLeft, FocusPaneRight,
     FocusPaneUp, ImportSavedSessions, NewSsh, NextTab, OpenAbout, OpenSearch, OpenSession,
-    OpenSettings, OpenTransfers, Paste, PrevTab, SplitPaneDown, SplitPaneLeft, SplitPaneRight,
-    SplitPaneUp, ToggleSftpZoom, ToggleSidebar,
+    OpenSettings, OpenTransfers, Paste, PrevTab, ReturnToMainWindow, SplitPaneDown, SplitPaneLeft,
+    SplitPaneRight, SplitPaneUp, ToggleSftpZoom, ToggleSidebar,
 };
 
 gpui::actions!(ax_shell_app_menu, [Quit]);
@@ -94,6 +94,7 @@ fn app_menus() -> [Menu; 6] {
         Menu::new("Window").items([
             MenuItem::action("Previous Tab", PrevTab),
             MenuItem::action("Next Tab", NextTab),
+            MenuItem::action("Return Terminal to Main Window", ReturnToMainWindow),
         ]),
     ]
 }

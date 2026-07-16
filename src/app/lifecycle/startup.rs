@@ -1,12 +1,15 @@
 use anyhow::{Context as _, Result, anyhow};
 use gpui::{App, AppContext as _, Bounds, WindowOptions, point, px, size};
 use gpui_component::Root;
-use std::path::PathBuf;
 use std::sync::Once;
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
-use crate::AxShell;
 use crate::app::constants::ISSUES_URL;
 use crate::config::ConfigStore;
+use crate::{
+    AxShell,
+    app::{MainWorkspace, WorkspaceTransfer},
+};
 
 const INSTANCE_KIND_ENV: &str = "AX_SHELL_INSTANCE_KIND";
 const INSTANCE_APP_ID_ENV: &str = "AX_SHELL_APP_ID";
@@ -706,6 +709,7 @@ pub(crate) fn open_main_window(cx: &mut App) {
         window.set_window_title(current_window_title());
         gpui_component::Theme::sync_system_appearance(Some(window), cx);
         let view = cx.new(|cx| AxShell::new(window, cx));
+        cx.set_global(MainWorkspace { view: view.clone() });
 
         tracing::info!(
             component = "window",
@@ -742,4 +746,83 @@ pub(crate) fn open_main_window(cx: &mut App) {
         cx.new(|cx| Root::new(view, window, cx))
     })
     .expect("failed to open window");
+}
+
+pub(crate) fn open_workspace_window(
+    transfer: WorkspaceTransfer,
+    events_tx: crate::events::BackendEventSender,
+    events_rx: tokio::sync::mpsc::Receiver<crate::events::BackendEvent>,
+    cx: &mut App,
+) -> Result<(), (anyhow::Error, WorkspaceTransfer)> {
+    let config = ConfigStore::load().unwrap_or_else(|_| ConfigStore::in_memory());
+    let title_bar_style = config.effective_title_bar_style();
+    let title = format!(
+        "{} #{}",
+        transfer.group.title, transfer.group.instance_number
+    );
+    let transfer = Rc::new(RefCell::new(Some(transfer)));
+    let transfer_for_window = transfer.clone();
+    let mut window_options = WindowOptions::default();
+    window_options.app_id = current_window_app_id();
+    window_options.window_bounds = Some(gpui::WindowBounds::Windowed(Bounds::centered(
+        None,
+        size(px(1000.), px(700.)),
+        cx,
+    )));
+
+    if title_bar_style == crate::config::TitleBarStyle::Integrated {
+        window_options.titlebar = Some(gpui::TitlebarOptions {
+            title: None,
+            appears_transparent: true,
+            traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
+        });
+        #[cfg(target_os = "macos")]
+        {
+            window_options.is_movable = false;
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    if let Ok(img) = image::load_from_memory(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/icons/terminal_icon_all_formats/terminal_icon_256.png"
+    ))) {
+        window_options.icon = Some(std::sync::Arc::new(img.into_rgba8()));
+    }
+
+    let result = cx.open_window(window_options, move |window, cx| {
+        window.set_window_title(&title);
+        gpui_component::Theme::sync_system_appearance(Some(window), cx);
+        let view = cx.new(|cx| AxShell::new_with_events(window, cx, events_tx, events_rx, false));
+        let transfer = transfer_for_window
+            .borrow_mut()
+            .take()
+            .expect("workspace transfer is available while opening its window");
+        view.update(cx, |app, _| app.install_workspace_transfer(transfer));
+
+        let focus_handle = view.read(cx).focus_handle.clone();
+        window.defer(cx, move |window, cx| {
+            window.activate_window();
+            window.focus(&focus_handle, cx);
+        });
+
+        let view_clone = view.clone();
+        window.on_window_should_close(cx, move |window, cx| {
+            let _ = view_clone.update(cx, |app, _| app.shutdown_all_backends());
+            view_clone.read(cx).save_layout_state(window, cx);
+            true
+        });
+
+        cx.new(|cx| Root::new(view, window, cx))
+    });
+    match result {
+        Ok(_) => Ok(()),
+        Err(error) => Err((
+            error,
+            transfer
+                .borrow_mut()
+                .take()
+                .expect("failed window creation keeps the workspace transfer"),
+        )),
+    }
 }

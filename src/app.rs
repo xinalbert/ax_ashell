@@ -39,6 +39,7 @@ use state::{
 };
 
 pub(crate) use state::runtime::RuntimeTaskTracker;
+pub(crate) use state::runtime::SharedRuntime;
 
 use search::SearchState;
 
@@ -54,6 +55,27 @@ pub(crate) use terminal::{
     terminal_link_activation_modifier_pressed, terminal_link_visual_active,
 };
 pub(crate) use workspace::{TabGroup, WorkspacePage, workspace_group_tab_label};
+
+pub(crate) struct WorkspaceTransfer {
+    pub(crate) group: TabGroup,
+    pub(crate) tabs: Vec<TerminalTab>,
+    pub(crate) sftp_handle: Option<crate::sftp::SftpHandle>,
+    pub(crate) sftp_last_activity: Option<Instant>,
+    pub(crate) connection_progress: Option<ConnectionProgress>,
+    pub(crate) terminal_password_prompt: Option<TerminalPasswordPrompt>,
+    pub(crate) terminal_password_retry_tabs: HashSet<String>,
+    pub(crate) transfers: Vec<crate::sftp::Transfer>,
+    pub(crate) active_tab: Option<String>,
+    pub(crate) focused_pane_path: Vec<usize>,
+    pub(crate) workspace_page: WorkspacePage,
+    pub(crate) runtime: Option<SharedRuntime>,
+}
+
+pub(crate) struct MainWorkspace {
+    pub(crate) view: Entity<AxShell>,
+}
+
+impl gpui::Global for MainWorkspace {}
 
 #[derive(Clone)]
 pub(crate) struct SavedSessionContextMenuState {
@@ -210,6 +232,12 @@ pub(crate) struct AxShell {
     pub(crate) last_window_size: Option<gpui::Size<Pixels>>,
     pub(crate) last_sidebar_width: Option<Pixels>,
     pub(crate) should_move_window: bool,
+    /// Detached workspace windows must not overwrite the main window's saved bounds.
+    pub(crate) persist_window_layout: bool,
+    /// A detached window owns one transferred terminal workspace and intentionally
+    /// omits workspace navigation, SFTP, and configuration surfaces.
+    pub(crate) is_detached_workspace: bool,
+    pub(crate) detached_window_title: Option<String>,
     pub(crate) hovered_url: Option<HoveredUrl>,
     pub(crate) cmd_ctrl_pressed: bool,
     pub(crate) _subscriptions: Vec<gpui::Subscription>,

@@ -11,6 +11,7 @@ use crate::{
         },
     },
     config::ConfigStore,
+    events::BackendEventSender,
     monitoring::SystemSampler,
     session::AuthMethod,
 };
@@ -20,6 +21,17 @@ use rust_i18n::t;
 
 impl AxShell {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let (events_tx, events_rx) = crate::events::backend_event_channel();
+        Self::new_with_events(window, cx, events_tx, events_rx, true)
+    }
+
+    pub(crate) fn new_with_events(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        events_tx: BackendEventSender,
+        events_rx: tokio::sync::mpsc::Receiver<crate::events::BackendEvent>,
+        recover_interrupted_transfers: bool,
+    ) -> Self {
         let host_input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("host")));
         let session_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("connection_name_optional")));
@@ -312,7 +324,6 @@ impl AxShell {
             .push(cx.observe_window_activation(window, Self::on_window_activation_changed));
         _subscriptions.push(cx.observe_window_bounds(window, Self::on_window_bounds_changed));
 
-        let (events_tx, events_rx) = crate::events::backend_event_channel();
         let workspace_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
         let body_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
         let sftp_transfer_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
@@ -515,21 +526,24 @@ impl AxShell {
             transfers: {
                 let mut transfers = config.transfers();
                 let now = crate::sftp::unix_timestamp_secs();
-                for t in &mut transfers {
-                    if matches!(
-                        t.state,
-                        crate::sftp::TransferState::Running | crate::sftp::TransferState::Paused
-                    ) {
-                        let reason = t!("zombie_reason").to_string();
-                        t.state = crate::sftp::TransferState::Zombie(reason.clone());
-                        for file in &mut t.files {
-                            if !file.state.is_terminal() {
-                                file.state =
-                                    crate::sftp::TransferFileState::Interrupted(reason.clone());
+                if recover_interrupted_transfers {
+                    for t in &mut transfers {
+                        if matches!(
+                            t.state,
+                            crate::sftp::TransferState::Running
+                                | crate::sftp::TransferState::Paused
+                        ) {
+                            let reason = t!("zombie_reason").to_string();
+                            t.state = crate::sftp::TransferState::Zombie(reason.clone());
+                            for file in &mut t.files {
+                                if !file.state.is_terminal() {
+                                    file.state =
+                                        crate::sftp::TransferFileState::Interrupted(reason.clone());
+                                }
                             }
-                        }
-                        if t.finished_at.is_none() {
-                            t.finished_at = Some(now);
+                            if t.finished_at.is_none() {
+                                t.finished_at = Some(now);
+                            }
                         }
                     }
                 }
@@ -586,6 +600,9 @@ impl AxShell {
             last_window_size: None,
             last_sidebar_width,
             should_move_window: false,
+            persist_window_layout: true,
+            is_detached_workspace: false,
+            detached_window_title: None,
             hovered_url: None,
             cmd_ctrl_pressed: false,
             _subscriptions,
@@ -596,5 +613,65 @@ impl AxShell {
         this.start_file_icon_cache_refresh(cx);
         this.start_event_pump(cx);
         this
+    }
+
+    pub(crate) fn install_workspace_transfer(&mut self, transfer: crate::app::WorkspaceTransfer) {
+        let crate::app::WorkspaceTransfer {
+            group,
+            tabs,
+            sftp_handle,
+            sftp_last_activity,
+            connection_progress,
+            terminal_password_prompt,
+            terminal_password_retry_tabs,
+            transfers,
+            active_tab,
+            focused_pane_path,
+            workspace_page,
+            runtime,
+        } = transfer;
+        let tab_ids = group
+            .pane_root
+            .tab_ids()
+            .into_iter()
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        self.runtime_state
+            .events_tx
+            .register_route(group.id.clone());
+        self.runtime_state
+            .events_tx
+            .register_routes(tab_ids.iter().map(String::as_str));
+        if let Some(runtime) = runtime {
+            self.runtime_state.adopt_shared_runtime(runtime);
+        }
+        self.workspace_group_instance_counts
+            .entry(group.title.clone())
+            .and_modify(|next| *next = (*next).max(group.instance_number))
+            .or_insert(group.instance_number);
+        self.detached_window_title = Some(format!("{} #{}", group.title, group.instance_number));
+        self.active_tab = active_tab.or_else(|| tab_ids.first().cloned());
+        self.focused_pane_path = focused_pane_path;
+        self.pane_root = group.pane_root.clone();
+        self.active_group = Some(group.id.clone());
+        let _ = workspace_page;
+        self.workspace_page = crate::app::WorkspacePage::Terminal;
+        self.tab_groups.push(group);
+        self.tabs = tabs;
+        if let Some(handle) = sftp_handle {
+            let group_id = self.active_group.clone().expect("transferred group exists");
+            self.sftp_handles.insert(group_id, handle);
+        }
+        if let Some(last_activity) = sftp_last_activity {
+            let group_id = self.active_group.clone().expect("transferred group exists");
+            self.sftp_last_activity.insert(group_id, last_activity);
+        }
+        self.connection_progress = connection_progress;
+        self.terminal_password_prompt = terminal_password_prompt;
+        self.terminal_password_retry_tabs = terminal_password_retry_tabs;
+        self.transfers = transfers;
+        self.persist_window_layout = false;
+        self.is_detached_workspace = true;
     }
 }

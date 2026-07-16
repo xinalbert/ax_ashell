@@ -2,6 +2,7 @@ use super::*;
 
 impl Render for AxShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let is_detached_workspace = self.is_detached_workspace;
         if self.lifecycle.is_foreground()
             && self
                 .runtime_state
@@ -49,9 +50,11 @@ impl Render for AxShell {
             }
         }
 
-        let show_bottom_monitoring = self.config.show_monitoring_dashboard()
+        let show_bottom_monitoring = !is_detached_workspace
+            && self.config.show_monitoring_dashboard()
             && self.config.monitoring_position() == "Bottom";
-        let show_platform_menu_bar = cfg!(any(target_os = "windows", target_os = "linux"))
+        let show_platform_menu_bar = !is_detached_workspace
+            && cfg!(any(target_os = "windows", target_os = "linux"))
             && self.active_title_bar_style == crate::config::TitleBarStyle::Native;
         let show_linux_client_title_bar = cfg!(target_os = "linux")
             && self.active_title_bar_style == crate::config::TitleBarStyle::Native
@@ -75,7 +78,9 @@ impl Render for AxShell {
             })
             .into_any_element();
 
-        let workspace = if self.sidebar_collapsed {
+        let workspace = if is_detached_workspace {
+            body_panel
+        } else if self.sidebar_collapsed {
             h_flex()
                 .size_full()
                 .child(
@@ -166,39 +171,48 @@ impl Render for AxShell {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .font_family(self.appearance.ui_font_family.clone())
-            .on_action(cx.listener(|this, _: &crate::OpenSettings, _, cx| this.open_settings_page(cx)))
-            .on_action(cx.listener(|this, _: &crate::OpenAbout, _, cx| this.open_about_page(cx)))
-            .on_action(cx.listener(|this, _: &crate::OpenSession, window, cx| this.show_selector_dialog(window, cx)))
-            .on_action(cx.listener(|this, _: &crate::OpenTransfers, window, cx| {
-                this.open_sftp_transfers_page(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &crate::NewSsh, window, cx| this.show_ssh_dialog(window, cx)))
-            .on_action(cx.listener(|this, _: &crate::ImportSavedSessions, window, cx| {
-                this.import_saved_sessions_share_file(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &crate::ExportSavedSessions, window, cx| {
-                this.export_saved_sessions_share_file(window, cx);
-            }))
+            .when(!is_detached_workspace, |this| {
+                this.on_action(cx.listener(|this, _: &crate::OpenSettings, _, cx| this.open_settings_page(cx)))
+                    .on_action(cx.listener(|this, _: &crate::OpenAbout, _, cx| this.open_about_page(cx)))
+                    .on_action(cx.listener(|this, _: &crate::OpenSession, window, cx| this.show_selector_dialog(window, cx)))
+                    .on_action(cx.listener(|this, _: &crate::OpenTransfers, window, cx| {
+                        this.open_sftp_transfers_page(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &crate::NewSsh, window, cx| this.show_ssh_dialog(window, cx)))
+                    .on_action(cx.listener(|this, _: &crate::ImportSavedSessions, window, cx| {
+                        this.import_saved_sessions_share_file(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &crate::ExportSavedSessions, window, cx| {
+                        this.export_saved_sessions_share_file(window, cx);
+                    }))
+            })
+            .when(is_detached_workspace, |this| {
+                this.on_action(cx.listener(|this, _: &crate::ReturnToMainWindow, window, cx| {
+                    this.return_workspace_to_main_window(window, cx);
+                }))
+            })
             .on_action(cx.listener(|this, _: &crate::OpenSearch, window, cx| this.toggle_search(window, cx)))
-            .on_action(cx.listener(|this, _: &crate::PrevTab, window, cx| {
-                this.switch_workspace_tab(-1, window, cx);
-                window.prevent_default();
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::NextTab, window, cx| {
-                this.switch_workspace_tab(1, window, cx);
-                window.prevent_default();
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::ToggleSidebar, _, cx| {
-                this.sidebar_collapsed = !this.sidebar_collapsed;
-                this.config.set_sidebar_collapsed(this.sidebar_collapsed);
-                this.config.save_logged("toggle_sidebar");
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &crate::ToggleSftpZoom, window, cx| {
-                this.toggle_active_sftp_page(window, cx);
-            }))
+            .when(!is_detached_workspace, |this| {
+                this.on_action(cx.listener(|this, _: &crate::PrevTab, window, cx| {
+                    this.switch_workspace_tab(-1, window, cx);
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }))
+                .on_action(cx.listener(|this, _: &crate::NextTab, window, cx| {
+                    this.switch_workspace_tab(1, window, cx);
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }))
+                .on_action(cx.listener(|this, _: &crate::ToggleSidebar, _, cx| {
+                    this.sidebar_collapsed = !this.sidebar_collapsed;
+                    this.config.set_sidebar_collapsed(this.sidebar_collapsed);
+                    this.config.save_logged("toggle_sidebar");
+                    cx.notify();
+                }))
+                .on_action(cx.listener(|this, _: &crate::ToggleSftpZoom, window, cx| {
+                    this.toggle_active_sftp_page(window, cx);
+                }))
+            })
             .on_action(cx.listener(|this, _: &crate::FocusPaneLeft, _, _| {
                 if this.workspace_page == WorkspacePage::Terminal {
                     this.focus_adjacent_pane("left");
@@ -273,7 +287,10 @@ impl Render for AxShell {
                     cx.propagate();
                 }
             }))
-            .when(self.active_title_bar_style == crate::config::TitleBarStyle::Integrated, |this| {
+            .when(
+                self.active_title_bar_style == crate::config::TitleBarStyle::Integrated
+                    && !is_detached_workspace,
+                |this| {
                 this.child(
                     div()
                         .id("title-bar")
@@ -332,7 +349,107 @@ impl Render for AxShell {
                                 .bg(cx.theme().border),
                         ),
                 )
-            })
+                },
+            )
+            .when(
+                self.active_title_bar_style == crate::config::TitleBarStyle::Integrated
+                    && is_detached_workspace,
+                |this| {
+                    let title = self
+                        .detached_window_title
+                        .clone()
+                        .unwrap_or_else(|| "AxShell".to_string());
+                    this.child(
+                        Self::bind_titlebar_drag(
+                            h_flex()
+                                .id("detached-terminal-title-bar")
+                                .flex_none()
+                                .h(px(34.))
+                                .w_full()
+                                .px(px(18.))
+                                .items_center()
+                                .bg(cx.theme().tab_bar)
+                                .border_b_1()
+                                .border_color(cx.theme().border)
+                                .text_size(rems(0.875))
+                                .text_color(cx.theme().muted_foreground)
+                                .child(div().flex_1().min_w(px(0.)))
+                                .child(
+                                    div()
+                                        .min_w(px(0.))
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .whitespace_nowrap()
+                                        .child(title),
+                                )
+                                .child(
+                                    div().flex_1().justify_end().child(
+                                        Button::new("detached-return-main-window")
+                                            .ghost()
+                                            .xsmall()
+                                            .icon(IconName::WindowRestore)
+                                            .tooltip(t!("return_workspace_to_main_window").to_string())
+                                            .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                                window.prevent_default();
+                                                cx.stop_propagation();
+                                            })
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                window.prevent_default();
+                                                cx.stop_propagation();
+                                                this.return_workspace_to_main_window(window, cx);
+                                            })),
+                                    ),
+                                ),
+                            cx,
+                        ),
+                    )
+                },
+            )
+            .when(
+                is_detached_workspace
+                    && self.active_title_bar_style != crate::config::TitleBarStyle::Integrated,
+                |this| {
+                    let title = self
+                        .detached_window_title
+                        .clone()
+                        .unwrap_or_else(|| "AxShell".to_string());
+                    this.child(
+                        h_flex()
+                            .id("detached-terminal-native-toolbar")
+                            .flex_none()
+                            .h(px(32.))
+                            .w_full()
+                            .px(px(8.))
+                            .items_center()
+                            .bg(cx.theme().tab_bar)
+                            .border_b_1()
+                            .border_color(cx.theme().border)
+                            .text_size(rems(0.875))
+                            .text_color(cx.theme().muted_foreground)
+                            .child(div().flex_1().min_w(px(0.)))
+                            .child(
+                                div()
+                                    .min_w(px(0.))
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .whitespace_nowrap()
+                                    .child(title),
+                            )
+                            .child(
+                                div().flex_1().justify_end().child(
+                                    Button::new("detached-return-main-window-native")
+                                        .ghost()
+                                        .xsmall()
+                                        .icon(IconName::WindowRestore)
+                                        .tooltip(t!("return_workspace_to_main_window").to_string())
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.return_workspace_to_main_window(window, cx);
+                                        })),
+                                ),
+                            ),
+                    )
+                },
+            )
             .when(show_linux_client_title_bar, |this| {
                 this.child(TitleBar::new().child(
                     div()

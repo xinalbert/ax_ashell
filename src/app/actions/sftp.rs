@@ -444,7 +444,7 @@ impl AxShell {
                         }
                     }
                 }
-                self.config.set_transfers(self.transfers.clone());
+                self.persist_transfers();
             }
         }
 
@@ -651,7 +651,7 @@ impl AxShell {
         self.transfers.retain(|transfer| {
             transfer.tab_id != active_group_id || !ids.contains(&transfer.info.id)
         });
-        self.config.set_transfers(self.transfers.clone());
+        self.persist_transfers();
         if cleanup_errors.is_empty() {
             self.status = rust_i18n::t!("removed_transfers", count = ids.len()).into();
         } else {
@@ -744,7 +744,7 @@ impl AxShell {
             self.transfers.retain(|candidate| {
                 candidate.tab_id != transfer.tab_id || candidate.info.id != transfer.info.id
             });
-            self.config.set_transfers(self.transfers.clone());
+            self.persist_transfers();
         }
         cx.notify();
     }

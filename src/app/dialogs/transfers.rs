@@ -48,7 +48,7 @@ impl AxShell {
                                                     | crate::sftp::TransferState::Paused
                                             )
                                         });
-                                        this.config.set_transfers(this.transfers.clone());
+                                        this.persist_transfers();
                                         cx.notify();
                                     })),
                             )
