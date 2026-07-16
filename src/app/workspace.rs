@@ -925,55 +925,21 @@ impl AxShell {
             return;
         };
         self.connection_progress = None;
-        let mut retry_tabs = Vec::new();
-        for (ix, tab) in self.tabs.iter().enumerate() {
-            if !tab.connected && tab.session.is_some() && tab.id == progress.tab_id {
-                retry_tabs.push((ix, tab.id.clone(), tab.session.clone().unwrap()));
-            }
-        }
-
-        if retry_tabs.is_empty() {
+        let can_retry = self.tabs.iter().any(|tab| {
+            matches!(tab.kind, TabKind::Ssh | TabKind::Serial | TabKind::Telnet)
+                && !tab.connected
+                && tab.session.is_some()
+                && tab.disconnected_reason.is_some()
+                && tab.id == progress.tab_id
+        });
+        if !can_retry {
             cx.notify();
             return;
         }
 
-        for (ix, tab_id, session) in retry_tabs {
-            self.tabs[ix].send_backend(crate::terminal::BackendCommand::Close);
-
-            let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
-            let backend = crate::backend::ssh::spawn_ssh_terminal(
-                &runtime,
-                task_tracker,
-                tab_id.clone(),
-                session.clone(),
-                self.tabs[ix].cols,
-                self.tabs[ix].rows,
-                self.runtime_state.events_tx.clone(),
-            );
-
-            self.tabs[ix].set_backend(backend);
-            self.tabs[ix].connected = false;
-            self.tabs[ix].status = "connecting".into();
-            self.tabs[ix].disconnected_reason = None;
-            self.tabs[ix].backend_initialized = false;
-
-            if let Some(group) = self
-                .tab_groups
-                .iter()
-                .find(|g| g.pane_root.contains(&tab_id))
-            {
-                let group_id = group.id.clone();
-                let group_session = self
-                    .tabs
-                    .iter()
-                    .find(|t| group.pane_root.contains(&t.id) && t.session.is_some())
-                    .and_then(|t| t.session.clone());
-
-                if group_session.is_some() {
-                    self.restart_sftp_handle_for_group(&group_id);
-                }
-            }
-        }
+        // The terminal retry path preserves scrollback and recreates the
+        // protocol-specific backend. Only SSH restarts its SFTP handle there.
+        self.retry_disconnected_tab(&progress.tab_id, cx);
 
         self.connection_progress = Some(ConnectionProgress {
             tab_id: progress.tab_id.clone(),
@@ -981,7 +947,7 @@ impl AxShell {
             lines: vec![t!("starting_connection").into()],
             failed: false,
         });
-        self.status = "ssh tabs retrying".into();
+        self.status = "connection retrying".into();
         cx.notify();
     }
 

@@ -173,12 +173,24 @@ impl AxShell {
                                                                 let is_selected =
                                                                     selected_index == ix + 2;
                                                                 let name = session.name.clone();
-                                                                let detail = format!(
-                                                                    "{}@{}:{}",
-                                                                    session.user,
-                                                                    session.host,
-                                                                    session.port
-                                                                );
+                                                                let detail = match session.kind {
+                                                                    crate::session::SessionKind::Ssh => format!(
+                                                                        "{}@{}:{}",
+                                                                        session.user,
+                                                                        session.host,
+                                                                        session.port
+                                                                    ),
+                                                                    crate::session::SessionKind::Telnet => format!(
+                                                                        "Telnet {}:{}",
+                                                                        session.host,
+                                                                        session.port
+                                                                    ),
+                                                                    crate::session::SessionKind::Serial => format!(
+                                                                        "{} @ {}",
+                                                                        session.serial_port,
+                                                                        session.baud_rate
+                                                                    ),
+                                                                };
                                                                 Some(
                                                                     div()
                                                                         .id(("selector-open", ix))

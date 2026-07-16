@@ -30,7 +30,7 @@ use gpui_component::{input::InputState, menu::AppMenuBar};
 
 use crate::{
     config::ConfigStore,
-    session::AuthMethod,
+    session::{AuthMethod, SessionKind},
     terminal::{TerminalComposition, TerminalFrozenSelection, TerminalTab},
 };
 use state::{
@@ -107,6 +107,14 @@ pub(crate) struct AxShell {
     pub(crate) proxy_user_input: Entity<InputState>,
     pub(crate) proxy_password_input: Entity<InputState>,
     pub(crate) session_sftp_path_input: Entity<InputState>,
+    pub(crate) serial_port_input: Entity<InputState>,
+    pub(crate) serial_baud_rate_input: Entity<InputState>,
+    pub(crate) serial_data_bits_input: Entity<InputState>,
+    pub(crate) serial_parity_input: Entity<InputState>,
+    pub(crate) serial_stop_bits_input: Entity<InputState>,
+    pub(crate) serial_flow_control_input: Entity<InputState>,
+    pub(crate) session_kind: SessionKind,
+    pub(crate) available_serial_ports: Vec<String>,
     pub(crate) session_x11_forwarding: bool,
     pub(crate) ssh_advanced_options_visible: bool,
     pub(crate) session_shortcut: String,

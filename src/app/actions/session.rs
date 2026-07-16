@@ -14,14 +14,22 @@ use crate::{
         session_ui::should_prompt_for_terminal_password_before_connect,
         terminal_link_activation_modifier_pressed,
     },
-    backend::{local, ssh},
+    backend::{local, serial, ssh, telnet},
     config::LocalShellProfile,
-    session::{AuthMethod, Session},
+    session::{AuthMethod, Session, SessionKind},
     terminal::{BackendCommand, BackendTx, RenderSnapshot, TabKind, TerminalTab},
 };
 
 pub(super) fn normalize_session_group_name(value: &str) -> String {
     value.trim().to_string()
+}
+
+fn default_port_for_session_kind(kind: SessionKind) -> u16 {
+    match kind {
+        SessionKind::Ssh => 22,
+        SessionKind::Telnet => 23,
+        SessionKind::Serial => 0,
+    }
 }
 
 impl AxShell {
@@ -528,17 +536,11 @@ impl AxShell {
         self.focus_terminal_workspace(window, cx);
     }
 
-    fn save_ssh_session_from_form(&mut self, cx: &mut Context<Self>) -> Option<Session> {
+    fn save_session_from_form(&mut self, cx: &mut Context<Self>) -> Option<Session> {
         let session_name = self.session_name_input.read(cx).value().trim().to_string();
         let group_name = normalize_session_group_name(&self.session_group_input.read(cx).value());
         let host = self.host_input.read(cx).value().trim().to_string();
-        let port = self
-            .port_input
-            .read(cx)
-            .value()
-            .trim()
-            .parse::<u16>()
-            .unwrap_or(22);
+        let parsed_port = self.port_input.read(cx).value().trim().parse::<u16>().ok();
         let user = self.user_input.read(cx).value().trim().to_string();
         let password = self.password_input.read(cx).value().to_string();
         let key_path = self.key_path_input.read(cx).value().trim().to_string();
@@ -550,14 +552,34 @@ impl AxShell {
             .value()
             .trim()
             .to_string();
+        let kind = self.session_kind;
+        let port = parsed_port.unwrap_or_else(|| default_port_for_session_kind(kind));
+        let serial_port = self.serial_port_input.read(cx).value().trim().to_string();
+        let baud_rate = self
+            .serial_baud_rate_input
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<u32>()
+            .unwrap_or(115_200);
 
-        if host.is_empty() || user.is_empty() {
+        if kind == SessionKind::Ssh && (host.is_empty() || user.is_empty()) {
             self.status = t!("host_and_user_required").into();
             cx.notify();
             return None;
         }
+        if kind == SessionKind::Telnet && host.is_empty() {
+            self.status = t!("telnet_host_required").into();
+            cx.notify();
+            return None;
+        }
+        if kind == SessionKind::Serial && serial_port.is_empty() {
+            self.status = t!("serial_port_required").into();
+            cx.notify();
+            return None;
+        }
 
-        if self.ssh_proxy_type != "none" {
+        if matches!(kind, SessionKind::Ssh | SessionKind::Telnet) && self.ssh_proxy_type != "none" {
             let proxy_host = self.proxy_host_input.read(cx).value().trim().to_string();
             let proxy_port_str = self.proxy_port_input.read(cx).value().trim().to_string();
             let proxy_port = proxy_port_str.parse::<u16>().ok();
@@ -569,7 +591,10 @@ impl AxShell {
         }
 
         let name = if session_name.is_empty() {
-            host.clone()
+            match kind {
+                SessionKind::Ssh | SessionKind::Telnet => host.clone(),
+                SessionKind::Serial => serial_port.clone(),
+            }
         } else {
             session_name
         };
@@ -583,19 +608,29 @@ impl AxShell {
             .and_then(|session| session.last_used.clone());
         let existing_last_successful_ssh_mode = existing_session
             .as_ref()
-            .filter(|session| session.host == host && session.port == port && session.user == user)
+            .filter(|session| {
+                kind == SessionKind::Ssh
+                    && session.kind == SessionKind::Ssh
+                    && session.host == host
+                    && session.port == port
+                    && session.user == user
+            })
             .and_then(|session| session.last_successful_ssh_mode);
 
-        let mut session = match self.ssh_auth_method {
-            AuthMethod::Password => Session::password(host, port, user, password),
-            AuthMethod::Key => {
-                if key_path.is_empty() && key_inline.trim().is_empty() {
-                    self.status = "private key path or content is required".into();
-                    cx.notify();
-                    return None;
+        let mut session = match kind {
+            SessionKind::Ssh => match self.ssh_auth_method {
+                AuthMethod::Password => Session::password(host, port, user, password),
+                AuthMethod::Key => {
+                    if key_path.is_empty() && key_inline.trim().is_empty() {
+                        self.status = "private key path or content is required".into();
+                        cx.notify();
+                        return None;
+                    }
+                    Session::key(host, port, user, key_path, key_inline, passphrase)
                 }
-                Session::key(host, port, user, key_path, key_inline, passphrase)
-            }
+            },
+            SessionKind::Telnet => Session::telnet(host, if port == 0 { 23 } else { port }),
+            SessionKind::Serial => Session::serial(serial_port, baud_rate),
         };
         session.name = name;
         session.group_name = group_name;
@@ -604,45 +639,76 @@ impl AxShell {
         }
         session.last_used = existing_last_used;
         session.last_successful_ssh_mode = existing_last_successful_ssh_mode;
-        session.proxy_type = self.ssh_proxy_type.clone();
-        session.proxy_host = self.proxy_host_input.read(cx).value().trim().to_string();
-        session.proxy_port = self
-            .proxy_port_input
-            .read(cx)
-            .value()
-            .trim()
-            .parse::<u16>()
-            .ok();
-        session.proxy_user = self.proxy_user_input.read(cx).value().trim().to_string();
-        session.proxy_password = self.proxy_password_input.read(cx).value().to_string();
-        session.sftp_path = sftp_path;
-        session.x11_forwarding = self.session_x11_forwarding;
+        if matches!(kind, SessionKind::Ssh | SessionKind::Telnet) {
+            session.proxy_type = self.ssh_proxy_type.clone();
+            session.proxy_host = self.proxy_host_input.read(cx).value().trim().to_string();
+            session.proxy_port = self
+                .proxy_port_input
+                .read(cx)
+                .value()
+                .trim()
+                .parse::<u16>()
+                .ok();
+            session.proxy_user = self.proxy_user_input.read(cx).value().trim().to_string();
+            session.proxy_password = self.proxy_password_input.read(cx).value().to_string();
+        }
+        if kind == SessionKind::Ssh {
+            session.sftp_path = sftp_path;
+            session.x11_forwarding = self.session_x11_forwarding;
+        }
+        if kind == SessionKind::Serial {
+            session.data_bits = self
+                .serial_data_bits_input
+                .read(cx)
+                .value()
+                .trim()
+                .parse::<u8>()
+                .unwrap_or(8);
+            session.parity = self
+                .serial_parity_input
+                .read(cx)
+                .value()
+                .trim()
+                .to_ascii_lowercase();
+            session.stop_bits = self
+                .serial_stop_bits_input
+                .read(cx)
+                .value()
+                .trim()
+                .parse::<u8>()
+                .unwrap_or(1);
+            session.flow_control = self
+                .serial_flow_control_input
+                .read(cx)
+                .value()
+                .trim()
+                .to_ascii_lowercase();
+        }
         session.shortcut = self.session_shortcut.clone();
         self.config.upsert(session.clone());
-        self.config.save_logged("save_ssh_session");
+        self.config.save_logged("save_session");
 
         Some(session)
     }
 
-    pub(crate) fn save_ssh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.save_ssh_session_from_form(cx).is_none() {
+    pub(crate) fn save_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.save_session_from_form(cx).is_none() {
             return;
         }
 
         self.editing_session_id = None;
         self.active_dialog = None;
-        self.status = "ssh session saved".into();
+        self.status = "session saved".into();
         window.close_dialog(cx);
         cx.notify();
     }
 
-    pub(crate) fn connect_ssh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        tracing::info!("[ui] user saving and connecting SSH session from form");
-        let Some(session) = self.save_ssh_session_from_form(cx) else {
+    pub(crate) fn connect_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(session) = self.save_session_from_form(cx) else {
             return;
         };
 
-        self.open_ssh_session(session, cx);
+        self.open_session(session, cx);
         self.editing_session_id = None;
         self.active_dialog = None;
         self.focus_terminal_workspace(window, cx);
@@ -659,12 +725,14 @@ impl AxShell {
         input.update(cx, |state, cx| state.set_value(value, window, cx));
     }
 
-    pub(crate) fn reset_ssh_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn reset_session_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.editing_session_id = None;
         self.recording_session_shortcut = false;
         self.session_shortcut_error = None;
         self.session_import_error = None;
         self.session_shortcut.clear();
+        self.session_kind = SessionKind::Ssh;
+        self.available_serial_ports = crate::backend::serial::available_port_names();
         self.ssh_auth_method = AuthMethod::Password;
         self.ssh_advanced_options_visible = false;
         Self::set_input_value(&self.session_name_input, "", window, cx);
@@ -682,6 +750,12 @@ impl AxShell {
         Self::set_input_value(&self.proxy_user_input, "", window, cx);
         Self::set_input_value(&self.proxy_password_input, "", window, cx);
         Self::set_input_value(&self.session_sftp_path_input, "", window, cx);
+        Self::set_input_value(&self.serial_port_input, "", window, cx);
+        Self::set_input_value(&self.serial_baud_rate_input, "115200", window, cx);
+        Self::set_input_value(&self.serial_data_bits_input, "8", window, cx);
+        Self::set_input_value(&self.serial_parity_input, "none", window, cx);
+        Self::set_input_value(&self.serial_stop_bits_input, "1", window, cx);
+        Self::set_input_value(&self.serial_flow_control_input, "none", window, cx);
         self.session_x11_forwarding = true;
     }
 
@@ -692,6 +766,7 @@ impl AxShell {
         cx: &mut Context<Self>,
     ) {
         self.editing_session_id = Some(session.id.clone());
+        self.session_kind = session.kind;
         self.ssh_auth_method = session.auth;
         Self::set_input_value(&self.session_name_input, session.name.clone(), window, cx);
         Self::set_input_value(
@@ -757,6 +832,42 @@ impl AxShell {
         Self::set_input_value(
             &self.session_sftp_path_input,
             session.sftp_path.clone(),
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.serial_port_input,
+            session.serial_port.clone(),
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.serial_baud_rate_input,
+            session.baud_rate.to_string(),
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.serial_data_bits_input,
+            session.data_bits.to_string(),
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.serial_parity_input,
+            session.parity.clone(),
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.serial_stop_bits_input,
+            session.stop_bits.to_string(),
+            window,
+            cx,
+        );
+        Self::set_input_value(
+            &self.serial_flow_control_input,
+            session.flow_control.clone(),
             window,
             cx,
         );
@@ -901,7 +1012,7 @@ impl AxShell {
     }
 
     pub(crate) fn open_new_ssh_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.reset_ssh_form(window, cx);
+        self.reset_session_form(window, cx);
         self.show_ssh_dialog(window, cx);
     }
 
@@ -1077,6 +1188,30 @@ impl AxShell {
         cx.notify();
     }
 
+    pub(crate) fn set_session_kind(
+        &mut self,
+        kind: SessionKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.session_kind = kind;
+        if kind == SessionKind::Serial {
+            self.available_serial_ports = crate::backend::serial::available_port_names();
+        }
+        if kind == SessionKind::Telnet && self.port_input.read(cx).value().trim() == "22" {
+            Self::set_input_value(&self.port_input, "23", window, cx);
+        }
+        if kind == SessionKind::Ssh && self.port_input.read(cx).value().trim() == "23" {
+            Self::set_input_value(&self.port_input, "22", window, cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn refresh_available_serial_ports(&mut self, cx: &mut Context<Self>) {
+        self.available_serial_ports = crate::backend::serial::available_port_names();
+        cx.notify();
+    }
+
     pub(crate) fn set_ssh_proxy_type(&mut self, proxy_type: String, cx: &mut Context<Self>) {
         self.ssh_proxy_type = proxy_type;
         cx.notify();
@@ -1087,14 +1222,14 @@ impl AxShell {
             component = "session",
             operation = "connect_saved",
             session_id,
-            "Connecting saved SSH session"
+            "Connecting saved session"
         );
         let Some(session) = self.config.get(&session_id).cloned() else {
             self.status = "saved session not found".into();
             cx.notify();
             return;
         };
-        self.open_ssh_session(session, cx);
+        self.open_session(session, cx);
         self.set_workspace_page(WorkspacePage::Terminal, cx);
     }
 
@@ -1196,6 +1331,11 @@ impl AxShell {
             cx.notify();
             return;
         };
+        if !session.kind.supports_sftp() {
+            self.status = t!("sftp_requires_ssh_session").into();
+            cx.notify();
+            return;
+        }
 
         self.expanded_saved_groups
             .insert(normalize_session_group_name(&session.group_name));
@@ -1250,6 +1390,75 @@ impl AxShell {
     pub(crate) fn focus_terminal_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_workspace_page(WorkspacePage::Terminal, cx);
         self.focus_handle.focus(window, cx);
+    }
+
+    pub(crate) fn open_session(&mut self, session: Session, cx: &mut Context<Self>) {
+        match session.kind {
+            SessionKind::Ssh => self.open_ssh_session(session, cx),
+            SessionKind::Serial | SessionKind::Telnet => self.open_raw_session(session, cx),
+        }
+    }
+
+    fn open_raw_session(&mut self, session: Session, cx: &mut Context<Self>) {
+        self.expanded_saved_groups
+            .insert(normalize_session_group_name(&session.group_name));
+        let id = Uuid::new_v4().to_string();
+        let backend = match session.kind {
+            SessionKind::Serial => serial::spawn_serial_terminal(
+                id.clone(),
+                session.clone(),
+                self.runtime_state.events_tx.clone(),
+            ),
+            SessionKind::Telnet => {
+                let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
+                telnet::spawn_telnet_terminal(
+                    &runtime,
+                    task_tracker,
+                    id.clone(),
+                    session.clone(),
+                    DEFAULT_COLS,
+                    DEFAULT_ROWS,
+                    self.runtime_state.events_tx.clone(),
+                )
+            }
+            SessionKind::Ssh => unreachable!("SSH uses open_ssh_session"),
+        };
+        self.tabs.push(TerminalTab::new_serial_or_telnet(
+            id.clone(),
+            &session,
+            backend,
+            self.runtime_state.events_tx.clone(),
+        ));
+        self.active_tab = Some(id.clone());
+        self.connection_progress = Some(crate::app::ConnectionProgress {
+            tab_id: id.clone(),
+            title: t!("connecting").into(),
+            lines: vec![t!("starting_connection").into()],
+            failed: false,
+        });
+        self.pane_root = PaneLayout::Single(id.clone());
+        self.focused_pane_path = vec![];
+        let group_id = Uuid::new_v4().to_string();
+        let title = session.name.clone();
+        let instance_number = self.next_workspace_group_instance(&title);
+        self.tab_groups.push(TabGroup {
+            id: group_id.clone(),
+            title,
+            instance_number,
+            pane_root: PaneLayout::Single(id),
+            sftp: None,
+            sftp_page_open: false,
+            sftp_session: None,
+        });
+        self.active_group = Some(group_id);
+        self.ensure_active_workspace_tab_visible();
+        self.set_workspace_page(WorkspacePage::Terminal, cx);
+        self.status = match session.kind {
+            SessionKind::Serial => "serial session opened".into(),
+            SessionKind::Telnet => "telnet session opened".into(),
+            SessionKind::Ssh => unreachable!(),
+        };
+        cx.notify();
     }
 
     pub(crate) fn open_ssh_session(&mut self, session: Session, cx: &mut Context<Self>) {
@@ -1371,8 +1580,7 @@ impl AxShell {
     }
 
     /// Retry a single disconnected tab by its ID.
-    /// For SSH tabs: spawns a new SSH connection and restarts SFTP.
-    /// For local tabs: spawns a new local shell.
+    /// Reopens the matching local, SSH, serial, or Telnet backend.
     ///
     /// The existing `TerminalTab` (including its `term` scrollback history)
     /// is preserved — only the backend is swapped via `set_backend()`.
@@ -1384,7 +1592,7 @@ impl AxShell {
             return;
         }
 
-        let is_ssh = self.tabs[ix].session.is_some();
+        let kind = self.tabs[ix].kind;
         let session = self.tabs[ix].session.clone();
         let local_shell_profile = self.tabs[ix].local_shell_profile.clone();
         let new_generation = self.tabs[ix].backend_generation + 1;
@@ -1395,17 +1603,38 @@ impl AxShell {
         self.tabs[ix].send_backend(BackendCommand::Close);
 
         if let Some(session) = session {
-            // SSH tab: spawn new SSH connection
-            let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
-            let backend = ssh::spawn_ssh_terminal(
-                &runtime,
-                task_tracker,
-                tab_id.to_string(),
-                session.clone(),
-                cols,
-                rows,
-                self.runtime_state.events_tx.clone(),
-            );
+            let backend = match kind {
+                TabKind::Ssh => {
+                    let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
+                    ssh::spawn_ssh_terminal(
+                        &runtime,
+                        task_tracker,
+                        tab_id.to_string(),
+                        session.clone(),
+                        cols,
+                        rows,
+                        self.runtime_state.events_tx.clone(),
+                    )
+                }
+                TabKind::Serial => serial::spawn_serial_terminal(
+                    tab_id.to_string(),
+                    session.clone(),
+                    self.runtime_state.events_tx.clone(),
+                ),
+                TabKind::Telnet => {
+                    let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
+                    telnet::spawn_telnet_terminal(
+                        &runtime,
+                        task_tracker,
+                        tab_id.to_string(),
+                        session.clone(),
+                        cols,
+                        rows,
+                        self.runtime_state.events_tx.clone(),
+                    )
+                }
+                TabKind::Local => unreachable!("local terminals do not have sessions"),
+            };
 
             // Swap the backend — the Term's internal listener shares the
             // same Arc<Mutex<BackendTx>>, so user input is automatically
@@ -1417,11 +1646,12 @@ impl AxShell {
             self.tabs[ix].backend_generation = new_generation;
             self.tabs[ix].backend_initialized = false;
 
-            // Restart SFTP for the group containing this tab
-            if let Some(group) = self
-                .tab_groups
-                .iter()
-                .find(|g| g.pane_root.contains(tab_id))
+            // Only SSH workspaces have an associated SFTP backend.
+            if kind == TabKind::Ssh
+                && let Some(group) = self
+                    .tab_groups
+                    .iter()
+                    .find(|g| g.pane_root.contains(tab_id))
             {
                 let group_id = group.id.clone();
                 let group_session = self
@@ -1472,10 +1702,11 @@ impl AxShell {
             }
         }
 
-        self.status = if is_ssh {
-            "ssh tab retrying"
-        } else {
-            "local tab reopened"
+        self.status = match kind {
+            TabKind::Local => "local tab reopened",
+            TabKind::Ssh => "ssh tab retrying",
+            TabKind::Serial => "serial session reopening",
+            TabKind::Telnet => "telnet session reopening",
         }
         .into();
         cx.notify();
@@ -1870,7 +2101,7 @@ impl AxShell {
     pub(crate) fn active_ssh_session(&self) -> Option<(String, Session)> {
         let active_id = self.active_tab.as_ref()?;
         let tab = self.tabs.iter().find(|tab| &tab.id == active_id)?;
-        if !tab.connected {
+        if tab.kind != TabKind::Ssh || !tab.connected {
             return None;
         }
         Some((tab.id.clone(), tab.session.clone()?))
@@ -1889,5 +2120,19 @@ impl AxShell {
                     .and_then(|group| group.sftp_session.as_ref())
                     .map(|session| session.id.as_str())
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::session::SessionKind;
+
+    use super::default_port_for_session_kind;
+
+    #[test]
+    fn session_kind_uses_protocol_default_port() {
+        assert_eq!(default_port_for_session_kind(SessionKind::Ssh), 22);
+        assert_eq!(default_port_for_session_kind(SessionKind::Telnet), 23);
+        assert_eq!(default_port_for_session_kind(SessionKind::Serial), 0);
     }
 }

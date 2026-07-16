@@ -70,6 +70,15 @@ impl AxShell {
         });
         let session_sftp_path_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("sftp_path").to_string()));
+        let serial_port_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("serial_port").to_string()));
+        let serial_baud_rate_input =
+            cx.new(|cx| InputState::new(window, cx).default_value("115200"));
+        let serial_data_bits_input = cx.new(|cx| InputState::new(window, cx).default_value("8"));
+        let serial_parity_input = cx.new(|cx| InputState::new(window, cx).default_value("none"));
+        let serial_stop_bits_input = cx.new(|cx| InputState::new(window, cx).default_value("1"));
+        let serial_flow_control_input =
+            cx.new(|cx| InputState::new(window, cx).default_value("none"));
         let sftp_path_input = cx.new(|cx| InputState::new(window, cx).default_value("/"));
         let sftp_new_folder_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("new_folder").to_string()));
@@ -288,6 +297,12 @@ impl AxShell {
             cx.subscribe_in(&proxy_user_input, window, Self::on_input_event),
             cx.subscribe_in(&proxy_password_input, window, Self::on_input_event),
             cx.subscribe_in(&session_sftp_path_input, window, Self::on_input_event),
+            cx.subscribe_in(&serial_port_input, window, Self::on_input_event),
+            cx.subscribe_in(&serial_baud_rate_input, window, Self::on_input_event),
+            cx.subscribe_in(&serial_data_bits_input, window, Self::on_input_event),
+            cx.subscribe_in(&serial_parity_input, window, Self::on_input_event),
+            cx.subscribe_in(&serial_stop_bits_input, window, Self::on_input_event),
+            cx.subscribe_in(&serial_flow_control_input, window, Self::on_input_event),
             cx.subscribe_in(&ssh_retry_count_input, window, Self::on_input_event),
             cx.subscribe_in(&ssh_retry_delays_input, window, Self::on_input_event),
             cx.subscribe_in(&rayon_threads_input, window, Self::on_input_event),
@@ -442,6 +457,14 @@ impl AxShell {
             sync_status: t!("sync_not_run").into(),
             sftp_path_input,
             local_sftp_path_input,
+            serial_port_input,
+            serial_baud_rate_input,
+            serial_data_bits_input,
+            serial_parity_input,
+            serial_stop_bits_input,
+            serial_flow_control_input,
+            session_kind: crate::session::SessionKind::Ssh,
+            available_serial_ports: Vec::new(),
             ssh_auth_method: AuthMethod::Password,
             editing_session_id: None,
             session_shortcut: String::new(),

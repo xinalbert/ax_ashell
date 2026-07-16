@@ -28,6 +28,8 @@ use super::{
 pub enum TabKind {
     Local,
     Ssh,
+    Serial,
+    Telnet,
 }
 
 pub struct TerminalTab {
@@ -299,6 +301,32 @@ impl TerminalTab {
             backend,
             events,
         );
+        tab.session = Some(session.clone());
+        tab.connected = false;
+        tab
+    }
+
+    pub fn new_serial_or_telnet(
+        id: String,
+        session: &Session,
+        backend: BackendTx,
+        events: BackendEventSender,
+    ) -> Self {
+        let (kind, status) = match session.kind {
+            crate::session::SessionKind::Serial => (
+                TabKind::Serial,
+                format!(
+                    "opening serial {} @ {}",
+                    session.serial_port, session.baud_rate
+                ),
+            ),
+            crate::session::SessionKind::Telnet => (
+                TabKind::Telnet,
+                format!("connecting telnet {}:{}", session.host, session.port),
+            ),
+            crate::session::SessionKind::Ssh => unreachable!("SSH uses new_ssh"),
+        };
+        let mut tab = Self::new(id, session.name.clone(), kind, status, backend, events);
         tab.session = Some(session.clone());
         tab.connected = false;
         tab

@@ -216,6 +216,8 @@ impl AxShell {
                                                 "ssh".to_string()
                                             }
                                         }
+                                        TabKind::Serial => t!("serial_connection").to_string(),
+                                        TabKind::Telnet => t!("telnet_connection").to_string(),
                                     }
                                 } else {
                                     self.active_title()

@@ -5,7 +5,7 @@ use crate::{
     AxShell, PaneLayout,
     app::WorkspacePage,
     app::constants::{DEFAULT_COLS, DEFAULT_ROWS},
-    backend::{local, ssh},
+    backend::{local, serial, ssh, telnet},
     terminal::{TabKind, TerminalTab},
 };
 
@@ -75,6 +75,47 @@ impl AxShell {
                     self.runtime_state.events_tx.clone(),
                 );
                 TerminalTab::new_ssh(
+                    new_id.clone(),
+                    &session,
+                    backend,
+                    self.runtime_state.events_tx.clone(),
+                )
+            }
+            TabKind::Serial => {
+                let Some(session) = current_session else {
+                    self.status = "cannot split: no serial session info".into();
+                    cx.notify();
+                    return;
+                };
+                let backend = serial::spawn_serial_terminal(
+                    new_id.clone(),
+                    session.clone(),
+                    self.runtime_state.events_tx.clone(),
+                );
+                TerminalTab::new_serial_or_telnet(
+                    new_id.clone(),
+                    &session,
+                    backend,
+                    self.runtime_state.events_tx.clone(),
+                )
+            }
+            TabKind::Telnet => {
+                let Some(session) = current_session else {
+                    self.status = "cannot split: no Telnet session info".into();
+                    cx.notify();
+                    return;
+                };
+                let (runtime, task_tracker) = self.runtime_state.runtime_handle_and_tracker();
+                let backend = telnet::spawn_telnet_terminal(
+                    &runtime,
+                    task_tracker,
+                    new_id.clone(),
+                    session.clone(),
+                    DEFAULT_COLS,
+                    DEFAULT_ROWS,
+                    self.runtime_state.events_tx.clone(),
+                );
+                TerminalTab::new_serial_or_telnet(
                     new_id.clone(),
                     &session,
                     backend,

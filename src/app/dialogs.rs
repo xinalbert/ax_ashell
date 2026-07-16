@@ -19,7 +19,11 @@ use gpui_component::{
 };
 use rust_i18n::t;
 
-use crate::{AxShell, monitoring::format_bytes, session::AuthMethod};
+use crate::{
+    AxShell,
+    monitoring::format_bytes,
+    session::{AuthMethod, SessionKind},
+};
 
 pub(super) use crate::app::hover::{FastHoverExt, list_fast_hover_options};
 

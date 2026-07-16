@@ -51,6 +51,7 @@ hex = "0.4"
 rand = "0.8"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 sha2 = "0.10"
+serialport = "4"
 
 [features]
 # Recognized only to silence the legacy conditional used inside `objc` 0.2 macros.

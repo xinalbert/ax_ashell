@@ -11,14 +11,14 @@ use crate::{
     AxShell, SelectorEntry,
     app::{SavedGroupContextMenuState, SavedSessionContextMenuState},
     config::ConfigStore,
-    session::Session,
+    session::{Session, SessionKind},
 };
 
 use super::session::normalize_session_group_name;
 use crate::diagnostics::{mask_host, mask_value};
 
 const SAVED_SESSIONS_SHARE_FORMAT: &str = "ax-shell-saved-sessions";
-const SAVED_SESSIONS_SHARE_SCHEMA_VERSION: u32 = 1;
+const SAVED_SESSIONS_SHARE_SCHEMA_VERSION: u32 = 2;
 
 fn default_share_ssh_port() -> u16 {
     22
@@ -34,6 +34,30 @@ fn default_share_proxy_type() -> String {
 
 fn default_share_x11_forwarding() -> bool {
     true
+}
+
+fn default_share_session_kind() -> SessionKind {
+    SessionKind::Ssh
+}
+
+fn default_share_serial_baud_rate() -> u32 {
+    115_200
+}
+
+fn default_serial_data_bits() -> u8 {
+    8
+}
+
+fn default_serial_parity() -> String {
+    "none".to_string()
+}
+
+fn default_serial_stop_bits() -> u8 {
+    1
+}
+
+fn default_serial_flow_control() -> String {
+    "none".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +76,8 @@ struct SavedSessionShareEntry {
     name: String,
     #[serde(default)]
     group_name: String,
+    #[serde(default = "default_share_session_kind")]
+    kind: SessionKind,
     #[serde(default)]
     host: String,
     #[serde(default = "default_share_ssh_port")]
@@ -72,6 +98,18 @@ struct SavedSessionShareEntry {
     sftp_path: String,
     #[serde(default = "default_share_x11_forwarding")]
     x11_forwarding: bool,
+    #[serde(default)]
+    serial_port: String,
+    #[serde(default = "default_share_serial_baud_rate")]
+    baud_rate: u32,
+    #[serde(default = "default_serial_data_bits")]
+    data_bits: u8,
+    #[serde(default = "default_serial_parity")]
+    parity: String,
+    #[serde(default = "default_serial_stop_bits")]
+    stop_bits: u8,
+    #[serde(default = "default_serial_flow_control")]
+    flow_control: String,
 }
 
 #[derive(Debug)]
@@ -101,6 +139,7 @@ impl SavedSessionShareEntry {
             id: session.id.trim().to_string(),
             name: session.name.trim().to_string(),
             group_name: normalize_session_group_name(&session.group_name),
+            kind: session.kind,
             host: session.host.trim().to_string(),
             port: session.port,
             user: session.user.trim().to_string(),
@@ -111,49 +150,83 @@ impl SavedSessionShareEntry {
             proxy_user: session.proxy_user.trim().to_string(),
             sftp_path: session.sftp_path.trim().to_string(),
             x11_forwarding: session.x11_forwarding,
+            serial_port: session.serial_port.trim().to_string(),
+            baud_rate: session.baud_rate,
+            data_bits: session.data_bits,
+            parity: session.parity.clone(),
+            stop_bits: session.stop_bits,
+            flow_control: session.flow_control.clone(),
         }
     }
 
     fn into_session(self) -> Option<Session> {
         let host = self.host.trim().to_string();
         let user = self.user.trim().to_string();
-        if host.is_empty() || user.is_empty() {
-            return None;
-        }
-
-        let port = if self.port == 0 { 22 } else { self.port };
-        let mut session = match self.auth {
-            crate::session::AuthMethod::Password => {
-                Session::password(host, port, user, String::new())
+        let serial_port = self.serial_port.trim().to_string();
+        let mut session = match self.kind {
+            SessionKind::Ssh => {
+                if host.is_empty() || user.is_empty() {
+                    return None;
+                }
+                let port = if self.port == 0 { 22 } else { self.port };
+                match self.auth {
+                    crate::session::AuthMethod::Password => {
+                        Session::password(host, port, user, String::new())
+                    }
+                    crate::session::AuthMethod::Key => Session::key(
+                        host,
+                        port,
+                        user,
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                    ),
+                }
             }
-            crate::session::AuthMethod::Key => Session::key(
-                host,
-                port,
-                user,
-                String::new(),
-                String::new(),
-                String::new(),
-            ),
+            SessionKind::Telnet => {
+                if host.is_empty() {
+                    return None;
+                }
+                Session::telnet(host, if self.port == 0 { 23 } else { self.port })
+            }
+            SessionKind::Serial => {
+                if serial_port.is_empty() {
+                    return None;
+                }
+                let mut session = Session::serial(serial_port, self.baud_rate.max(1));
+                session.data_bits = self.data_bits;
+                session.parity = self.parity;
+                session.stop_bits = self.stop_bits;
+                session.flow_control = self.flow_control;
+                session
+            }
         };
         session.id = self.id.trim().to_string();
         session.name = if self.name.trim().is_empty() {
-            session.host.clone()
+            match session.kind {
+                SessionKind::Serial => session.serial_port.clone(),
+                SessionKind::Ssh | SessionKind::Telnet => session.host.clone(),
+            }
         } else {
             self.name.trim().to_string()
         };
         session.group_name = normalize_session_group_name(&self.group_name);
-        session.sftp_path = self.sftp_path.trim().to_string();
-        session.x11_forwarding = self.x11_forwarding;
+        if session.kind.supports_sftp() {
+            session.sftp_path = self.sftp_path.trim().to_string();
+            session.x11_forwarding = self.x11_forwarding;
+        }
 
-        session.proxy_type = normalize_share_proxy_type(&self.proxy_type);
-        if session.proxy_type == "none" {
-            session.proxy_host.clear();
-            session.proxy_port = None;
-            session.proxy_user.clear();
-        } else {
-            session.proxy_host = self.proxy_host.trim().to_string();
-            session.proxy_port = self.proxy_port;
-            session.proxy_user = self.proxy_user.trim().to_string();
+        if matches!(session.kind, SessionKind::Ssh | SessionKind::Telnet) {
+            session.proxy_type = normalize_share_proxy_type(&self.proxy_type);
+            if session.proxy_type == "none" {
+                session.proxy_host.clear();
+                session.proxy_port = None;
+                session.proxy_user.clear();
+            } else {
+                session.proxy_host = self.proxy_host.trim().to_string();
+                session.proxy_port = self.proxy_port;
+                session.proxy_user = self.proxy_user.trim().to_string();
+            }
         }
 
         Some(session)
@@ -206,7 +279,7 @@ fn parse_saved_sessions_share_json(content: &str) -> Result<ParsedSavedSessionsS
     if share_file.format != SAVED_SESSIONS_SHARE_FORMAT {
         return Err(anyhow!("unsupported saved SSH sessions export format"));
     }
-    if share_file.schema_version != SAVED_SESSIONS_SHARE_SCHEMA_VERSION {
+    if !(1..=SAVED_SESSIONS_SHARE_SCHEMA_VERSION).contains(&share_file.schema_version) {
         return Err(anyhow!(
             "unsupported saved SSH sessions export schema version {}",
             share_file.schema_version
@@ -235,6 +308,7 @@ fn session_share_fingerprint(session: &Session) -> String {
         crate::session::AuthMethod::Key => "key",
     };
     [
+        format!("{:?}", session.kind),
         session.name.trim().to_string(),
         normalize_session_group_name(&session.group_name),
         session.host.trim().to_string(),
@@ -250,6 +324,12 @@ fn session_share_fingerprint(session: &Session) -> String {
         session.proxy_user.trim().to_string(),
         session.sftp_path.trim().to_string(),
         session.x11_forwarding.to_string(),
+        session.serial_port.trim().to_string(),
+        session.baud_rate.to_string(),
+        session.data_bits.to_string(),
+        session.parity.trim().to_string(),
+        session.stop_bits.to_string(),
+        session.flow_control.trim().to_string(),
     ]
     .join("\0")
 }
@@ -768,20 +848,49 @@ impl AxShell {
     }
 
     pub(crate) fn session_detail(&self, session: &Session) -> String {
-        format!("{}@{}", mask_value(&session.user), mask_host(&session.host))
+        match session.kind {
+            SessionKind::Ssh => {
+                format!("{}@{}", mask_value(&session.user), mask_host(&session.host))
+            }
+            SessionKind::Telnet => format!("telnet {}:{}", mask_host(&session.host), session.port),
+            SessionKind::Serial => format!("{} @ {}", session.serial_port, session.baud_rate),
+        }
     }
 
     pub(crate) fn session_tooltip_info(session: &Session) -> String {
-        let mut info = format!(
-            "{}\n{}@{}:{}\nssh {}@{} -p {}",
-            session.name,
-            session.user,
-            session.host,
-            session.port,
-            session.user,
-            session.host,
-            session.port
-        );
+        let mut info = match session.kind {
+            SessionKind::Ssh => format!(
+                "{}\n{}@{}:{}\nssh {}@{} -p {}",
+                session.name,
+                session.user,
+                session.host,
+                session.port,
+                session.user,
+                session.host,
+                session.port
+            ),
+            SessionKind::Telnet => format!(
+                "{}\n{} {}:{}",
+                session.name,
+                SessionKind::Telnet.label(),
+                session.host,
+                session.port
+            ),
+            SessionKind::Serial => format!(
+                "{}\n{} {} @ {} {}{}{}",
+                session.name,
+                SessionKind::Serial.label(),
+                session.serial_port,
+                session.baud_rate,
+                session.data_bits,
+                match session.parity.as_str() {
+                    "even" => "E",
+                    "odd" => "O",
+                    _ => "N",
+                },
+                session.stop_bits,
+            ),
+        };
         if !session.shortcut.is_empty() {
             info.push_str(&format!(
                 "\n{}: {}",
@@ -789,7 +898,7 @@ impl AxShell {
                 crate::app::keybinding_recorder::format_keystroke(&session.shortcut)
             ));
         }
-        if !session.sftp_path.is_empty() {
+        if session.kind.supports_sftp() && !session.sftp_path.is_empty() {
             info.push_str(&format!("\n{}: {}", t!("sftp_path"), session.sftp_path));
         }
         info
@@ -887,7 +996,7 @@ impl AxShell {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::{AuthMethod, Session};
+    use crate::session::{AuthMethod, Session, SessionKind};
 
     fn sample_password_session(id: &str, name: &str, host: &str) -> Session {
         let mut session = Session::password(host.into(), 22, "root".into(), "secret".into());
@@ -977,6 +1086,54 @@ mod tests {
                 .expect("share entry is valid")
                 .x11_forwarding
         );
+    }
+
+    #[test]
+    fn saved_sessions_share_round_trips_serial_parameters() {
+        let mut serial = Session::serial("/dev/tty.usbserial-01".into(), 57_600);
+        serial.id = "serial-1".into();
+        serial.name = "Router Console".into();
+        serial.group_name = "Lab".into();
+        serial.data_bits = 7;
+        serial.parity = "even".into();
+        serial.stop_bits = 2;
+        serial.flow_control = "hardware".into();
+
+        let parsed = parse_saved_sessions_share_json(
+            &saved_sessions_share_json(&[serial]).expect("serial share serializes"),
+        )
+        .expect("serial share parses");
+        let restored = parsed.sessions.first().expect("serial session is present");
+
+        assert_eq!(restored.kind, SessionKind::Serial);
+        assert_eq!(restored.serial_port, "/dev/tty.usbserial-01");
+        assert_eq!(restored.baud_rate, 57_600);
+        assert_eq!(restored.data_bits, 7);
+        assert_eq!(restored.parity, "even");
+        assert_eq!(restored.stop_bits, 2);
+        assert_eq!(restored.flow_control, "hardware");
+    }
+
+    #[test]
+    fn version_one_share_defaults_to_ssh_kind() {
+        let session = sample_password_session("ssh-1", "Example", "example.com");
+        let mut entry = serde_json::to_value(SavedSessionShareEntry::from_session(&session))
+            .expect("share entry serializes");
+        entry
+            .as_object_mut()
+            .expect("share entry is an object")
+            .remove("kind");
+        let value = serde_json::json!({
+            "format": SAVED_SESSIONS_SHARE_FORMAT,
+            "schema_version": 1,
+            "exported_at": "2026-07-16T00:00:00Z",
+            "sessions": [entry],
+        });
+
+        let parsed = parse_saved_sessions_share_json(&value.to_string()).expect("v1 share parses");
+
+        assert_eq!(parsed.sessions.len(), 1);
+        assert_eq!(parsed.sessions[0].kind, SessionKind::Ssh);
     }
 
     #[test]

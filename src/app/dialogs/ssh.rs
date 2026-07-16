@@ -23,17 +23,25 @@ impl AxShell {
         let proxy_user_input = self.proxy_user_input.clone();
         let proxy_password_input = self.proxy_password_input.clone();
         let session_sftp_path_input = self.session_sftp_path_input.clone();
+        let serial_port_input = self.serial_port_input.clone();
+        let serial_baud_rate_input = self.serial_baud_rate_input.clone();
+        let serial_data_bits_input = self.serial_data_bits_input.clone();
+        let serial_parity_input = self.serial_parity_input.clone();
+        let serial_stop_bits_input = self.serial_stop_bits_input.clone();
+        let serial_flow_control_input = self.serial_flow_control_input.clone();
+        let focus_serial_port_input = serial_port_input.clone();
+        let deferred_view = view.clone();
 
         window.open_dialog(cx, move |dialog: Dialog, _window, _cx| {
             dialog
-                .title(t!("new_ssh_connection"))
+                .title(t!("new_connection"))
                 .w(px(560.))
                 .overlay_closable(false)
                 .on_ok({
                     let view = view.clone();
                     move |_, window, cx| {
                         view.update(cx, |this, cx| {
-                            this.connect_ssh(window, cx);
+                            this.connect_session(window, cx);
                         });
                         false
                     }
@@ -63,8 +71,18 @@ impl AxShell {
                     let proxy_user_input = proxy_user_input.clone();
                     let proxy_password_input = proxy_password_input.clone();
                     let session_sftp_path_input = session_sftp_path_input.clone();
+                    let serial_port_input = serial_port_input.clone();
+                    let serial_baud_rate_input = serial_baud_rate_input.clone();
+                    let serial_data_bits_input = serial_data_bits_input.clone();
+                    let serial_parity_input = serial_parity_input.clone();
+                    let serial_stop_bits_input = serial_stop_bits_input.clone();
+                    let serial_flow_control_input = serial_flow_control_input.clone();
                     move |content, window, cx| {
                         let shell = view.read(cx);
+                        let session_kind = shell.session_kind;
+                        let is_ssh = session_kind == SessionKind::Ssh;
+                        let is_serial = session_kind == SessionKind::Serial;
+                        let is_telnet = session_kind == SessionKind::Telnet;
                         let is_password = shell.ssh_auth_method == AuthMethod::Password;
                         let proxy_type = shell.ssh_proxy_type.clone();
                         let show_proxy_fields = proxy_type != "none";
@@ -81,6 +99,7 @@ impl AxShell {
                         let saved_group_names = shell.saved_group_names();
                         let current_group_name =
                             session_group_input.read(cx).value().trim().to_string();
+                        let available_serial_ports = shell.available_serial_ports.clone();
 
                         content.child(
                             v_flex()
@@ -103,7 +122,161 @@ impl AxShell {
                                             div()
                                                 .text_sm()
                                                 .font_weight(FontWeight::BOLD)
-                                                .child(t!("ssh_connection").to_string()),
+                                                .child(t!("connection_type").to_string()),
+                                        )
+                                        .child(
+                                            h_flex()
+                                                .gap_2()
+                                                .child(
+                                                    Button::new("session-kind-ssh")
+                                                        .label("SSH")
+                                                        .when(is_ssh, |button| button.primary())
+                                                        .on_click(window.listener_for(
+                                                            &view,
+                                                            |this, _, window, cx| {
+                                                                this.set_session_kind(
+                                                                    SessionKind::Ssh,
+                                                                    window,
+                                                                    cx,
+                                                                )
+                                                            },
+                                                        )),
+                                                )
+                                                .child(
+                                                    Button::new("session-kind-serial")
+                                                        .label(t!("serial_connection").to_string())
+                                                        .when(is_serial, |button| button.primary())
+                                                        .on_click(window.listener_for(
+                                                            &view,
+                                                            |this, _, window, cx| {
+                                                                this.set_session_kind(
+                                                                    SessionKind::Serial,
+                                                                    window,
+                                                                    cx,
+                                                                )
+                                                            },
+                                                        )),
+                                                )
+                                                .child(
+                                                    Button::new("session-kind-telnet")
+                                                        .label("Telnet")
+                                                        .when(is_telnet, |button| button.primary())
+                                                        .on_click(window.listener_for(
+                                                            &view,
+                                                            |this, _, window, cx| {
+                                                                this.set_session_kind(
+                                                                    SessionKind::Telnet,
+                                                                    window,
+                                                                    cx,
+                                                                )
+                                                            },
+                                                        )),
+                                                ),
+                                        ),
+                                )
+                                .when(is_serial, |this| {
+                                    this.child(
+                                        v_flex()
+                                            .gap_2()
+                                            .p_3()
+                                            .border_1()
+                                            .border_color(cx.theme().border)
+                                            .rounded_md()
+                                            .child(
+                                                h_flex()
+                                                    .justify_between()
+                                                    .items_center()
+                                                    .child(
+                                                        div()
+                                                            .text_sm()
+                                                            .font_weight(FontWeight::BOLD)
+                                                            .child(t!("serial_connection").to_string()),
+                                                    )
+                                                    .child(
+                                                        Button::new("refresh-serial-ports")
+                                                            .ghost()
+                                                            .label(t!("refresh").to_string())
+                                                            .on_click(window.listener_for(
+                                                                &view,
+                                                                |this, _, _, cx| {
+                                                                    this.refresh_available_serial_ports(cx)
+                                                                },
+                                                            )),
+                                                    ),
+                                            )
+                                            .child(div().text_sm().child(t!("serial_port").to_string()))
+                                            .child(
+                                                h_flex()
+                                                    .gap_2()
+                                                    .child(Input::new(&serial_port_input).flex_1().tab_index(0))
+                                                    .child(
+                                                        settings::fast_menu::fast_settings_menu_lazy_disabled(
+                                                            "serial-port-dropdown",
+                                                            t!("detected_serial_ports").to_string(),
+                                                            Some(IconName::ChevronsUpDown),
+                                                            px(220.),
+                                                            Some(px(260.)),
+                                                            available_serial_ports.is_empty(),
+                                                            {
+                                                                let ports = available_serial_ports.clone();
+                                                                let selected = serial_port_input.read(cx).value().to_string();
+                                                                move |_, _| ports
+                                                                    .iter()
+                                                                    .cloned()
+                                                                    .map(|port| {
+                                                                        let checked = port == selected;
+                                                                        settings::fast_menu::FastMenuItem::new(
+                                                                            port.clone(),
+                                                                            checked,
+                                                                            move |this, window, cx| {
+                                                                                Self::set_input_value(
+                                                                                    &this.serial_port_input,
+                                                                                    port.clone(),
+                                                                                    window,
+                                                                                    cx,
+                                                                                );
+                                                                            },
+                                                                        )
+                                                                    })
+                                                                    .collect::<Vec<_>>()
+                                                            },
+                                                            view.clone(),
+                                                        ),
+                                                    ),
+                                            )
+                                            .child(
+                                                h_flex()
+                                                    .gap_2()
+                                                    .child(Input::new(&serial_baud_rate_input).flex_1().tab_index(1))
+                                                    .child(Input::new(&serial_data_bits_input).w(px(64.)).tab_index(2))
+                                                    .child(Input::new(&serial_parity_input).w(px(78.)).tab_index(3))
+                                                    .child(Input::new(&serial_stop_bits_input).w(px(64.)).tab_index(4))
+                                                    .child(Input::new(&serial_flow_control_input).flex_1().tab_index(5)),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(cx.theme().muted_foreground)
+                                                    .child(t!("serial_settings_hint").to_string()),
+                                            ),
+                                    )
+                                })
+                                .when(!is_serial, |this| this.child(
+                                    v_flex()
+                                        .gap_2()
+                                        .p_3()
+                                        .border_1()
+                                        .border_color(cx.theme().border)
+                                        .rounded_md()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_weight(FontWeight::BOLD)
+                                                .child(if is_telnet {
+                                                    t!("telnet_connection").to_string()
+                                                } else {
+                                                    t!("ssh_connection").to_string()
+                                                }),
                                         )
                                         .child(
                                             h_flex()
@@ -135,16 +308,16 @@ impl AxShell {
                                                         .tab_index(1),
                                                 ),
                                         )
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .child(t!("user").to_string()),
-                                        )
-                                        .child(
-                                            Input::new(&user_input).w_full().tab_index(2),
-                                        )
-                                )
-                                .child(
+                                        .when(is_ssh, |this| {
+                                            this.child(
+                                                div()
+                                                    .text_sm()
+                                                    .child(t!("user").to_string()),
+                                            )
+                                            .child(Input::new(&user_input).w_full().tab_index(2))
+                                        })
+                                ))
+                                .when(is_ssh, |this| this.child(
                                     v_flex()
                                         .gap_2()
                                         .p_3()
@@ -295,7 +468,7 @@ impl AxShell {
                                                     ),
                                             )
                                         }),
-                                )
+                                ))
                                 .child(
                                     v_flex()
                                         .gap_2()
@@ -397,7 +570,7 @@ impl AxShell {
                                                 ),
                                         ),
                                 )
-                                .child(
+                                .when(is_ssh, |this| this.child(
                                     Button::new("ssh-advanced-options")
                                         .ghost()
                                         .label(
@@ -415,8 +588,8 @@ impl AxShell {
                                                 cx.notify();
                                             },
                                         )),
-                                )
-                                .when(show_advanced_options, |this| {
+                                ))
+                                .when(is_ssh && show_advanced_options, |this| {
                                     this.child(
                                         v_flex()
                                             .gap_3()
@@ -697,7 +870,7 @@ impl AxShell {
                                                         .on_click(window.listener_for(
                                                             &view,
                                                             |this, _, window, cx| {
-                                                                this.save_ssh(window, cx)
+                                                                this.save_session(window, cx)
                                                             },
                                                         )),
                                                 )
@@ -708,7 +881,7 @@ impl AxShell {
                                                         .on_click(window.listener_for(
                                                             &view,
                                                             |this, _, window, cx| {
-                                                                this.connect_ssh(window, cx)
+                                                                this.connect_session(window, cx)
                                                             },
                                                         )),
                                                 ),
@@ -719,7 +892,12 @@ impl AxShell {
                 })
         });
         window.defer(cx, move |window, cx| {
-            window.focus(&focus_host_input.read(cx).focus_handle(cx), cx);
+            let input = if deferred_view.read(cx).session_kind == SessionKind::Serial {
+                &focus_serial_port_input
+            } else {
+                &focus_host_input
+            };
+            window.focus(&input.read(cx).focus_handle(cx), cx);
         });
     }
 }

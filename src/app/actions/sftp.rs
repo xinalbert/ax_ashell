@@ -220,7 +220,7 @@ impl AxShell {
             && let Some(session) = self
                 .tabs
                 .iter()
-                .find(|tab| tab.id == *active_tab_id)
+                .find(|tab| tab.id == *active_tab_id && tab.kind == crate::terminal::TabKind::Ssh)
                 .and_then(|tab| tab.session.clone())
         {
             return Some(session);
@@ -232,10 +232,15 @@ impl AxShell {
             .find_map(|tab_id| {
                 self.tabs
                     .iter()
-                    .find(|tab| tab.id == tab_id)
+                    .find(|tab| tab.id == tab_id && tab.kind == crate::terminal::TabKind::Ssh)
                     .and_then(|tab| tab.session.clone())
             })
-            .or_else(|| group.sftp_session.clone())
+            .or_else(|| {
+                group
+                    .sftp_session
+                    .clone()
+                    .filter(|session| session.kind.supports_sftp())
+            })
     }
 
     fn active_sftp_saved_session_id(&self) -> Option<String> {

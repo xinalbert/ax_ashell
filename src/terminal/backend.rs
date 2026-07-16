@@ -39,6 +39,14 @@ pub enum BackendTx {
         commands: tokio::sync::mpsc::UnboundedSender<BackendCommand>,
         shutdown: std::sync::Arc<dyn BackendShutdown>,
     },
+    Serial {
+        commands: Sender<BackendCommand>,
+        shutdown: std::sync::Arc<dyn BackendShutdown>,
+    },
+    Telnet {
+        commands: tokio::sync::mpsc::UnboundedSender<BackendCommand>,
+        shutdown: std::sync::Arc<dyn BackendShutdown>,
+    },
 }
 
 impl BackendTx {
@@ -57,10 +65,10 @@ impl BackendTx {
         }
 
         match self {
-            Self::Local { commands, .. } => {
+            Self::Local { commands, .. } | Self::Serial { commands, .. } => {
                 let _ = commands.send(command);
             }
-            Self::Ssh { commands, .. } => {
+            Self::Ssh { commands, .. } | Self::Telnet { commands, .. } => {
                 let _ = commands.send(command);
             }
         }
@@ -69,7 +77,10 @@ impl BackendTx {
     /// Signal the backend and schedule its resource reaper without blocking UI work.
     pub fn shutdown(&self) {
         match self {
-            Self::Local { shutdown, .. } | Self::Ssh { shutdown, .. } => shutdown.shutdown(),
+            Self::Local { shutdown, .. }
+            | Self::Ssh { shutdown, .. }
+            | Self::Serial { shutdown, .. }
+            | Self::Telnet { shutdown, .. } => shutdown.shutdown(),
         }
     }
 }
