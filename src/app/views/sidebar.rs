@@ -20,7 +20,7 @@ enum SavedSidebarRow {
         session_id: String,
         name: String,
         detail: String,
-        full_detail: String,
+        tooltip_info: String,
         is_active: bool,
     },
 }
@@ -43,7 +43,7 @@ enum CollapsedSavedSidebarRow {
         session_ix: usize,
         session_id: String,
         name: String,
-        full_detail: String,
+        tooltip_info: String,
         is_active: bool,
     },
 }
@@ -81,14 +81,14 @@ impl AxShell {
                         .into_iter()
                         .enumerate()
                         .map(|(session_ix, session)| {
-                            let full_detail = self.session_connection_info(&session);
+                            let tooltip_info = Self::session_tooltip_info(&session);
                             SavedSidebarRow::Session {
                                 group_ix,
                                 session_ix,
                                 session_id: session.id.clone(),
                                 name: session.name.clone(),
                                 detail: self.session_detail(&session),
-                                full_detail,
+                                tooltip_info,
                                 is_active: active_session_id.as_deref()
                                     == Some(session.id.as_str()),
                             }
@@ -134,7 +134,7 @@ impl AxShell {
                             session_ix,
                             session_id: session.id.clone(),
                             name: session.name.clone(),
-                            full_detail: self.session_connection_info(&session),
+                            tooltip_info: Self::session_tooltip_info(&session),
                             is_active: active_session_id.as_deref() == Some(session.id.as_str()),
                         }),
                 );
@@ -517,13 +517,12 @@ impl AxShell {
                 session_id,
                 name,
                 detail,
-                full_detail,
+                tooltip_info,
                 is_active,
             } => {
                 let connect_id = session_id.clone();
-                let tooltip_detail = full_detail.clone();
+                let tooltip_detail = tooltip_info;
                 let menu_session_id = session_id;
-                let menu_detail = full_detail;
                 div()
                     .id(("saved-sidebar-row", row_ix))
                     .w_full()
@@ -566,7 +565,6 @@ impl AxShell {
                                     move |this, event: &MouseDownEvent, _, cx| {
                                         this.open_saved_session_context_menu(
                                             menu_session_id.clone(),
-                                            menu_detail.clone(),
                                             event.position,
                                             cx,
                                         );
@@ -773,13 +771,12 @@ impl AxShell {
                 session_ix,
                 session_id,
                 name,
-                full_detail,
+                tooltip_info,
                 is_active,
             } => {
                 let connect_id = session_id.clone();
-                let tooltip_detail = full_detail.clone();
+                let tooltip_detail = tooltip_info;
                 let menu_session_id = session_id;
-                let menu_detail = full_detail;
                 let abbrev = Self::collapsed_sidebar_abbrev(&name);
                 div()
                     .id(("collapsed-saved-sidebar-row", row_ix))
@@ -829,7 +826,6 @@ impl AxShell {
                                     move |this, event: &MouseDownEvent, _, cx| {
                                         this.open_saved_session_context_menu(
                                             menu_session_id.clone(),
-                                            menu_detail.clone(),
                                             event.position,
                                             cx,
                                         );

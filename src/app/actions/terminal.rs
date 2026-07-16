@@ -185,6 +185,10 @@ impl AxShell {
             return;
         }
 
+        if self.connect_session_shortcut_if_matched(event, window, cx) {
+            return;
+        }
+
         // If the active tab is disconnected and user presses Enter, reconnect
         if event.keystroke.key == "enter"
             && !event.keystroke.modifiers.shift

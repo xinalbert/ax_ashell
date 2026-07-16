@@ -20,9 +20,9 @@ gpui::actions!(ax_shell_terminal, [TerminalTabKey, TerminalBacktabKey]);
 
 pub(crate) use app::keybinding_recorder::{
     ClosePane, Copy, ExportSavedSessions, FocusPaneDown, FocusPaneLeft, FocusPaneRight,
-    FocusPaneUp, ImportSavedSessions, NewSsh, NextTab, OpenSearch, OpenSession, OpenSettings,
-    OpenTransfers, Paste, PrevTab, SplitPaneDown, SplitPaneLeft, SplitPaneRight, SplitPaneUp,
-    ToggleSftpZoom, ToggleSidebar,
+    FocusPaneUp, ImportSavedSessions, NewSsh, NextTab, OpenAbout, OpenSearch, OpenSession,
+    OpenSettings, OpenTransfers, Paste, PrevTab, SplitPaneDown, SplitPaneLeft, SplitPaneRight,
+    SplitPaneUp, ToggleSftpZoom, ToggleSidebar,
 };
 
 pub(crate) use app::{AxShell, PaneLayout, SelectorEntry, SftpContextMenuState, TabGroup};

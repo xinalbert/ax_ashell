@@ -648,7 +648,6 @@ impl AxShell {
     pub(crate) fn open_saved_session_context_menu(
         &mut self,
         session_id: String,
-        connection_info: String,
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
@@ -657,7 +656,6 @@ impl AxShell {
         self.saved_group_context_menu = None;
         self.saved_session_context_menu = Some(SavedSessionContextMenuState {
             session_id,
-            connection_info,
             position,
         });
         cx.notify();
@@ -773,8 +771,8 @@ impl AxShell {
         format!("{}@{}", mask_value(&session.user), mask_host(&session.host))
     }
 
-    pub(crate) fn session_connection_info(&self, session: &Session) -> String {
-        format!(
+    pub(crate) fn session_tooltip_info(session: &Session) -> String {
+        let mut info = format!(
             "{}\n{}@{}:{}\nssh {}@{} -p {}",
             session.name,
             session.user,
@@ -783,7 +781,106 @@ impl AxShell {
             session.user,
             session.host,
             session.port
-        )
+        );
+        if !session.shortcut.is_empty() {
+            info.push_str(&format!(
+                "\n{}: {}",
+                t!("session_shortcut"),
+                crate::app::keybinding_recorder::format_keystroke(&session.shortcut)
+            ));
+        }
+        if !session.sftp_path.is_empty() {
+            info.push_str(&format!("\n{}: {}", t!("sftp_path"), session.sftp_path));
+        }
+        info
+    }
+
+    pub(crate) fn copy_saved_session_json(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        let Some(session) = self.config.get(session_id).cloned() else {
+            self.status = "saved session not found".into();
+            cx.notify();
+            return;
+        };
+
+        match saved_sessions_share_json(&[session]) {
+            Ok(content) => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(content));
+                self.status = t!("saved_session_json_copied").into();
+            }
+            Err(err) => {
+                tracing::error!(
+                    component = "saved_sessions",
+                    operation = "copy_share_json",
+                    error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                    "Failed to serialize saved SSH session for clipboard"
+                );
+                self.status = format!("{}: {err:#}", t!("saved_session_json_copy_failed")).into();
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn import_ssh_session_from_clipboard(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(clipboard) = cx.read_from_clipboard() else {
+            self.session_import_error = Some(t!("saved_session_clipboard_empty").to_string());
+            cx.notify();
+            return;
+        };
+        let Some(content) = clipboard.text() else {
+            self.session_import_error = Some(t!("saved_session_clipboard_empty").to_string());
+            cx.notify();
+            return;
+        };
+
+        let parsed = match parse_saved_sessions_share_json(&content) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                tracing::warn!(
+                    component = "saved_sessions",
+                    operation = "import_clipboard",
+                    error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                    "Failed to parse saved SSH session from clipboard"
+                );
+                self.session_import_error = Some(format!(
+                    "{}: {err:#}",
+                    t!("saved_session_clipboard_import_failed")
+                ));
+                cx.notify();
+                return;
+            }
+        };
+
+        if parsed.skipped_invalid != 0 || parsed.sessions.len() != 1 {
+            self.session_import_error =
+                Some(t!("saved_session_clipboard_single_required").to_string());
+            cx.notify();
+            return;
+        }
+
+        let mut session = parsed
+            .sessions
+            .into_iter()
+            .next()
+            .expect("single session was checked above");
+        let editing_session_id = self.editing_session_id.clone();
+        if editing_session_id.is_some() {
+            session.password = self.password_input.read(cx).value().to_string();
+            session.private_key_path = self.key_path_input.read(cx).value().to_string();
+            session.private_key_inline = self.key_inline_input.read(cx).value().to_string();
+            session.passphrase = self.passphrase_input.read(cx).value().to_string();
+            session.proxy_password = self.proxy_password_input.read(cx).value().to_string();
+            session.shortcut = self.session_shortcut.clone();
+        }
+
+        self.load_session_into_form(&session, window, cx);
+        self.editing_session_id = editing_session_id;
+        self.session_import_error = None;
+        self.status = t!("saved_session_clipboard_imported").into();
+        cx.notify();
     }
 }
 
@@ -823,6 +920,7 @@ mod tests {
         session.x11_forwarding = false;
         session.password = "password-secret".into();
         session.proxy_password = "proxy-secret".into();
+        session.shortcut = "ctrl-1".into();
 
         let json = saved_sessions_share_json(&[session]).expect("share export serializes");
 
@@ -838,6 +936,7 @@ mod tests {
         assert!(!json.contains("private_key"));
         assert!(!json.contains("passphrase"));
         assert!(!json.contains("proxy_password"));
+        assert!(!json.contains("ctrl-1"));
     }
 
     #[test]
@@ -967,5 +1066,37 @@ mod tests {
                 .iter()
                 .all(|session| { normalize_session_group_name(&session.group_name) == "Prod" })
         );
+    }
+
+    #[test]
+    fn saved_group_export_uses_the_standard_importable_share_format() {
+        let sessions = vec![
+            sample_password_session("prod", "Prod", "prod.example.com"),
+            sample_password_session("prod-2", "Prod 2", "prod-2.example.com"),
+        ];
+
+        let json = saved_sessions_share_json(&saved_sessions_for_group(&sessions, "Prod"))
+            .expect("group export serializes");
+        let parsed = parse_saved_sessions_share_json(&json).expect("group export parses");
+
+        assert_eq!(parsed.sessions.len(), 2);
+        assert!(
+            parsed
+                .sessions
+                .iter()
+                .all(|session| session.group_name == "Prod")
+        );
+    }
+
+    #[test]
+    fn session_tooltip_info_includes_configured_shortcut_and_sftp_path() {
+        let mut session = sample_password_session("prod", "Production", "prod.example.com");
+        session.shortcut = "ctrl-1".into();
+        session.sftp_path = "/srv/production".into();
+
+        let info = AxShell::session_tooltip_info(&session);
+
+        assert!(info.contains(&crate::app::keybinding_recorder::format_keystroke("ctrl-1")));
+        assert!(info.contains("/srv/production"));
     }
 }

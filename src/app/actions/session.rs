@@ -294,6 +294,7 @@ impl AxShell {
         session.proxy_password = self.proxy_password_input.read(cx).value().to_string();
         session.sftp_path = sftp_path;
         session.x11_forwarding = self.session_x11_forwarding;
+        session.shortcut = self.session_shortcut.clone();
         self.config.upsert(session.clone());
         self.config.save_logged("save_ssh_session");
 
@@ -337,6 +338,10 @@ impl AxShell {
 
     pub(crate) fn reset_ssh_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.editing_session_id = None;
+        self.recording_session_shortcut = false;
+        self.session_shortcut_error = None;
+        self.session_import_error = None;
+        self.session_shortcut.clear();
         self.ssh_auth_method = AuthMethod::Password;
         Self::set_input_value(&self.session_name_input, "", window, cx);
         Self::set_input_value(&self.session_group_input, "", window, cx);
@@ -432,6 +437,10 @@ impl AxShell {
             cx,
         );
         self.session_x11_forwarding = session.x11_forwarding;
+        self.recording_session_shortcut = false;
+        self.session_shortcut_error = None;
+        self.session_import_error = None;
+        self.session_shortcut = session.shortcut.clone();
     }
 
     pub(crate) fn pick_ssh_key_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -769,6 +778,77 @@ impl AxShell {
     ) {
         self.connect_saved_session(session_id, cx);
         self.focus_terminal_workspace(window, cx);
+    }
+
+    pub(crate) fn record_session_shortcut(
+        &mut self,
+        event: &gpui::KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.recording_session_shortcut {
+            return false;
+        }
+
+        window.prevent_default();
+        cx.stop_propagation();
+        if event.keystroke.key == "escape" {
+            self.recording_session_shortcut = false;
+            self.session_shortcut_error = None;
+            cx.notify();
+            return true;
+        }
+
+        let Some(shortcut) = crate::app::keybinding_recorder::session_shortcut_for_event(event)
+        else {
+            self.recording_session_shortcut = false;
+            self.session_shortcut_error =
+                Some(t!("session_shortcut_requires_modifier").to_string());
+            cx.notify();
+            return true;
+        };
+
+        if let Some(conflict) = crate::app::keybinding_recorder::find_session_shortcut_conflict(
+            &self.config,
+            self.editing_session_id.as_deref(),
+            &shortcut,
+        ) {
+            self.recording_session_shortcut = false;
+            self.session_shortcut_error = Some(
+                t!(
+                    "session_shortcut_conflict",
+                    key = crate::app::keybinding_recorder::format_keystroke(&shortcut),
+                    target = conflict
+                )
+                .to_string(),
+            );
+            cx.notify();
+            return true;
+        }
+
+        self.recording_session_shortcut = false;
+        self.session_shortcut_error = None;
+        self.session_shortcut = shortcut;
+        cx.notify();
+        true
+    }
+
+    pub(crate) fn connect_session_shortcut_if_matched(
+        &mut self,
+        event: &gpui::KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(session_id) =
+            crate::app::keybinding_recorder::session_shortcut_match(&self.config, event)
+        else {
+            return false;
+        };
+
+        self.connect_saved_session_and_focus(session_id, window, cx);
+        window.prevent_default();
+        cx.stop_propagation();
+        true
     }
 
     pub(crate) fn open_saved_session_sftp_only(

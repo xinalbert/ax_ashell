@@ -3,9 +3,9 @@ use gpui_component::GlobalState;
 
 use crate::{
     ClosePane, Copy, ExportSavedSessions, FocusPaneDown, FocusPaneLeft, FocusPaneRight,
-    FocusPaneUp, ImportSavedSessions, NewSsh, NextTab, OpenSearch, OpenSession, OpenSettings,
-    OpenTransfers, Paste, PrevTab, SplitPaneDown, SplitPaneLeft, SplitPaneRight, SplitPaneUp,
-    ToggleSftpZoom, ToggleSidebar,
+    FocusPaneUp, ImportSavedSessions, NewSsh, NextTab, OpenAbout, OpenSearch, OpenSession,
+    OpenSettings, OpenTransfers, Paste, PrevTab, SplitPaneDown, SplitPaneLeft, SplitPaneRight,
+    SplitPaneUp, ToggleSftpZoom, ToggleSidebar,
 };
 
 gpui::actions!(ax_shell_app_menu, [Quit]);
@@ -46,6 +46,8 @@ fn quit(_: &Quit, cx: &mut App) {
 fn app_menus() -> [Menu; 6] {
     [
         Menu::new("AxShell").items([
+            MenuItem::action("About AxShell", OpenAbout),
+            MenuItem::separator(),
             MenuItem::os_submenu("Services", SystemMenuType::Services),
             MenuItem::separator(),
             MenuItem::action("Settings", OpenSettings),

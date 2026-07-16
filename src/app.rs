@@ -58,7 +58,6 @@ pub(crate) use workspace::{TabGroup, WorkspacePage};
 #[derive(Clone)]
 pub(crate) struct SavedSessionContextMenuState {
     pub(crate) session_id: String,
-    pub(crate) connection_info: String,
     pub(crate) position: Point<Pixels>,
 }
 
@@ -87,6 +86,10 @@ pub(crate) struct AxShell {
     pub(crate) proxy_password_input: Entity<InputState>,
     pub(crate) session_sftp_path_input: Entity<InputState>,
     pub(crate) session_x11_forwarding: bool,
+    pub(crate) session_shortcut: String,
+    pub(crate) recording_session_shortcut: bool,
+    pub(crate) session_shortcut_error: Option<String>,
+    pub(crate) session_import_error: Option<String>,
     pub(crate) global_proxy_type: String,
     pub(crate) global_proxy_host_input: Entity<InputState>,
     pub(crate) global_proxy_port_input: Entity<InputState>,
@@ -191,6 +194,7 @@ pub(crate) struct AxShell {
     pub(crate) workspace_page: WorkspacePage,
     pub(crate) settings_page_open: bool,
     pub(crate) settings_page_generation: u64,
+    pub(crate) settings_initial_page: usize,
     pub(crate) settings_close_remember_choice: bool,
     /// Error message when a recorded keybinding conflicts with another
     pub(crate) keybind_error: Option<(String, String)>, // (action_id, error_message)

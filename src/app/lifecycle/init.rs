@@ -432,6 +432,10 @@ impl AxShell {
             local_sftp_path_input,
             ssh_auth_method: AuthMethod::Password,
             editing_session_id: None,
+            session_shortcut: String::new(),
+            recording_session_shortcut: false,
+            session_shortcut_error: None,
+            session_import_error: None,
             appearance: AppearanceState {
                 follow_system_theme,
                 theme_mode,
@@ -549,6 +553,7 @@ impl AxShell {
             workspace_page: crate::app::WorkspacePage::Terminal,
             settings_page_open: false,
             settings_page_generation: 0,
+            settings_initial_page: 0,
             settings_close_remember_choice: false,
             keybind_error: None,
             keybinds_suspended: false,

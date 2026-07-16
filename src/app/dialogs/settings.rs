@@ -36,12 +36,17 @@ impl AxShell {
         let monitoring_page = monitoring::settings_monitoring_page(&view, self);
         let connection_page = proxy::settings_connection_page(&view, self);
         let settings_id = format!("settings-{}", self.settings_page_generation);
+        let initial_page = gpui_component::setting::SelectIndex {
+            page_ix: self.settings_initial_page,
+            group_ix: None,
+        };
         shell::settings_page_shell(
             view.clone(),
             &self.focus_handle,
             Settings::new(settings_id)
                 .sidebar_width(px(180.))
                 .sidebar_style(div().bg(cx.theme().background).style())
+                .default_selected_index(initial_page)
                 .page(general_page)
                 .page(appearance_page)
                 .page(custom_theme_page)

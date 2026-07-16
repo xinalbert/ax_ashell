@@ -27,6 +27,11 @@ Private-key authentication supports a key file path or inline key content and an
 - Renaming a group updates the saved sessions assigned to it.
 - **Local Terminal** is pinned above saved SSH groups and is not stored as an SSH session.
 - The last-used timestamp is persisted for saved sessions.
+- Each saved session can record a **Connection Shortcut** in its edit form. The shortcut opens and focuses that SSH session from the terminal or SFTP workspace.
+- Connection shortcuts must use a modifier or an `F1`-`F24` key, cannot overlap another connection or a configured app shortcut, and are not included in credential-free session exports.
+- Hover a saved session to see its connection shortcut and configured SFTP path.
+- **Copy Session JSON** writes the same credential-free JSON used by export. Use **Import from Clipboard** in the SSH form to load one copied session; while editing, the local credentials and shortcut remain unchanged.
+- Exporting a group writes the same share format as full export, so import restores every session in that group and its group name.
 
 ## Connection Behavior
 

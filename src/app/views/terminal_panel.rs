@@ -48,6 +48,9 @@ impl AxShell {
                     .when(is_sftp_page, |this| {
                         this.track_focus(&self.focus_handle)
                             .key_context(TERMINAL_KEY_CONTEXT)
+                            .on_key_down(cx.listener(|this, event, window, cx| {
+                                this.connect_session_shortcut_if_matched(event, window, cx);
+                            }))
                     })
                     .child(if is_settings_page {
                         self.render_settings_page(window, cx).into_any_element()

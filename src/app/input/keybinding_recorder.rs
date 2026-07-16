@@ -15,6 +15,7 @@ gpui::actions!(
     ax_shell_workspace,
     [
         OpenSettings,
+        OpenAbout,
         OpenSession,
         OpenTransfers,
         NewSsh,
@@ -563,6 +564,58 @@ pub(crate) fn find_conflict(
     None
 }
 
+pub(crate) fn normalize_session_shortcut(value: &str) -> Option<String> {
+    let keystroke = Keystroke::parse(value.trim()).ok()?;
+    session_shortcut_is_safe(&keystroke).then(|| keystroke.unparse())
+}
+
+pub(crate) fn session_shortcut_for_event(event: &KeyDownEvent) -> Option<String> {
+    let keystroke = normalize_recorded_keystroke(event)?;
+    normalize_session_shortcut(&keystroke)
+}
+
+pub(crate) fn find_session_shortcut_conflict(
+    config: &ConfigStore,
+    current_session_id: Option<&str>,
+    new_keystroke: &str,
+) -> Option<String> {
+    if let Some((_action_id, label)) = find_conflict(config, "", new_keystroke) {
+        return Some(label);
+    }
+
+    config
+        .sessions()
+        .iter()
+        .filter(|session| Some(session.id.as_str()) != current_session_id)
+        .find(|session| keystroke_strings_match(&session.shortcut, new_keystroke))
+        .map(|session| session.name.clone())
+}
+
+pub(crate) fn session_shortcut_match(config: &ConfigStore, event: &KeyDownEvent) -> Option<String> {
+    let shortcut = session_shortcut_for_event(event)?;
+    let mut matching_sessions = config
+        .sessions()
+        .iter()
+        .filter(|session| keystroke_strings_match(&session.shortcut, &shortcut));
+    let session = matching_sessions.next()?;
+    matching_sessions
+        .next()
+        .is_none()
+        .then(|| session.id.clone())
+}
+
+fn session_shortcut_is_safe(keystroke: &Keystroke) -> bool {
+    keystroke.modifiers.control
+        || keystroke.modifiers.alt
+        || keystroke.modifiers.platform
+        || keystroke.modifiers.function
+        || keystroke.key.strip_prefix('f').is_some_and(|number| {
+            number
+                .parse::<u8>()
+                .is_ok_and(|number| (1..=24).contains(&number))
+        })
+}
+
 fn bind_workspace_actions(cx: &mut App, config: &ConfigStore) {
     let mut bindings = Vec::new();
 
@@ -700,5 +753,79 @@ impl KeybindingsPage {
         }
 
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{KeyDownEvent, Keystroke};
+
+    use crate::{config::ConfigStore, session::Session};
+
+    use super::{
+        default_modifier, find_session_shortcut_conflict, normalize_session_shortcut,
+        session_shortcut_match,
+    };
+
+    fn event(keystroke: &str) -> KeyDownEvent {
+        KeyDownEvent {
+            keystroke: Keystroke::parse(keystroke).expect("valid keystroke"),
+            is_held: false,
+            prefer_character_input: false,
+        }
+    }
+
+    fn session(id: &str, name: &str, shortcut: &str) -> Session {
+        let mut session = Session::password(
+            "example.com".to_string(),
+            22,
+            "root".to_string(),
+            "password".to_string(),
+        );
+        session.id = id.to_string();
+        session.name = name.to_string();
+        session.shortcut = shortcut.to_string();
+        session
+    }
+
+    #[test]
+    fn session_shortcuts_require_modifier_or_function_key() {
+        assert_eq!(
+            normalize_session_shortcut("ctrl-1"),
+            Some("ctrl-1".to_string())
+        );
+        assert_eq!(normalize_session_shortcut("f12"), Some("f12".to_string()));
+        assert_eq!(normalize_session_shortcut("a"), None);
+        assert_eq!(normalize_session_shortcut("shift-a"), None);
+    }
+
+    #[test]
+    fn session_shortcuts_detect_workspace_and_session_conflicts() {
+        let mut config = ConfigStore::in_memory();
+        config.upsert(session("staging", "Staging", "ctrl-1"));
+        let open_session = format!("{}-o", default_modifier());
+
+        assert!(find_session_shortcut_conflict(&config, None, &open_session).is_some());
+        assert_eq!(
+            find_session_shortcut_conflict(&config, None, "ctrl-1"),
+            Some("Staging".to_string())
+        );
+        assert_eq!(
+            find_session_shortcut_conflict(&config, Some("staging"), "ctrl-1"),
+            None
+        );
+    }
+
+    #[test]
+    fn session_shortcut_match_rejects_duplicate_legacy_bindings() {
+        let mut config = ConfigStore::in_memory();
+        config.upsert(session("staging", "Staging", "ctrl-1"));
+        assert_eq!(
+            session_shortcut_match(&config, &event("ctrl-1")),
+            Some("staging".to_string())
+        );
+
+        config.upsert(session("production", "Production", "ctrl-1"));
+        assert_eq!(session_shortcut_match(&config, &event("ctrl-1")), None);
     }
 }

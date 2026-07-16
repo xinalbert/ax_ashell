@@ -167,6 +167,7 @@ impl Render for AxShell {
             .text_color(cx.theme().foreground)
             .font_family(self.appearance.ui_font_family.clone())
             .on_action(cx.listener(|this, _: &crate::OpenSettings, _, cx| this.open_settings_page(cx)))
+            .on_action(cx.listener(|this, _: &crate::OpenAbout, _, cx| this.open_about_page(cx)))
             .on_action(cx.listener(|this, _: &crate::OpenSession, window, cx| this.show_selector_dialog(window, cx)))
             .on_action(cx.listener(|this, _: &crate::OpenTransfers, window, cx| {
                 this.open_sftp_transfers_page(window, cx);
@@ -874,7 +875,7 @@ impl Render for AxShell {
                         .fast_hover_with_tokens(menu_hover_tokens)
                         .child(label)
                 };
-                let copy_value = menu.connection_info.clone();
+                let copy_session_id = menu.session_id.clone();
                 let open_sftp_id = menu.session_id.clone();
                 let export_id = menu.session_id.clone();
                 let clone_id = menu.session_id.clone();
@@ -885,10 +886,8 @@ impl Render for AxShell {
                     .child(menu_item("saved-context-copy", t!("copy_connection_info").to_string())
                         .on_mouse_down(
                             MouseButton::Left,
-                            window.listener_for(&view, move |this, _, _, cx| {
-                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                    copy_value.clone(),
-                                ));
+                                window.listener_for(&view, move |this, _, _, cx| {
+                                this.copy_saved_session_json(&copy_session_id, cx);
                                 this.dismiss_saved_session_context_menu(cx);
                                 cx.stop_propagation();
                             }),

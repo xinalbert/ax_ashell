@@ -77,6 +77,13 @@ impl AxShell {
                             session_group_input.read(cx).value().trim().to_string();
                         content.child(
                             v_flex()
+                                .track_focus(&view.read(cx).focus_handle)
+                                .on_key_down(window.listener_for(
+                                    &view,
+                                    |this, event, window, cx| {
+                                        this.record_session_shortcut(event, window, cx);
+                                    },
+                                ))
                                 .gap_3()
                                 .child(Input::new(&session_name_input).tab_index(0))
                                 .child(
@@ -306,6 +313,89 @@ impl AxShell {
                                 )
                                 .child(Input::new(&session_sftp_path_input).tab_index(8))
                                 .child(
+                                    h_flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_weight(FontWeight::BOLD)
+                                                .child(t!("session_shortcut").to_string()),
+                                        )
+                                        .child(
+                                            h_flex()
+                                                .gap_2()
+                                                .child(
+                                                    Button::new("record-session-shortcut")
+                                                        .label(if view
+                                                            .read(cx)
+                                                            .recording_session_shortcut
+                                                        {
+                                                            t!("press_new_key").to_string()
+                                                        } else if view
+                                                            .read(cx)
+                                                            .session_shortcut
+                                                            .is_empty()
+                                                        {
+                                                            t!("none").to_string()
+                                                        } else {
+                                                            crate::app::keybinding_recorder::format_keystroke(
+                                                                &view.read(cx).session_shortcut,
+                                                            )
+                                                        })
+                                                        .small()
+                                                        .when(
+                                                            view.read(cx).recording_session_shortcut,
+                                                            |button| button.primary(),
+                                                        )
+                                                        .when(
+                                                            view.read(cx)
+                                                                .session_shortcut_error
+                                                                .is_some(),
+                                                            |button| button.danger(),
+                                                        )
+                                                        .on_click(window.listener_for(
+                                                            &view,
+                                                            |this, _, window, cx| {
+                                                                this.recording_session_shortcut = true;
+                                                                this.session_shortcut_error = None;
+                                                                window.focus(&this.focus_handle, cx);
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                )
+                                                .child(
+                                                    Button::new("clear-session-shortcut")
+                                                        .ghost()
+                                                        .icon(IconName::Close)
+                                                        .when(
+                                                            view.read(cx).session_shortcut.is_empty(),
+                                                            |button| button.disabled(true),
+                                                        )
+                                                        .on_click(window.listener_for(
+                                                            &view,
+                                                            |this, _, _, cx| {
+                                                                this.recording_session_shortcut = false;
+                                                                this.session_shortcut_error = None;
+                                                                this.session_shortcut.clear();
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                ),
+                                        ),
+                                )
+                                .when_some(
+                                    view.read(cx).session_shortcut_error.clone(),
+                                    |this, error| {
+                                        this.child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().danger)
+                                                .child(error),
+                                        )
+                                    },
+                                )
+                                .child(
                                     Checkbox::new("ssh-session-x11-forwarding")
                                         .checked(session_x11_forwarding)
                                         .label(t!("x11_forwarding").to_string())
@@ -325,10 +415,34 @@ impl AxShell {
                                             .child(t!("x11_server_install_hint").to_string()),
                                     )
                                 })
+                                .when_some(
+                                    view.read(cx).session_import_error.clone(),
+                                    |this, error| {
+                                        this.child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().danger)
+                                                .child(error),
+                                        )
+                                    },
+                                )
                                 .child(
                                     h_flex()
                                         .justify_end()
                                         .gap_2()
+                                        .child(
+                                            Button::new("import-ssh-session-clipboard")
+                                                .ghost()
+                                                .label(t!("import_from_clipboard").to_string())
+                                                .on_click(window.listener_for(
+                                                    &view,
+                                                    |this, _, window, cx| {
+                                                        this.import_ssh_session_from_clipboard(
+                                                            window, cx,
+                                                        );
+                                                    },
+                                                )),
+                                        )
                                         .child(
                                             Button::new("connect-ssh-cancel")
                                                 .label(t!("cancel").to_string())

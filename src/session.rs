@@ -83,6 +83,8 @@ pub(crate) struct Session {
     pub(crate) sftp_path: String,
     #[serde(default = "default_x11_forwarding")]
     pub(crate) x11_forwarding: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) shortcut: String,
 }
 
 impl Session {
@@ -109,6 +111,7 @@ impl Session {
             proxy_password: String::new(),
             sftp_path: String::new(),
             x11_forwarding: default_x11_forwarding(),
+            shortcut: String::new(),
         }
     }
 
@@ -142,6 +145,7 @@ impl Session {
             proxy_password: String::new(),
             sftp_path: String::new(),
             x11_forwarding: default_x11_forwarding(),
+            shortcut: String::new(),
         }
     }
 }
@@ -183,11 +187,16 @@ mod tests {
             .as_object_mut()
             .expect("session is an object")
             .remove("x11_forwarding");
+        value
+            .as_object_mut()
+            .expect("session is an object")
+            .remove("shortcut");
 
         let session: super::Session =
             serde_json::from_value(value).expect("existing session deserializes");
 
         assert!(session.sftp_path.is_empty());
         assert!(session.x11_forwarding);
+        assert!(session.shortcut.is_empty());
     }
 }
