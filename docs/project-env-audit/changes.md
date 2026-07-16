@@ -2453,3 +2453,19 @@
 - 受影响文件：`Cargo.toml`，`Cargo.lock`，`src/session.rs`，`src/backend/serial.rs`，`src/backend/telnet.rs`，`src/terminal/`，`src/app/`，`locales/`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
 - 更新后的命令或环境：仓库仍使用 Rust 2024 / Cargo，MSRV 为 Rust 1.88；本机 `rustc 1.96.1` / `cargo 1.96.1`。CI 覆盖 Windows、Linux x86_64/aarch64 与 macOS x86_64/aarch64 release build，Linux runner 的现有 `libudev-dev` 满足新增 crate 编译前提。
 - 验证结果：受影响 Rust 文件 `rustfmt --edition 2024` 通过；`cargo test --quiet` 220 项通过；`cargo check` 通过；`git diff --check` 和 tracking docs validator 通过。仅保留依赖 `block v0.1.6` future-incompat warning；实体串口设备、权限/占用、设备拔出、Telnet server 协商和断线重试仍需目标平台 GUI 验收。
+
+## 2026-07-18 安全修复施工前预检
+
+- 变化摘要：将当前范围切换为 SSH/SFTP 主机密钥验证、遗留算法降级、同步 HTTPS 与响应限额、依赖漏洞治理；确认本机 Rust/Cargo 满足 MSRV，现有 CI 缺少 RustSec 审计。
+- 受影响文件：`src/session.rs`，`src/backend/`，`src/sftp/`，`src/sync.rs`，`src/events.rs`，`src/app/`，`.github/workflows/ci.yml`，`Cargo.toml`，`Cargo.lock`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo、`rustfmt`、`cargo check`、`cargo test --quiet`；临时目录 `cargo-audit` 按 RustSec 官方公告数据库审计锁文件，不加入项目依赖。
+- 验证结果：确认 `rustc 1.96.1` / `cargo 1.96.1`、`Cargo.toml` 的 MSRV 1.88.0、五平台 build CI 及干净工作树；`cargo-audit` 审计发现 8 项锁文件公告与 1 项 unsound 警告，修复前的完整测试为 225 passed。
+- 风险/待办：主机密钥确认需要真实 SSH/SFTP 服务和三平台 GUI 验收；依赖更新可能受 GPUI Git 依赖约束，需要独立回归。
+
+## 2026-07-18 安全修复环境验证
+
+- 变化摘要：SSH/SFTP 主机密钥确认、legacy 显式选择、同步 HTTPS/8 MiB 响应限额、RustSec 依赖升级和 CI 审计已完成。运行环境、MSRV 与包管理器不变；锁文件新增 `quinn-proto` 补丁版本的间接依赖更新。
+- 受影响文件：`src/session.rs`，`src/backend/`，`src/sftp/`，`src/sync.rs`，`src/events.rs`，`src/app/`，`.github/workflows/ci.yml`，`Cargo.lock`，`locales/`，`README*.md`，`docs/`。
+- 更新后的命令或环境：CI 额外运行 `cargo install cargo-audit --locked` 与带三个明确 RustSec 暂缓 ID 的 `cargo audit --file Cargo.lock`。本地使用临时 `cargo-audit` 的 `--no-fetch --stale` 等效命令复测；其余验证继续使用 `rustfmt`、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking validator。
+- 验证结果：`cargo check`、定向主机密钥/legacy/sync 测试、完整 `cargo test --quiet`（232 passed）、CI YAML 解析和 RustSec 等效命令均通过；保留既有 `block v0.1.6` future-incompat warning。RustSec 输出保留 8 条 informational warnings，以及暂缓的无补丁/上游受限公告。
+- 风险/待办：GitHub CI 尚未实跑。仍须在 macOS、Windows、Linux 连接真实 SSH/SFTP 服务，验证首次信任、密钥失配、拒绝、超时和显式 legacy；以 HTTPS WebDAV/S3 与 HTTP/超限响应服务验证同步边界。

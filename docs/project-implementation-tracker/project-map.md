@@ -8,7 +8,7 @@
 ## 索引范围
 
 - 根目录：`<repo-root>`
-- 覆盖：`AGENTS.md`，`.agents/skills/`，`src/app/`，`src/session/`，`src/sftp/`，`src/terminal/`，`src/sync/`，`locales/`，`docs/`，`Cargo.toml`，`Cargo.lock`，`build.rs`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
+- 覆盖：`AGENTS.md`，`.agents/skills/`，`src/app/`，`src/session.rs`，`src/sftp/`，`src/terminal/`，`src/sync.rs`，`locales/`，`docs/`，`Cargo.toml`，`Cargo.lock`，`build.rs`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
 - 排除：`.git/`，`target/`，`assets/` 批量图标/字体资源，构建产物与外部依赖缓存
 
 ## 目录地图
@@ -32,16 +32,16 @@
 | `src/app/state/` | `AxShell` 子状态聚合 | 改 appearance、monitoring、runtime/event channel、窗口生命周期或系统恢复代次时 | search 状态已并入 `src/app/search.rs` |
 | `src/config/` | 配置文件模型、默认值、规范化规则和 `ConfigStore` | 改配置 schema/serde 默认、窗口/光标/theme profile、保存会话的本地 SFTP 目录、旧远端目录字段迁移、sync 默认对象名或 custom theme draft/save path 时 | `model.rs` 承载 `ConfigFile` 和值类型，`store.rs` 只做持久化、迁移、归一化和访问器；远端初始目录由会话 `sftp_path` 或服务器 home 决定 |
 | `src/platform/` | 平台相关本地集成 | 改本地 X Server、系统文件图标或目标专属原生 API 时 | 入口为 `src/platform.rs`；子模块包括 `x_server.rs` 和 `file_icons.rs` |
-| `src/session.rs` | SSH、串口与 Telnet 会话领域模型 | 改 `Session`、`SessionKind`、`AuthMethod`、`SshConnectionMode`、串口参数、会话级 `sftp_path` / `shortcut` 或连接模式优先级时 | 旧会话默认 `Ssh`；串口保存端口、波特率、数据位、校验、停止位和流控；仅 SSH 支持 SFTP；类型直接由 `crate::session` 导出 |
-| `src/backend.rs` | backend 领域入口 | 改 backend 模块导出时 | 子模块为 `auth`、`local`、`proxy`、`serial`、`ssh`、`telnet` |
-| `src/backend/` | 本地、串口、Telnet 与 SSH 后端、共享认证、proxy transport、远程系统采样和 PTY/SSH 事件桥接 | 改连接、private key、proxy、legacy fallback、本地 shell、串口 I/O、Telnet 协商、后台事件或 backend shutdown 时 | `proxy.rs` 负责 TCP/proxy transport；`serial.rs` 在 worker 线程操作设备；`telnet.rs` 使用现有 Tokio runtime 并执行最小 RFC 854 协商 |
+| `src/session.rs` | SSH、串口与 Telnet 会话领域模型 | 改 `Session`、`SessionKind`、`AuthMethod`、`SshConnectionMode`、串口参数、会话级 `sftp_path` / `shortcut` 或 legacy 兼容性选择时 | 旧会话默认 `Ssh`；legacy 算法必须由会话显式开启；串口保存端口、波特率、数据位、校验、停止位和流控；仅 SSH 支持 SFTP；类型直接由 `crate::session` 导出 |
+| `src/backend.rs` | backend 领域入口 | 改 backend 模块导出时 | 子模块为 `auth`、`host_key`、`local`、`proxy`、`serial`、`ssh`、`telnet` |
+| `src/backend/` | 本地、串口、Telnet 与 SSH 后端、共享认证、proxy transport、远程系统采样和 PTY/SSH 事件桥接 | 改连接、主机密钥验证、private key、proxy、legacy fallback、本地 shell、串口 I/O、Telnet 协商、后台事件或 backend shutdown 时 | `proxy.rs` 负责 TCP/proxy transport；`ssh.rs` 的 russh handler 必须拒绝未确认或失配服务器密钥；`serial.rs` 在 worker 线程操作设备 |
 | `src/sftp.rs` | SFTP 模块入口和兼容 re-export | 改 SFTP 子模块声明、`RemoteEntry` / `PreviewData` / `SftpHandle` / path helper 出口时 | 现代 Rust 具名入口；真实实现位于 `src/sftp/`，UI action 位于 `src/app/actions/sftp.rs` |
 | `src/sftp/` | SFTP auth、model、session、browse、preview、transfer、operations 和 worker 实现 | 改 SFTP 连接、分页 cursor、预览、传输、删除或 worker 生命周期时 | `worker.rs` 管 handle/command/pin，`worker/runtime.rs` 单一持有 cursor、active transfer 和 `JoinSet` |
 | `src/terminal/` | terminal backend、tab、listener、按键、CWD、transfer、渲染和高亮实现 | 改 backend 协议、terminal tab、输入编码、OSC/CWD、传输模型、render 或 highlight 时 | `src/terminal.rs` 只做入口/re-export；输入 action 仍位于 `src/app/actions/terminal.rs` |
-| `src/sync/` | 会话配置加密同步 payload | 判断新增会话字段是否会自动进入同步上传/下载时 | 本轮预计不改传输逻辑，只依赖 `Session` 序列化扩展 |
+| `src/sync.rs` | 会话配置加密同步 payload、WebDAV/S3 请求和 envelope | 改同步 endpoint 校验、响应大小限制、S3 签名或加密同步行为时 | payload 使用 Argon2id + XChaCha20-Poly1305；网络请求需强制安全 URL scheme 并有界读取 |
 | `src/main.rs` | 应用初始化入口 | `main`，crash hook，macOS 环境同步，Rayon worker 配置 | 改全局初始化或必须在 GPUI 前生效的进程环境变量时 |
 | `locales/` | 中英文界面文案 | 新增 custom theme 分组、提示、保存说明、日志入口和错误消息时 | 需要同步 `en.yml` 和 `zh-CN.yml` |
-| `.github/workflows/` | CI / Release 构建和打包元数据 | 改二进制名、artifact 名、macOS bundle Info.plist 或发布路径时 | `release.yml` 手工组装 `.app`，需要与 Cargo 包名一致 |
+| `.github/workflows/` | CI / Release 构建、依赖审计和打包元数据 | 改二进制名、artifact 名、RustSec 审计、macOS bundle Info.plist 或发布路径时 | `ci.yml` 覆盖五个桌面 target；`release.yml` 手工组装 `.app`，需要与 Cargo 包名一致 |
 | `scripts/` | 本地开发/打包脚本与发布辅助脚本 | 改 macOS `.app` 名称、bundle id、图标文件名、签名逻辑、tag/version 映射或发布前 manifest 同步时 | `package-macos-app.sh` 会运行 `cargo build --release` 并组装 bundle；本轮将新增共享版本脚本 |
 | `assets/themes/` | 内置 GPUI 主题 JSON 资源 | 改内置主题变体、默认 preset 可引用的 theme 名称、light/dark companion 或主题色调时 | `src/app/theme.rs` 通过 `include_str!("../../assets/themes/*.json")` 注册；`popular.json` 承载 Catppuccin、Dracula/Alucard、Nord、Rose Pine；新增/改名主题需同步 `src/config/model.rs` 默认 profile 和配置归一化测试 |
 | `assets/fonts/` | 内置字体二进制、授权与精简清单 | 增删内置 UI/Terminal 字体、字重、变量字体或授权信息时 | `README.md` 记录 family/version/选取范围；`docs/features/bundled-fonts*.md` 记录面向用户的上游仓库和授权入口；`src/app/theme.rs` 通过统一 embedded font family 表注册 |
@@ -62,7 +62,7 @@
 | `docs/resource-lifecycle.zh.md` | 中文资源生命周期、深度休眠与恢复 MVP 设计 | 状态机、阶段路线、资源策略、恢复兜底、验证边界 | 实现或评审后台降载、SFTP pin、backend shutdown 与系统睡眠恢复时 |
 | `docs/features/serial-telnet.md` / `docs/features/serial-telnet.zh.md` | 串口控制台与 Telnet 双语用户指南 | Connection Type，Serial Console，Telnet，SSH-Only Features | 改串口参数、Telnet 连接行为、非 SSH 功能边界或会话入口文案时 |
 | `src/config/model.rs` | 配置文件与值模型、默认值和规范化规则 | `ConfigFile`，`LocalShellProfile`，global SFTP local-directory setting，`default_local_shell_profiles`，`default_rayon_threads`，theme/profile/window types | 改配置 serde、local shell profile/argv、全局 SFTP 本机目录、Rayon `1–64` 范围、默认值、theme profile、窗口/标题栏/光标或 custom theme 模型时 |
-| `src/config/store.rs` | 本地配置路径、迁移、getter/setter 和 `ConfigStore` | `ConfigStore::load/save`，`file_icons_path`，`tmp_dir`，`sftp_edit_dir`，`normalize_local_shell_profiles`，global SFTP local-directory accessor，`rayon_threads`，`normalize_theme_profiles` | 改配置目录、独立文件图标缓存路径、受管 SFTP 编辑副本目录、旧目录迁移、local shell profile、全局 SFTP 本机目录、Rayon worker 设置、Settings 二次快捷键动作、sync 默认对象名、theme profile 或 custom theme draft 时 |
+| `src/config/store.rs` | 本地配置路径、迁移、getter/setter 和 `ConfigStore` | `ConfigStore::load/save`，`host_key_trust`，`trust_host_key`，`file_icons_path`，`tmp_dir`，`sftp_edit_dir`，`normalize_local_shell_profiles`，global SFTP local-directory accessor，`rayon_threads`，`normalize_theme_profiles` | 改主机密钥信任、配置目录、独立文件图标缓存路径、受管 SFTP 编辑副本目录、旧目录迁移、local shell profile、全局 SFTP 本机目录、Rayon worker 设置、Settings 二次快捷键动作、sync 默认对象名、theme profile 或 custom theme draft 时 |
 | `src/backend/proxy.rs` | SSH/SFTP transport proxy | `ProxyStream`，`ENV_PROXY`，`connect`，`active` | 改 SOCKS5/HTTP/direct 连接、环境代理或 session/global proxy 优先级时 |
 | `src/platform/x_server.rs` | 本地 X Server 平台 helper | `default_app_path`，`local_x_server_available`，`default_display`，`resolve_display`，`launch_args` | 改 X server 缺失提示、macOS XQuartz、Windows VcXsrv/Xming、DISPLAY 或手动启动参数时 |
 | `src/platform/file_icons.rs` | 跨平台系统文件类型图标缓存、持久化和解析 | `FileIconCache::load_if_needed`，`StoredFileIconCache`，`start_file_icon_cache_refresh`，macOS/Windows/Linux icon loader | 改 SFTP 文件图标来源、`file-icons.json` schema、首次 SFTP 打开时的延迟加载/刷新、主题失效、原子写入或平台图标转换时 |
@@ -87,8 +87,8 @@
 | `src/app/terminal.rs` | app 层 terminal 字体/滚动条/链接视觉状态 | `TerminalFontMetrics`，`TerminalScrollbarHandle`，`HoveredUrl`，`terminal_link_visual_active` | 改 terminal UI metrics、scrollbar adapter、URL/path hover 或 Command/Ctrl 激活提示时 |
 | `src/app/session_ui.rs` | session selector 与连接进度 UI 模型 | `SelectorEntry`，`ConnectionProgress` | 改 session selector 条目或连接进度遮罩状态时 |
 | `src/app/search.rs` | terminal 搜索状态与行为 | `SearchState`，`perform_search`，`search_highlight_map` | 改搜索输入、全缓冲区匹配、跳转或高亮时 |
-| `src/app/config_sync.rs` | app 层配置同步动作 | sync credentials，upload/download action，`SyncFinished` | 改 WebDAV/S3 表单取值、同步触发或状态接线时 |
-| `src/app/dialogs/` | 弹窗和设置页渲染目录模块 | `ssh.rs`，`selector.rs`，`transfers.rs`，`delete_confirm.rs`，`sftp_close_confirm.rs`，`sftp_edit_upload_confirm.rs`，`settings_close_confirm.rs`，`settings/` | 改 SSH 弹窗、session selector、关闭确认、受管编辑上传确认、transfer history、下载文件清单、delete confirm、设置页和 About 页面时；入口为 `src/app/dialogs.rs` |
+| `src/app/config_sync.rs` | app 层配置同步动作 | sync credentials，`validate_credentials`，upload/download action，`SyncFinished` | 改 WebDAV/S3 表单取值、HTTPS 输入校验、同步触发或状态接线时 |
+| `src/app/dialogs/` | 弹窗和设置页渲染目录模块 | `ssh.rs`，`host_key_confirm.rs`，`selector.rs`，`transfers.rs`，`delete_confirm.rs`，`sftp_close_confirm.rs`，`sftp_edit_upload_confirm.rs`，`settings_close_confirm.rs`，`settings/` | 改 SSH 弹窗、主机密钥确认、session selector、关闭确认、受管编辑上传确认、transfer history、下载文件清单、delete confirm、设置页和 About 页面时；入口为 `src/app/dialogs.rs` |
 | `src/app/dialogs.rs` | dialogs 目录模块入口和共享 imports | 子模块声明，`crate::app::dialogs` 路由 | 改 dialogs 模块可见性、共享 imports 或新增 dialog 子文件时 |
 | `src/app/dialogs/settings/` | 设置页子页面目录 | `general.rs`，`appearance.rs`，`font_page.rs`，`custom.rs`，`fast_menu.rs`，`terminal.rs`，`workspace.rs`，`monitoring.rs`，`sync.rs`，`proxy.rs`，`keybindings.rs`，`shell.rs`，`about.rs`，`help.rs` | 入口为 `src/app/dialogs/settings.rs`；侧栏按 General、Appearance & Theme、Theme Editor、Terminal、Workspace、Monitor & Resources、Connections、Sync、Shortcuts、Help、About 装配；Settings 下拉统一走本地 fast menu |
 | `src/app/dialogs/settings/general.rs` | Settings 通用页 | `settings_general_page` | 改显示语言或 Settings 页面自身行为，例如第二次 Settings 快捷键动作时 |
@@ -116,6 +116,12 @@
 | `src/app/views/terminal_panel.rs` | 终端工作区、SFTP 页面、settings 页面承载和 pane tree 渲染 | `render_terminal_panel`，`render_pane_tree`，terminal link cursor gate | SFTP 页面复用保存 SSH 的动态连接快捷键；改终端 focus/key/mouse、Command/Ctrl 链接手型、右侧滚动槽、pane splitter、disconnect overlay、SFTP 页面挂载或 settings 页面承载时 |
 | `src/app/views/helpers.rs` | views 内部小 helper | `bind_titlebar_drag`，`collapsed_sidebar_abbrev`，`render_home_page` | 改集成标题栏拖动、折叠侧栏简称或空首页时 |
 | `src/backend/auth.rs` | SSH / SFTP 共用私钥解析和 public key 算法 fallback helper | `load_session_private_key`，`private_keys_with_algs` | 改 inline key、key path、passphrase 或 RSA SHA512/SHA256/none fallback 顺序时 |
+| `src/backend/host_key.rs` | SSH/SFTP 共用的主机密钥验证状态机 | `HostKeyVerifier`，`HostKeyVerificationRequest` | 改 SHA-256 指纹、确认超时、信任状态或 SSH/SFTP 共用验证时 |
+| `src/backend/ssh.rs` / `src/backend/ssh/connection.rs` | SSH terminal handler、连接和认证流程 | `ClientHandler::check_server_key`，`connect_and_authenticate` | 实现服务器主机密钥验证、显式 legacy 选择、确认请求与认证前失败语义时 |
+| `src/backend/ssh/legacy.rs` / `src/session.rs` | SSH 算法偏好和会话级连接策略 | `ssh_client_config`，`SshConnectionMode` | 限制弱算法为显式 opt-in、移除自动降级或保存自动 fallback 时 |
+| `src/sftp/auth.rs` / `src/sftp/worker.rs` | SFTP SSH handler 与连接 worker | `SftpClientHandler::check_server_key`，`connect_and_authenticate` | 让 SFTP 复用 SSH 的同一主机密钥策略和用户确认流程时 |
+| `src/sync.rs` | 加密会话同步网络边界 | `validate_credentials`，`download_webdav`，`download_s3` | 限制 HTTPS、重定向和响应大小，避免凭据泄露或 OOM 时 |
+| `src/events.rs` / `src/app/lifecycle/event_loop.rs` / `src/app/dialogs/` | 后台认证请求到用户确认对话框的路由 | `BackendEvent`，event drain，`DialogKind` | 为首次主机密钥信任和密钥变更拒绝提供主线程确认时 |
 | `src/backend/local.rs` | 本地 PTY 后端 | `LocalBackendShutdown`，`spawn_local_terminal`，`local_shell_command` | 使用 `LocalShellProfile` 的程序与逐项 argv 启动；Unix 设置 `SHELL` 为目标程序，Windows 不覆盖以兼容 WSL；改本地 shell、PTY resize、child kill、reader/writer reaper 或 backend event 输出时 |
 | `src/backend/serial.rs` | 串口 console 后端与端口枚举 | `available_port_names`，`spawn_serial_terminal`，`SerialBackendShutdown` | `serialport` 设备仅在 form 打开/刷新或连接时操作；50ms 读超时使关闭可控；改串口参数、I/O、设备错误或关闭语义时 |
 | `src/backend/telnet.rs` | Telnet TCP 后端与最小 RFC 854 协商 | `spawn_telnet_terminal`，`TelnetParser`，`escape_iac`，`naws` | 复用 proxy transport；支持 IAC、NAWS 和 SGA，默认端口 23；改协商、输入转义、窗口大小或关闭语义时 |
@@ -191,9 +197,9 @@
 
 ## 刷新规则
 
-- 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、启动初始化、独立文件图标缓存、首次 SFTP 的本地图标/目录加载、内置字体 family 首次注册、local shell profile/PTY argv、Rayon worker 配置或自定义值范围、日志/crash hook、Tokio runtime 生命周期、terminal Output batching / dirty generation / `TermDamage` / snapshot / highlight cache / URL-path modifier visuals、terminal backend 类型、SSH/Serial/Telnet 会话模型和端口检测、非 SSH SFTP/监控边界、非 macOS runtime 图标资源、release workflow、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、内置字体 family/字重/授权/排序、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、内置 theme JSON、设置页字段分组、Settings 下拉菜单、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、系统恢复兜底/远程监控代次/SSH 健康检查、workspace page / tab 模型、Settings About 菜单入口、会话 `sftp_path` / `x11_forwarding` / `shortcut`、无凭据 session JSON 剪贴板往返、本机 X server 检测、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 递归下载/覆盖确认/传输标签面板、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`AGENTS.md`，`.agents/skills/ax-ashell-fast-hover/SKILL.md`，`src/app/theme.rs`，`src/app/lifecycle/init.rs`，`src/app/actions/sftp.rs`，`src/platform/file_icons.rs`，`src/terminal/element.rs`，`docs/project-env-audit/current.md`
+- 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、同步 endpoint 安全边界、启动初始化、独立文件图标缓存、首次 SFTP 的本地图标/目录加载、内置字体 family 首次注册、local shell profile/PTY argv、Rayon worker 配置或自定义值范围、日志/crash hook、Tokio runtime 生命周期、terminal Output batching / dirty generation / `TermDamage` / snapshot / highlight cache / URL-path modifier visuals、terminal backend 类型、SSH/SFTP 主机密钥信任、SSH legacy 算法策略、SSH/Serial/Telnet 会话模型和端口检测、非 SSH SFTP/监控边界、非 macOS runtime 图标资源、release workflow、CI RustSec 审计、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、内置字体 family/字重/授权/排序、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、内置 theme JSON、设置页字段分组、Settings 下拉菜单、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、系统恢复兜底/远程监控代次/SSH 健康检查、workspace page / tab 模型、Settings About 菜单入口、会话 `sftp_path` / `x11_forwarding` / `shortcut`、无凭据 session JSON 剪贴板往返、本机 X server 检测、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 递归下载/覆盖确认/传输标签面板、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
+- 最近依据：`AGENTS.md`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/ci.yml`，`src/backend/host_key.rs`，`src/backend/ssh.rs`，`src/sftp/auth.rs`，`src/sync.rs`，`src/events.rs`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-17 11:20 +0800
+- 2026-07-18 12:55 +0800

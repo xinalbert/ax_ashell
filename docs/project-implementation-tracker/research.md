@@ -1,5 +1,25 @@
 # 外部检索记录
 
+## 2026-07-18 RustSec 依赖公告与 CI 审计边界
+
+- 时间：2026-07-18 12:40 +0800
+- 检索问题：哪些锁文件公告可在当前版本约束下修复，以及 CI 应如何持续审计余下公告。
+- 检索原因：用户要求联网检查整个项目漏洞；依赖升级和 CI 失败门禁依赖 RustSec 数据库、当前 registry 版本和上游约束事实。
+- 来源列表：RustSec Advisory Database（commit `b5fc89b8be99e96f79194d8a6f11e9b4143b99f0`）；`cargo-audit 0.22.2`；crates.io 查询 `crossbeam-epoch`、`quinn-proto`、`memmap2`、`quick-xml`、`rsa`；锁定 Zed/GPUI、Wayland、XCB 与 `russh` 的 Cargo manifests。
+- 关键结论：`crossbeam-epoch 0.9.20`、`quinn-proto 0.11.16` 和 `memmap2 0.9.11` 修复各自公告并可由当前锁文件升级。`quick-xml` 两条公告均要求 `>= 0.41`，当前 Zed/GPUI workspace、Wayland 和 XCB 依赖约束不兼容；`rsa` Marvin 公告没有补丁，且由 `russh` 传递依赖。CI 运行 `cargo audit`，仅按公告 ID 暂缓这三项，并继续阻断其他新漏洞。
+- 对实施计划的影响：P4 使用三个最小补丁级锁文件升级；不更新整套 GPUI Git 依赖。将 RustSec 审计独立为 CI job，并在双语开发文档中记录暂缓依据和重新评估要求。
+- 未解决问题：需要在 Zed/GPUI、Wayland/XCB 或 `russh` 更新后重新审计，优先移除 `RUSTSEC-2023-0071`、`RUSTSEC-2026-0194` 和 `RUSTSEC-2026-0195` 的暂缓参数；CI 尚未在 GitHub runner 实跑。
+
+## 2026-07-18 AxShell 安全漏洞基线
+
+- 时间：2026-07-18 11:20 +0800
+- 检索问题：当前锁文件是否命中公开 RustSec 漏洞，以及 SSH/SFTP、同步链路中哪些风险可由本地源码直接确认。
+- 检索原因：用户明确允许联网检索，并要求按安全审计结果逐项修复；依赖公告与官方补丁状态会影响依赖升级计划。
+- 来源列表：RustSec Advisory Database commit `b5fc89b8be99e96f79194d8a6f11e9b4143b99f0`（2026-07-17）；`cargo-audit 0.22.2`；RustSec `RUSTSEC-2026-0204`、`RUSTSEC-2026-0194`、`RUSTSEC-2026-0195`、`RUSTSEC-2026-0185`、`RUSTSEC-2023-0071` 与 `RUSTSEC-2026-0186`；本地 `Cargo.lock`、`src/backend/ssh.rs`、`src/sftp/auth.rs`、`src/backend/ssh/legacy.rs`、`src/sync.rs`。
+- 关键结论：锁文件命中 8 项漏洞公告与 `memmap2` unsound 警告；其中 `rsa 0.10.0-rc.18` 由直接依赖 `russh` 使用。更高优先级的应用代码问题是 SSH/SFTP 无条件接受服务器密钥、默认自动尝试 SHA-1/DSA/CBC/3DES legacy 算法、同步 endpoint 接受 HTTP 且远端响应无大小上限。SFTP 路径穿越、目录/预览限额已有本地保护。
+- 对实施计划的影响：先实现统一主机密钥 TOFU/失配拒绝，再限制 legacy 为显式 opt-in；同步层强制 HTTPS、限制响应；依赖更新与 CI `cargo audit` 单独回归，避免把 Git/GUI 依赖升级与认证语义混入同一修复。
+- 未解决问题：`rsa` Marvin 公告暂无上游补丁；RustSec 锁文件命中不等于每项都在受支持目标或应用输入路径可达，依赖更新前需继续按 target 与上游兼容性核对。
+
 ## 2026-07-17 内置字体外部资源包可行性
 
 - 时间：2026-07-17 11:08 +0800

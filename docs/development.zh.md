@@ -23,6 +23,12 @@ cargo install cargo-deb
 cargo run --release
 ```
 
+## 安全检查
+
+CI 会安装 `cargo-audit`，并在每个 Pull Request 与推送到 `main` 时审计 `Cargo.lock`。本地执行同一检查时，先安装该工具，再使用 `.github/workflows/ci.yml` 中的 CI 命令。
+
+目前有三条 RustSec 公告被暂时排除在失败门禁之外：`RUSTSEC-2023-0071` 的 `rsa` 尚无修复版本；`RUSTSEC-2026-0194` 与 `RUSTSEC-2026-0195` 需要 `quick-xml >= 0.41`，但当前 Zed/GPUI、Wayland 和 XCB 的依赖约束仍低于该版本。上游依赖集合变更时必须重新评估这些排除项。
+
 ## 开发期自动重载
 
 仓库通过 `.cargo/config.toml` 提供了别名：

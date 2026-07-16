@@ -23,6 +23,12 @@ Build and run the app:
 cargo run --release
 ```
 
+## Security Checks
+
+CI installs `cargo-audit` and audits `Cargo.lock` on every pull request and push to `main`. To run the same check locally, install the tool and use the CI command from `.github/workflows/ci.yml`.
+
+Three RustSec advisories are temporarily excluded from the failure gate: `RUSTSEC-2023-0071` has no patched `rsa` release, and `RUSTSEC-2026-0194` / `RUSTSEC-2026-0195` require `quick-xml >= 0.41` while current Zed/GPUI, Wayland, and XCB dependency constraints remain below that version. Review these exclusions whenever the upstream dependency set changes.
+
 ## Restart-Based Dev Reload
 
 The repository exposes this Cargo alias in `.cargo/config.toml`:

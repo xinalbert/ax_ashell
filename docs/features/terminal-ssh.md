@@ -16,12 +16,18 @@ Profiles are editable and can be duplicated before customization. New local term
 2. Enter a host, port, and username in the **Connection** section.
 3. Choose password or private-key authentication in **Authentication**.
 4. Optionally set a connection name or group in **Organization**.
-5. Expand **Advanced SSH Options** for proxy, SFTP path, X11 forwarding, and a connection shortcut.
+5. Expand **Advanced SSH Options** for proxy, SFTP path, X11 forwarding, legacy-algorithm compatibility, and a connection shortcut.
 6. Use **Save** or **Save & Connect**.
 
 Private-key authentication supports a key file path or inline key content and an optional passphrase.
 
 See [Serial And Telnet](serial-telnet.md) for non-SSH terminal sessions.
+
+## Host Key Verification
+
+On the first connection to a host and port, AxShell shows the server host-key algorithm and SHA-256 fingerprint. Compare the fingerprint with the server administrator through an independent channel before trusting it. The accepted key stays only in local configuration and is not included in session sync.
+
+Future connections accept the saved key automatically. If the server presents a different key, the connection remains blocked until the new fingerprint is verified and explicitly replaces the saved key. Rejecting, closing the prompt, or not responding within two minutes fails the connection.
 
 ## Saved Sessions
 
@@ -41,7 +47,7 @@ See [Serial And Telnet](serial-telnet.md) for non-SSH terminal sessions.
 - SSH sessions can use a per-session proxy or the configured global/environment proxy.
 - Connection progress and retry state are shown in the workspace.
 - Closing a tab or pane shuts down the backend owned by that terminal.
-- Legacy SSH algorithm fallback is available for servers that require supported older algorithms.
+- Legacy SSH algorithms are disabled by default. Enable the per-session compatibility option only for a trusted server that cannot negotiate current algorithms. AxShell then uses the selected legacy algorithm set directly; it never retries a normal connection with weaker algorithms automatically.
 
 See [Proxy And X11](proxy-x11.md) for transport and graphical forwarding settings.
 

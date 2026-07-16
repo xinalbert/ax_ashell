@@ -16,11 +16,11 @@ Forked from <https://github.com/rust-kotlin/ashell.git>. The current project is 
 
 ## Highlights
 
-- Local terminals plus saved SSH, serial, and Telnet sessions; SSH supports password or private-key authentication
+- Local terminals plus saved SSH, serial, and Telnet sessions; SSH supports password or private-key authentication and host-key fingerprint confirmation
 - Multi-tab and multi-pane workspaces with draggable session groups, detachable terminal windows, configurable keybindings, and search
 - Built-in SFTP browsing, transfer control, remote editing, large-directory pagination, and batch download file details
 - Themes, fonts, tab color behavior, monitoring, and workspace preferences
-- Encrypted session sync over WebDAV or S3-compatible storage
+- Encrypted session sync over HTTPS WebDAV or S3-compatible storage
 - Global and per-session proxy support plus SSH X11 forwarding
 
 ## Quick Start
