@@ -840,7 +840,12 @@ fn build_visible_rows(
         );
 
     let scroll_rows = previous
-        .filter(|snapshot| snapshot.display_offset == 0 && display_offset == 0)
+        .filter(|snapshot| {
+            snapshot.rows == rows
+                && snapshot.cols == cols
+                && snapshot.display_offset == 0
+                && display_offset == 0
+        })
         .map(|snapshot| {
             term.grid()
                 .history_size()
@@ -1010,6 +1015,8 @@ fn viewport_selection_from_range(
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::HashMap,
+        rc::Rc,
         sync::{Arc, mpsc},
         time::{Duration, Instant},
     };
@@ -1021,7 +1028,10 @@ mod tests {
         terminal::{BackendShutdown, BackendTx},
     };
 
-    use super::{HIGHLIGHT_REFRESH_INTERVAL, SelectionType, Side, TerminalTab};
+    use super::{
+        DirtyRows, HIGHLIGHT_REFRESH_INTERVAL, RenderRow, RenderSnapshot, SelectionType, Side,
+        TerminalTab, build_visible_rows,
+    };
 
     struct NoopShutdown;
 
@@ -1286,6 +1296,35 @@ mod tests {
             &prior_second_row,
             &after.visible_rows[0]
         ));
+    }
+
+    #[test]
+    fn bottom_scroll_rebuilds_rows_when_the_previous_snapshot_was_resized() {
+        let mut tab = test_tab(12, 5);
+        tab.feed(b"line0\r\nline1\r\nline2\r\nline3\r\nline4\r\nline5");
+        let history_size = tab.render_snapshot(false).history_size;
+        assert!(history_size > 0);
+
+        let previous = Rc::new(RenderSnapshot {
+            visible_rows: Rc::new(
+                (0..4)
+                    .map(|_| Rc::new(RenderRow { cells: Vec::new() }))
+                    .collect(),
+            ),
+            cursor: None,
+            selection: None,
+            display_offset: 0,
+            history_size: history_size - 1,
+            rows: 4,
+            cols: 12,
+            highlights: Rc::new(HashMap::new()),
+        });
+
+        let visible_rows =
+            build_visible_rows(&tab.term, 0, 5, 12, Some(&previous), &DirtyRows::full());
+
+        assert_eq!(visible_rows.rows.len(), 5);
+        assert_eq!(visible_rows.rebuilt_rows, (0..5).collect());
     }
 
     #[test]

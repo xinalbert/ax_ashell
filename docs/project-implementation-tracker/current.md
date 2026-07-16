@@ -2,18 +2,18 @@
 
 ## 当前目标
 
-- 目标：让 SFTP 远端文件双击以系统默认应用打开，并在用户完成编辑或关闭 SFTP 页面时确认是否上传修改。
-- 交付物：受管编辑工作副本、跨平台文件变化检测、双击列表交互、上传确认对话框、页面关闭保护、测试与验证记录。
+- 目标：修复终端在快速 resize 且发生底部滚动时复用旧行快照导致的越界崩溃。
+- 交付物：同尺寸快照守卫、覆盖 resize 与滚动叠加情形的回归测试、自动化验证与跟踪记录。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/`、`src/sftp/`、`src/events.rs`、`locales/`、`docs/features/`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：更换系统默认文件关联、可靠探测任意默认应用的关闭事件、远端多人编辑合并、SFTP 协议或依赖升级。
+- 当前范围：`src/terminal/tab.rs`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：终端布局策略调整、关键字高亮算法改造、macOS 崩溃上报机制、现有 SFTP 受管编辑任务。
 
 ## 当前状态
 
-- 阶段：实施中
+- 阶段：已完成
 - 开工判定：允许开工
 - 是否需要联网：否
 - 多 agent：未使用
@@ -22,30 +22,31 @@
 
 | Step | Status | Deliverable | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| P1 | completed | 审查 SFTP 打开、编辑、关闭与默认应用边界 | 源码、依赖和平台打开器审计 | `open::that` 不可等待，必须显式完成编辑或在关闭 SFTP 时确认 |
-| P2 | in_progress | 受管编辑会话、双击和上传确认 | 聚焦单元测试、`cargo check` | 文件变化只标记待上传，绝不在保存时静默覆盖远端 |
-| P3 | pending | 页面关闭保护、文案和用户文档 | 静态审计、文档检查 | 关闭 SFTP 前逐项确认待上传的工作副本 |
-| P4 | pending | 格式化、回归与跟踪记录 | `cargo test --quiet`、差异检查、tracking validator | 保留真实系统默认编辑器与真实 SFTP 手工验收 |
+| P1 | completed | 基于 crash/runtime 日志定位越界条件 | 崩溃位置、resize 时序与缓存代码核对 | 旧快照可在不同尺寸下进入滚动复用，访问 `len` 本身 |
+| P2 | completed | 限制滚动行复用只使用同尺寸快照，并补充回归测试 | 聚焦单元测试 | 保留同尺寸下既有行复用优化 |
+| P3 | completed | 格式化、完整测试、静态差异与跟踪文档校验 | `cargo check`、`cargo test --quiet`、`git diff --check`、tracking validator | GUI resize 需在 macOS 手工确认 |
 
 ## 已完成
 
-- 确认远端右键“打开文件”只下载临时副本且不回传；“编辑文件”会保存即上传，但无法识别默认应用关闭、会直接覆盖远端文件。
-- 确认 `open 5.1` 通过 macOS `open`、Windows `start` 和 Linux `xdg-open` 等系统启动器打开默认应用，不提供可等待的实际编辑器进程；不能把启动器退出作为文件关闭。
-- 确认仓库已有 `notify` 与 `sha2`，可监听工作副本目录并以内容指纹判定真实修改，无需改动依赖清单。
+- 关联四份 crash 报告与运行日志，确认两次首次 panic 均来自 `src/terminal/tab.rs:859` 的 `previous_rows[row + scroll_rows]`。
+- 确认快速 resize 期间当前屏幕行数会从 44 变为 45、从 27 变为 28；旧快照行数较小但仍可进入滚动复用路径。
+- 确认随后出现的 `panic in a function that cannot unwind` 是首次 panic 穿过 macOS 回调边界后的次生崩溃。
+- 滚动复用仅接受 `rows`、`cols` 都匹配的旧快照；新增旧快照 4 行、当前终端 5 行且 history 增量为 1 的回归测试。
 
 ## 验证
 
-- 已完成：源码、事件路由、页面关闭、窗口迁移、`open` 平台实现、`notify` 事件模型和已有跟踪记录审查。
-- 未完成：Rust 格式化、聚焦及完整测试、`cargo check`、hover/list 静态审计、真实默认编辑器保存、真实 SFTP 上传和关闭页面流程验收。
+- 已完成：crash/runtime 日志、快照构建路径、现有底部滚动复用测试与环境记录审查；Rust 修复与对应回归测试实现；`rustfmt`、聚焦测试、`cargo check`、完整 `cargo test --quiet`（222 项）、`git diff --check` 和 tracking docs validator。
+- 未完成：macOS GUI 快速 resize 与 PTY 输出并发的手工验收。
 
 ## 风险与阻塞
 
-- 默认应用的真实关闭事件没有跨平台通用 API；以“完成编辑”与关闭 SFTP 页面时的确认替代。无法在用户不交互的情况下可靠判断应用是否已退出。
+- 守卫会在 resize 帧放弃一次滚动行复用并重建当前可见行，属于正确性优先的短暂性能退化；同尺寸滚动路径保持原有优化。
+- 自动化测试可覆盖缓存尺寸不匹配，仍无法完全替代 macOS 窗口拖动与 PTY 输出并发的真实 GUI 验收。
 
 ## 下一步
 
-- 完成受管编辑会话、双击、确认对话框和关闭保护，实现后运行自动化验证并进行真实 GUI / SFTP 验收。
+- 在 macOS GUI 中拖动终端窗口并持续输出内容，确认窗口不会退出且终端内容稳定。
 
 ## 最后更新时间
 
-- 2026-07-16 18:10 +0800
+- 2026-07-16 23:24 +0800
