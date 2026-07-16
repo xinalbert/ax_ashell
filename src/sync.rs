@@ -16,6 +16,7 @@ use crate::session::Session;
 
 const SYNC_FILE_NAME: &str = "ax_shell-sync.json";
 const FORMAT_VERSION: u32 = 1;
+const MAX_SYNC_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncPayload {
@@ -127,9 +128,9 @@ async fn upload_webdav(
     body: Vec<u8>,
     expected_etag: Option<String>,
 ) -> Result<Option<String>> {
-    let client = Client::new();
+    let client = sync_client()?;
     let mut request = client
-        .put(sync_url(endpoint))
+        .put(sync_url(endpoint)?)
         .basic_auth(username, Some(password))
         .header(header::CONTENT_TYPE, "application/json")
         .body(body);
@@ -197,8 +198,8 @@ async fn download_webdav(
     username: &str,
     password: &str,
 ) -> Result<(Vec<u8>, Option<String>)> {
-    let response = Client::new()
-        .get(sync_url(endpoint))
+    let response = sync_client()?
+        .get(sync_url(endpoint)?)
         .basic_auth(username, Some(password))
         .send()
         .await
@@ -217,25 +218,23 @@ async fn download_webdav(
         .get(header::ETAG)
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    let body = response
-        .bytes()
-        .await
-        .context("read WebDAV response")?
-        .to_vec();
+    let body = read_sync_response_body(response, "read WebDAV response").await?;
     Ok((body, etag))
 }
 
-fn validate_credentials(credentials: &SyncCredentials) -> Result<()> {
+pub(crate) fn validate_credentials(credentials: &SyncCredentials) -> Result<()> {
     if credentials.encryption_password.len() < 8 {
         return Err(anyhow!(
             "encryption password must contain at least 8 characters"
         ));
     }
     match &credentials.backend {
-        SyncBackendCredentials::WebDav { endpoint, .. } if endpoint.trim().is_empty() => {
-            Err(anyhow!("WebDAV endpoint is required"))
+        SyncBackendCredentials::WebDav { endpoint, .. } => {
+            validate_https_endpoint(endpoint, "WebDAV endpoint")?;
+            Ok(())
         }
         SyncBackendCredentials::S3 {
+            endpoint,
             region,
             bucket,
             access_key,
@@ -250,7 +249,12 @@ fn validate_credentials(credentials: &SyncCredentials) -> Result<()> {
                 "S3 region, bucket, access key and secret key are required"
             ))
         }
-        _ => Ok(()),
+        SyncBackendCredentials::S3 { endpoint, .. } => {
+            if !endpoint.trim().is_empty() {
+                validate_https_endpoint(endpoint, "S3 endpoint")?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -280,7 +284,7 @@ async fn upload_s3(
     } else {
         headers.insert(header::IF_NONE_MATCH, header::HeaderValue::from_static("*"));
     }
-    let response = Client::new()
+    let response = sync_client()?
         .put(url)
         .headers(headers)
         .body(body)
@@ -296,7 +300,11 @@ async fn upload_s3(
     }
     if !response.status().is_success() {
         let status = response.status();
-        let detail = response.text().await.unwrap_or_default();
+        let detail = match read_sync_response_body(response, "read S3 upload error response").await
+        {
+            Ok(body) => String::from_utf8_lossy(&body).into_owned(),
+            Err(err) => format!("response body unavailable: {err:#}"),
+        };
         return Err(anyhow!("S3 upload failed: HTTP {status}: {detail}"));
     }
     Ok(response
@@ -309,7 +317,7 @@ async fn upload_s3(
 async fn download_s3(config: &S3Config) -> Result<(Vec<u8>, Option<String>)> {
     let url = s3_url(config)?;
     let headers = signed_s3_headers("GET", &url, &[], config)?;
-    let response = Client::new()
+    let response = sync_client()?
         .get(url)
         .headers(headers)
         .send()
@@ -320,7 +328,11 @@ async fn download_s3(config: &S3Config) -> Result<(Vec<u8>, Option<String>)> {
     }
     if !response.status().is_success() {
         let status = response.status();
-        let detail = response.text().await.unwrap_or_default();
+        let detail =
+            match read_sync_response_body(response, "read S3 download error response").await {
+                Ok(body) => String::from_utf8_lossy(&body).into_owned(),
+                Err(err) => format!("response body unavailable: {err:#}"),
+            };
         return Err(anyhow!("S3 download failed: HTTP {status}: {detail}"));
     }
     let etag = response
@@ -328,7 +340,7 @@ async fn download_s3(config: &S3Config) -> Result<(Vec<u8>, Option<String>)> {
         .get(header::ETAG)
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    let body = response.bytes().await.context("read S3 response")?.to_vec();
+    let body = read_sync_response_body(response, "read S3 response").await?;
     Ok((body, etag))
 }
 
@@ -336,7 +348,10 @@ fn s3_url(config: &S3Config) -> Result<reqwest::Url> {
     let endpoint = if config.endpoint.trim().is_empty() {
         format!("https://s3.{}.amazonaws.com", config.region.trim())
     } else {
-        config.endpoint.trim().trim_end_matches('/').to_string()
+        validate_https_endpoint(&config.endpoint, "S3 endpoint")?
+            .as_str()
+            .trim_end_matches('/')
+            .to_string()
     };
     let key = if config.object_key.trim().is_empty() {
         SYNC_FILE_NAME
@@ -449,15 +464,82 @@ fn aws_uri_encode(value: &str, encode_slash: bool) -> String {
     encoded
 }
 
-fn sync_url(endpoint: &str) -> String {
-    let endpoint = endpoint.trim();
-    if endpoint.ends_with('/') {
-        format!("{endpoint}{SYNC_FILE_NAME}")
-    } else if endpoint.ends_with(".json") {
-        endpoint.to_string()
+fn sync_url(endpoint: &str) -> Result<reqwest::Url> {
+    let mut url = validate_https_endpoint(endpoint, "WebDAV endpoint")?;
+    if url.path().ends_with(".json") {
+        Ok(url)
     } else {
-        format!("{endpoint}/{SYNC_FILE_NAME}")
+        let path = url.path().trim_end_matches('/');
+        url.set_path(&format!("{path}/{SYNC_FILE_NAME}"));
+        Ok(url)
     }
+}
+
+fn validate_https_endpoint(endpoint: &str, name: &str) -> Result<reqwest::Url> {
+    let endpoint = endpoint.trim();
+    if endpoint.is_empty() {
+        return Err(anyhow!("{name} is required"));
+    }
+    let url = reqwest::Url::parse(endpoint).with_context(|| format!("parse {name}"))?;
+    if url.scheme() != "https" {
+        return Err(anyhow!("{name} must use https://"));
+    }
+    if url.host_str().is_none() {
+        return Err(anyhow!("{name} must include a host"));
+    }
+    Ok(url)
+}
+
+fn sync_client() -> Result<Client> {
+    Client::builder()
+        .https_only(true)
+        .build()
+        .context("build HTTPS-only sync client")
+}
+
+async fn read_sync_response_body(
+    mut response: reqwest::Response,
+    context: &str,
+) -> Result<Vec<u8>> {
+    validate_sync_response_content_length(response.content_length())?;
+    let capacity = response
+        .content_length()
+        .unwrap_or_default()
+        .min(MAX_SYNC_RESPONSE_BYTES as u64) as usize;
+    let mut body = Vec::with_capacity(capacity);
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .with_context(|| context.to_string())?
+    {
+        let next_len = checked_sync_response_length(body.len(), chunk.len())?;
+        body.reserve(next_len - body.len());
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+fn validate_sync_response_content_length(content_length: Option<u64>) -> Result<()> {
+    if content_length.is_some_and(|length| length > MAX_SYNC_RESPONSE_BYTES as u64) {
+        return Err(anyhow!(
+            "sync response exceeds the {} MiB limit",
+            MAX_SYNC_RESPONSE_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(())
+}
+
+fn checked_sync_response_length(current: usize, additional: usize) -> Result<usize> {
+    let length = current
+        .checked_add(additional)
+        .ok_or_else(|| anyhow!("sync response size overflow"))?;
+    if length > MAX_SYNC_RESPONSE_BYTES {
+        return Err(anyhow!(
+            "sync response exceeds the {} MiB limit",
+            MAX_SYNC_RESPONSE_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(length)
 }
 
 fn encrypt_payload(payload: &SyncPayload, password: &str) -> Result<Vec<u8>> {
@@ -543,11 +625,13 @@ mod tests {
     #[test]
     fn endpoint_can_be_a_collection_or_file() {
         assert_eq!(
-            sync_url("https://example.test/dav/"),
+            sync_url("https://example.test/dav/").unwrap().as_str(),
             "https://example.test/dav/ax_shell-sync.json"
         );
         assert_eq!(
-            sync_url("https://example.test/config.json"),
+            sync_url("https://example.test/config.json")
+                .unwrap()
+                .as_str(),
             "https://example.test/config.json"
         );
     }
@@ -573,5 +657,38 @@ mod tests {
     fn aws_uri_encoding_preserves_only_object_key_slashes() {
         assert_eq!(aws_uri_encode("a b/c", false), "a%20b/c");
         assert_eq!(aws_uri_encode("a/b", true), "a%2Fb");
+    }
+
+    #[test]
+    fn sync_endpoints_require_https() {
+        assert!(sync_url("http://example.test/dav/").is_err());
+        assert!(validate_https_endpoint("https://example.test/dav/", "WebDAV endpoint").is_ok());
+
+        let credentials = SyncCredentials {
+            backend: SyncBackendCredentials::S3 {
+                endpoint: "http://s3.example.test".into(),
+                region: "us-east-1".into(),
+                bucket: "bucket".into(),
+                object_key: String::new(),
+                access_key: "access".into(),
+                secret_key: "secret".into(),
+                session_token: String::new(),
+            },
+            encryption_password: "correct horse battery staple".into(),
+        };
+        assert!(validate_credentials(&credentials).is_err());
+    }
+
+    #[test]
+    fn sync_response_limit_rejects_declared_and_streamed_oversize_bodies() {
+        assert!(
+            validate_sync_response_content_length(Some(MAX_SYNC_RESPONSE_BYTES as u64 + 1))
+                .is_err()
+        );
+        assert!(checked_sync_response_length(MAX_SYNC_RESPONSE_BYTES, 1).is_err());
+        assert_eq!(
+            checked_sync_response_length(MAX_SYNC_RESPONSE_BYTES - 1, 1).unwrap(),
+            MAX_SYNC_RESPONSE_BYTES
+        );
     }
 }

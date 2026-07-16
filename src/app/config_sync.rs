@@ -61,6 +61,11 @@ impl AxShell {
             return None;
         }
         let credentials = self.sync_credentials(cx);
+        if let Err(err) = sync::validate_credentials(&credentials) {
+            self.sync_status = format!("{}: {err:#}", t!("sync_failed")).into();
+            cx.notify();
+            return None;
+        }
         match &credentials.backend {
             SyncBackendCredentials::WebDav {
                 endpoint, username, ..
