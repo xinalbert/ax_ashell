@@ -78,6 +78,22 @@ pub(crate) struct MainWorkspace {
 
 impl gpui::Global for MainWorkspace {}
 
+/// Selects initialization work appropriate for the native window being opened.
+///
+/// A detached workspace only renders its transferred terminal workspace, so it
+/// can skip main-window-only SFTP and file-icon prewarming from the outset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AxShellWindowKind {
+    Main,
+    Detached,
+}
+
+impl AxShellWindowKind {
+    pub(crate) const fn is_detached(self) -> bool {
+        matches!(self, Self::Detached)
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct SavedSessionContextMenuState {
     pub(crate) session_id: String,

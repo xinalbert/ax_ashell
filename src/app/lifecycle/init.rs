@@ -3,7 +3,7 @@ use std::{collections::HashSet, time::Instant};
 use crate::{
     AxShell, PaneLayout,
     app::{
-        LocalFileBrowserState, constants,
+        AxShellWindowKind, LocalFileBrowserState, constants,
         search::SearchState,
         state::{
             appearance::AppearanceState, lifecycle::LifecycleState, monitoring::MonitoringState,
@@ -12,7 +12,6 @@ use crate::{
     },
     config::ConfigStore,
     events::BackendEventSender,
-    monitoring::SystemSampler,
     session::AuthMethod,
 };
 use gpui::{AppContext as _, Context, SharedString, Window, px};
@@ -22,7 +21,14 @@ use rust_i18n::t;
 impl AxShell {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (events_tx, events_rx) = crate::events::backend_event_channel();
-        Self::new_with_events(window, cx, events_tx, events_rx, true)
+        Self::new_with_events(
+            window,
+            cx,
+            events_tx,
+            events_rx,
+            true,
+            AxShellWindowKind::Main,
+        )
     }
 
     pub(crate) fn new_with_events(
@@ -31,7 +37,9 @@ impl AxShell {
         events_tx: BackendEventSender,
         events_rx: tokio::sync::mpsc::Receiver<crate::events::BackendEvent>,
         recover_interrupted_transfers: bool,
+        window_kind: AxShellWindowKind,
     ) -> Self {
+        let is_detached_workspace = window_kind.is_detached();
         let host_input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("host")));
         let session_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("connection_name_optional")));
@@ -93,14 +101,23 @@ impl AxShell {
             );
             ConfigStore::in_memory()
         });
-        let file_icons =
-            crate::platform::file_icons::FileIconCache::load(ConfigStore::file_icons_path().ok());
+        let file_icons = if is_detached_workspace {
+            crate::platform::file_icons::FileIconCache::default()
+        } else {
+            crate::platform::file_icons::FileIconCache::load(ConfigStore::file_icons_path().ok())
+        };
         let default_local_sftp_path_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(Self::home_local_browser_dir())
                 .default_value(config.default_local_sftp_path())
         });
-        let default_local_dir = Self::configured_default_local_browser_dir(&config);
+        // A detached workspace never renders the SFTP surface. Avoid validating
+        // and enumerating the configured directory while its terminal is opened.
+        let default_local_dir = if is_detached_workspace {
+            Self::home_local_browser_dir()
+        } else {
+            Self::configured_default_local_browser_dir(&config)
+        };
         let local_sftp_path_input =
             cx.new(|cx| InputState::new(window, cx).default_value(default_local_dir.clone()));
         let rayon_threads_input = cx.new(|cx| {
@@ -276,11 +293,14 @@ impl AxShell {
         }
         let saved_group_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("group_name")));
-        let (local_entries, local_status) =
+        let (local_entries, local_status) = if is_detached_workspace {
+            (Vec::new(), default_local_dir.clone())
+        } else {
             match Self::read_local_browser_entries(&default_local_dir) {
                 Ok(entries) => (entries, default_local_dir.clone()),
                 Err(err) => (Vec::new(), err),
-            };
+            }
+        };
 
         let mut _subscriptions = vec![
             cx.subscribe_in(&host_input, window, Self::on_input_event),
@@ -342,8 +362,7 @@ impl AxShell {
         let workspace_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
         let body_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
         let sftp_transfer_panels = cx.new(|_| crate::app::resizable::ResizableState::default());
-        let mut system_sampler = SystemSampler::new();
-        let system = system_sampler.sample();
+        let system = Default::default();
         let default_light_theme_name = ThemeRegistry::global(cx).default_light_theme().name.clone();
         let default_dark_theme_name = ThemeRegistry::global(cx).default_dark_theme().name.clone();
         let follow_system_theme = config.follow_system_theme();
@@ -601,12 +620,14 @@ impl AxShell {
             keybinds_suspended: false,
             monitoring: MonitoringState {
                 status: None,
-                sampler: system_sampler,
+                sampler: None,
                 system,
                 cpu_history: Vec::with_capacity(20),
                 net_rx_history: Vec::with_capacity(20),
                 net_tx_history: Vec::with_capacity(20),
-                last_sample: Instant::now(),
+                // Preserve an immediate first update when the main-window
+                // dashboard is visible, while keeping the sampler lazy.
+                last_sample: Instant::now() - crate::monitoring::SystemSampler::interval(),
                 system_tab_id: None,
                 remote_sample_generation: 0,
                 remote_sample_in_flight: None,
@@ -626,8 +647,8 @@ impl AxShell {
             last_window_size: None,
             last_sidebar_width,
             should_move_window: false,
-            persist_window_layout: true,
-            is_detached_workspace: false,
+            persist_window_layout: !is_detached_workspace,
+            is_detached_workspace,
             detached_window_title: None,
             hovered_url: None,
             cmd_ctrl_pressed: false,
@@ -636,7 +657,9 @@ impl AxShell {
 
         this.sync_custom_theme_inputs_from_draft(window, cx);
         this.apply_theme_preferences(window, cx);
-        this.start_file_icon_cache_refresh(cx);
+        if !is_detached_workspace {
+            this.start_file_icon_cache_refresh(cx);
+        }
         this.start_event_pump(cx);
         this
     }

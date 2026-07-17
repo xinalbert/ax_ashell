@@ -8,7 +8,7 @@ use crate::app::constants::ISSUES_URL;
 use crate::config::ConfigStore;
 use crate::{
     AxShell,
-    app::{MainWorkspace, WorkspaceTransfer},
+    app::{AxShellWindowKind, MainWorkspace, WorkspaceTransfer},
 };
 
 const INSTANCE_KIND_ENV: &str = "AX_SHELL_INSTANCE_KIND";
@@ -62,6 +62,15 @@ fn should_force_app_activation() -> bool {
         current_instance_kind().as_deref(),
         Some(DEV_RELOAD_INSTANCE_KIND)
     )
+}
+
+fn remove_main_workspace_if_matches(view: &gpui::Entity<AxShell>, cx: &mut App) {
+    let is_current_main_workspace = cx
+        .try_global::<MainWorkspace>()
+        .is_some_and(|main_workspace| main_workspace.view.entity_id() == view.entity_id());
+    if is_current_main_workspace {
+        let _ = cx.remove_global::<MainWorkspace>();
+    }
 }
 
 pub(crate) fn bind_workspace_keys(cx: &mut gpui::App) {
@@ -729,6 +738,7 @@ pub(crate) fn open_main_window(cx: &mut App) {
 
         let view_clone = view.clone();
         window.on_window_should_close(cx, move |window: &mut gpui::Window, cx: &mut gpui::App| {
+            remove_main_workspace_if_matches(&view_clone, cx);
             let handle = window.window_handle();
             if !cx.windows().contains(&handle) {
                 tracing::warn!(
@@ -793,7 +803,16 @@ pub(crate) fn open_workspace_window(
     let result = cx.open_window(window_options, move |window, cx| {
         window.set_window_title(&title);
         gpui_component::Theme::sync_system_appearance(Some(window), cx);
-        let view = cx.new(|cx| AxShell::new_with_events(window, cx, events_tx, events_rx, false));
+        let view = cx.new(|cx| {
+            AxShell::new_with_events(
+                window,
+                cx,
+                events_tx,
+                events_rx,
+                false,
+                AxShellWindowKind::Detached,
+            )
+        });
         let transfer = transfer_for_window
             .borrow_mut()
             .take()

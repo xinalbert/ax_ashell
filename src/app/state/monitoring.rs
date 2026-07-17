@@ -6,7 +6,8 @@ use crate::monitoring::{SystemSampler, SystemSnapshot};
 
 pub(crate) struct MonitoringState {
     pub(crate) status: Option<SharedString>,
-    pub(crate) sampler: SystemSampler,
+    /// Local system sampling is only needed while a local monitoring view is visible.
+    pub(crate) sampler: Option<SystemSampler>,
     pub(crate) system: SystemSnapshot,
     pub(crate) cpu_history: Vec<f32>,
     pub(crate) net_rx_history: Vec<f32>,
@@ -46,14 +47,12 @@ impl MonitoringState {
 
 #[cfg(test)]
 mod tests {
-    use crate::monitoring::SystemSampler;
-
     use super::MonitoringState;
 
     fn monitoring_state() -> MonitoringState {
         MonitoringState {
             status: None,
-            sampler: SystemSampler::new(),
+            sampler: None,
             system: Default::default(),
             cpu_history: Vec::new(),
             net_rx_history: Vec::new(),

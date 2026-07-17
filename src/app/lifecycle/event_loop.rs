@@ -217,7 +217,9 @@ impl AxShell {
             "Detected a long event-pump gap; checking the active context"
         );
         self.monitoring.invalidate_remote_samples();
-        self.monitoring.sampler.reset_after_resume();
+        if let Some(sampler) = self.monitoring.sampler.as_mut() {
+            sampler.reset_after_resume();
+        }
         self.runtime_state.reset_frame_cadence();
         for tab in &mut self.tabs {
             if tab.kind == crate::terminal::TabKind::Ssh && tab.connected {
@@ -1193,7 +1195,11 @@ impl AxShell {
                 self.request_active_system_snapshot();
                 return false;
             }
-            let snapshot = self.monitoring.sampler.sample();
+            let snapshot = self
+                .monitoring
+                .sampler
+                .get_or_insert_with(crate::monitoring::SystemSampler::new)
+                .sample();
             let cpu_usage = snapshot.cpu_percent;
             self.monitoring.cpu_history.push(cpu_usage);
             if self.monitoring.cpu_history.len() > 20 {

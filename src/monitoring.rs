@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
-use sysinfo::{Disks, Networks, System};
+use sysinfo::{CpuRefreshKind, Disks, MemoryRefreshKind, Networks, RefreshKind, System};
 
 /// Known virtual/ram filesystems to exclude from disk monitoring.
 fn is_real_filesystem(fs: &OsStr) -> bool {
@@ -48,8 +48,14 @@ pub struct SystemSampler {
 
 impl SystemSampler {
     pub fn new() -> Self {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        // Monitoring only needs aggregate CPU and memory information. Avoid
+        // `System::new_all()` here: it refreshes and retains every process,
+        // even though no monitoring view consumes per-process data.
+        let sys = System::new_with_specifics(
+            RefreshKind::nothing()
+                .with_cpu(CpuRefreshKind::everything())
+                .with_memory(MemoryRefreshKind::everything()),
+        );
         let nets = Networks::new_with_refreshed_list();
         let disks = Disks::new_with_refreshed_list();
         let last_rx_total = nets.iter().map(|(_, d)| d.total_received()).sum();
@@ -247,4 +253,18 @@ fn parse_u64(kv: &BTreeMap<String, String>, key: &str) -> u64 {
     kv.get(key)
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SystemSampler;
+
+    #[test]
+    fn local_sampling_never_retains_the_process_table() {
+        let mut sampler = SystemSampler::new();
+
+        assert!(sampler.sys.processes().is_empty());
+        let _ = sampler.sample();
+        assert!(sampler.sys.processes().is_empty());
+    }
 }

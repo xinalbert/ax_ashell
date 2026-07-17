@@ -756,7 +756,7 @@ impl AxShell {
     }
 
     pub(crate) fn is_monitoring_visible(&self) -> bool {
-        if !self.config.show_monitoring_dashboard() {
+        if self.is_detached_workspace || !self.config.show_monitoring_dashboard() {
             return false;
         }
         match self.config.monitoring_position() {
