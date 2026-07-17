@@ -2,8 +2,11 @@
 
 # AxShell
 
-[![CI](https://github.com/xinalbert/axshell/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xinalbert/axshell/actions/workflows/ci.yml)
-[![Release](https://github.com/xinalbert/axshell/actions/workflows/release.yml/badge.svg)](https://github.com/xinalbert/axshell/actions/workflows/release.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/xinalbert/axshell/ci.yml?branch=main&label=CI)](https://github.com/xinalbert/axshell/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/xinalbert/axshell)](https://github.com/xinalbert/axshell/releases/latest)
+[![License](https://img.shields.io/github/license/xinalbert/axshell)](LICENSE)
+[![MSRV](https://img.shields.io/badge/MSRV-1.88.0%2B-dea584?logo=rust)](https://www.rust-lang.org/)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-1f6feb)](https://github.com/xinalbert/axshell/releases/latest)
 
 ![AxShell 工作区预览](preview.png)
 
