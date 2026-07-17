@@ -175,6 +175,7 @@ struct RefreshRequest {
 
 #[derive(Default)]
 struct FileIconState {
+    initialized: bool,
     resolved: HashMap<FileIconKey, Arc<Image>>,
     refresh: Option<RefreshRequest>,
 }
@@ -185,19 +186,28 @@ struct FileIconState {
 pub(crate) struct FileIconCache(Rc<RefCell<FileIconState>>);
 
 impl FileIconCache {
-    pub(crate) fn load(path: Option<PathBuf>) -> Self {
-        let identity = cache_identity();
-        let mut state = FileIconState::default();
-
-        if let Some(path) = path {
-            if let Some(stored) = read_cache(&path, &identity) {
-                state.resolved = stored.resolved_images();
-            } else {
-                state.refresh = Some(RefreshRequest { path, identity });
+    /// Load and decode the persisted cache exactly once, when the SFTP UI first
+    /// needs type icons. A default cache stays allocation-only until this call.
+    pub(crate) fn load_if_needed(&self, path: Option<PathBuf>) -> bool {
+        {
+            let mut state = self.0.borrow_mut();
+            if state.initialized {
+                return false;
             }
+            state.initialized = true;
         }
 
-        Self(Rc::new(RefCell::new(state)))
+        let Some(path) = path else {
+            return true;
+        };
+        let identity = cache_identity();
+        let mut state = self.0.borrow_mut();
+        if let Some(stored) = read_cache(&path, &identity) {
+            state.resolved = stored.resolved_images();
+        } else {
+            state.refresh = Some(RefreshRequest { path, identity });
+        }
+        true
     }
 
     pub(crate) fn remote_icon(&self, name: &str, is_dir: bool) -> Option<Arc<Image>> {
@@ -761,8 +771,8 @@ fn icon_data_from_path(path: &Path) -> Option<IconData> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CACHE_VERSION, CacheIdentity, FileIconKey, StoredFileIconCache, icon_key_for_name,
-        read_cache, write_cache_atomically,
+        CACHE_VERSION, CacheIdentity, FileIconCache, FileIconKey, StoredFileIconCache,
+        icon_key_for_name, read_cache, write_cache_atomically,
     };
     use std::{
         fs,
@@ -792,6 +802,16 @@ mod tests {
             icon_key_for_name("opaque.custom-format", false),
             FileIconKey::GenericFile
         );
+    }
+
+    #[test]
+    fn default_cache_initializes_only_for_the_first_sftp_request() {
+        let cache = FileIconCache::default();
+        assert!(!cache.0.borrow().initialized);
+
+        assert!(cache.load_if_needed(None));
+        assert!(cache.0.borrow().initialized);
+        assert!(!cache.load_if_needed(None));
     }
 
     #[test]

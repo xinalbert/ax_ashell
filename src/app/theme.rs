@@ -22,6 +22,7 @@ pub(crate) const EMBEDDED_THEME_JSONS: &[&str] = &[
 
 use std::{
     borrow::Cow,
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     rc::Rc,
@@ -33,6 +34,10 @@ pub(crate) const BUILT_IN_FONT_FAMILIES: &[&str] = &[
     "JetBrains Mono",
     "Monaspace Neon Var",
 ];
+
+/// Every bundled family is known to be suitable for the fixed-width terminal
+/// grid, so Settings can offer these names before their font data is loaded.
+pub(crate) const BUILT_IN_TERMINAL_FONT_FAMILIES: &[&str] = BUILT_IN_FONT_FAMILIES;
 
 struct EmbeddedFontFamily {
     name: &'static str,
@@ -70,6 +75,11 @@ const EMBEDDED_FONT_FAMILIES: &[EmbeddedFontFamily] = &[
         fonts: &[include_bytes!("../../assets/fonts/MonaspaceNeon-Variable.ttf").as_slice()],
     },
 ];
+
+#[derive(Default)]
+struct LoadedEmbeddedFontFamilies(HashSet<&'static str>);
+
+impl gpui::Global for LoadedEmbeddedFontFamilies {}
 
 const CUSTOM_THEME_NAME_INPUT_KEY: &str = "custom_theme.theme_name";
 const CUSTOM_THEME_FILE_PREFIX: &str = "custom-";
@@ -411,13 +421,30 @@ pub(crate) fn custom_theme_registry_name(theme_name: &str, mode: ThemeMode) -> S
     }
 }
 
-pub(crate) fn load_fonts(cx: &mut App) -> Result<()> {
-    let available_fonts = cx.text_system().all_font_names();
-    for family in EMBEDDED_FONT_FAMILIES {
-        if available_fonts.iter().any(|name| name == family.name) {
-            continue;
-        }
+fn embedded_font_family(name: &str) -> Option<&'static EmbeddedFontFamily> {
+    EMBEDDED_FONT_FAMILIES
+        .iter()
+        .find(|family| family.name == name)
+}
 
+/// Makes one bundled family available to GPUI, but only when it is selected
+/// for rendering. Font systems keep registered font data for their process
+/// lifetime, so successful registrations are cached rather than unloaded.
+pub(crate) fn ensure_embedded_font_family_loaded(family_name: &str, cx: &mut App) -> Result<()> {
+    let Some(family) = embedded_font_family(family_name) else {
+        return Ok(());
+    };
+
+    if cx
+        .default_global::<LoadedEmbeddedFontFamilies>()
+        .0
+        .contains(family.name)
+    {
+        return Ok(());
+    }
+
+    let available_fonts = cx.text_system().all_font_names();
+    if !available_fonts.iter().any(|name| name == family.name) {
         let fonts = family
             .fonts
             .iter()
@@ -427,7 +454,11 @@ pub(crate) fn load_fonts(cx: &mut App) -> Result<()> {
             .add_fonts(fonts)
             .with_context(|| format!("load {} fonts", family.name))?;
     }
-    set_theme_font_names(cx.global_mut::<Theme>(), ".SystemUIFont");
+
+    cx.default_global::<LoadedEmbeddedFontFamilies>()
+        .0
+        .insert(family.name);
+
     Ok(())
 }
 
@@ -1795,7 +1826,7 @@ mod import_theme_tests {
 
 #[cfg(test)]
 mod embedded_font_tests {
-    use super::{BUILT_IN_FONT_FAMILIES, EMBEDDED_FONT_FAMILIES};
+    use super::{BUILT_IN_FONT_FAMILIES, BUILT_IN_TERMINAL_FONT_FAMILIES, EMBEDDED_FONT_FAMILIES};
 
     #[test]
     fn embedded_font_families_match_product_order() {
@@ -1812,6 +1843,11 @@ mod embedded_font_tests {
                 .collect::<Vec<_>>(),
             vec![2, 4, 4, 1]
         );
+    }
+
+    #[test]
+    fn bundled_terminal_choices_match_the_known_monospace_families() {
+        assert_eq!(BUILT_IN_TERMINAL_FONT_FAMILIES, BUILT_IN_FONT_FAMILIES);
     }
 
     #[test]

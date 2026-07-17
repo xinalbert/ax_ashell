@@ -1141,6 +1141,18 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Err(err) = crate::app::theme::ensure_embedded_font_family_loaded(family, cx) {
+            tracing::warn!(
+                component = "theme",
+                operation = "load_selected_ui_font",
+                font_family = family,
+                error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                "Failed to load selected embedded UI font"
+            );
+            self.status = format!("failed to load UI font: {family}").into();
+            cx.notify();
+            return;
+        }
         self.appearance.ui_font_family = family.into();
         self.config.set_ui_font_family(family);
         self.config.save_logged("set_ui_font_family");
@@ -1153,6 +1165,18 @@ impl AxShell {
     }
 
     pub(crate) fn change_terminal_font_family(&mut self, family: &str, cx: &mut Context<Self>) {
+        if let Err(err) = crate::app::theme::ensure_embedded_font_family_loaded(family, cx) {
+            tracing::warn!(
+                component = "theme",
+                operation = "load_selected_terminal_font",
+                font_family = family,
+                error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                "Failed to load selected embedded terminal font"
+            );
+            self.status = format!("failed to load terminal font: {family}").into();
+            cx.notify();
+            return;
+        }
         self.appearance.terminal_font_family = family.into();
         self.appearance.terminal_font_metrics =
             crate::app::TerminalFontMetrics::fallback(self.appearance.terminal_font_size);
@@ -1753,7 +1777,7 @@ impl AxShell {
     }
 
     pub(crate) fn close_tab(&mut self, id: String, cx: &mut Context<Self>) {
-        self.handle_tab_close(id);
+        self.handle_tab_close(id, cx);
         cx.notify();
     }
 
@@ -1809,7 +1833,7 @@ impl AxShell {
         }
     }
 
-    pub(crate) fn handle_tab_close(&mut self, id: String) {
+    pub(crate) fn handle_tab_close(&mut self, id: String, cx: &mut Context<Self>) {
         let group_ix = self
             .tab_groups
             .iter()
@@ -1949,6 +1973,7 @@ impl AxShell {
                 self.pane_root = group.pane_root.clone();
                 self.focused_pane_path = vec![];
                 self.workspace_page = WorkspacePage::Sftp;
+                self.restore_active_local_sftp_path(cx);
                 self.ensure_active_workspace_tab_visible();
             } else {
                 self.active_group = None;

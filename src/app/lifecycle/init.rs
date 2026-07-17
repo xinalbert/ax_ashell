@@ -101,23 +101,28 @@ impl AxShell {
             );
             ConfigStore::in_memory()
         });
-        let file_icons = if is_detached_workspace {
-            crate::platform::file_icons::FileIconCache::default()
-        } else {
-            crate::platform::file_icons::FileIconCache::load(ConfigStore::file_icons_path().ok())
-        };
+        if let Err(err) =
+            crate::app::theme::ensure_embedded_font_family_loaded(config.ui_font_family(), cx)
+        {
+            tracing::warn!(
+                component = "theme",
+                operation = "load_configured_ui_font",
+                font_family = config.ui_font_family(),
+                error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+                "Failed to load configured embedded UI font"
+            );
+        }
+        // SFTP is not part of the initial terminal workspace. Keep its icon cache
+        // and local browser inert until a valid SFTP page is actually opened.
+        let file_icons = crate::platform::file_icons::FileIconCache::default();
         let default_local_sftp_path_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(Self::home_local_browser_dir())
                 .default_value(config.default_local_sftp_path())
         });
-        // A detached workspace never renders the SFTP surface. Avoid validating
-        // and enumerating the configured directory while its terminal is opened.
-        let default_local_dir = if is_detached_workspace {
-            Self::home_local_browser_dir()
-        } else {
-            Self::configured_default_local_browser_dir(&config)
-        };
+        // Do not validate or enumerate the configured local SFTP directory during
+        // window construction. The first SFTP route restores the real location.
+        let default_local_dir = Self::home_local_browser_dir();
         let local_sftp_path_input =
             cx.new(|cx| InputState::new(window, cx).default_value(default_local_dir.clone()));
         let rayon_threads_input = cx.new(|cx| {
@@ -293,14 +298,8 @@ impl AxShell {
         }
         let saved_group_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("group_name")));
-        let (local_entries, local_status) = if is_detached_workspace {
-            (Vec::new(), default_local_dir.clone())
-        } else {
-            match Self::read_local_browser_entries(&default_local_dir) {
-                Ok(entries) => (entries, default_local_dir.clone()),
-                Err(err) => (Vec::new(), err),
-            }
-        };
+        let local_entries = Vec::new();
+        let local_status = default_local_dir.clone();
 
         let mut _subscriptions = vec![
             cx.subscribe_in(&host_input, window, Self::on_input_event),
@@ -537,7 +536,7 @@ impl AxShell {
             pending_sftp_path_sync: Some("/".into()),
             pending_sftp_selection_path: None,
             pending_sftp_terminal_cwd_tab: None,
-            pending_local_sftp_path_sync: Some(default_local_dir.clone()),
+            pending_local_sftp_path_sync: None,
             local_file_browser: LocalFileBrowserState {
                 current_path: default_local_dir.clone(),
                 status: local_status,
@@ -568,7 +567,11 @@ impl AxShell {
             sftp_transfer_tab: crate::app::SftpTransferTab::Active,
             sftp_transfer_scroll_handle: gpui::UniformListScrollHandle::new(),
             sftp_transfer_files_scroll_handle: gpui::UniformListScrollHandle::new(),
-            transfers: {
+            transfers: if is_detached_workspace {
+                // The transferred workspace replaces this collection immediately.
+                // Avoid cloning persisted transfer history into detached windows.
+                Vec::new()
+            } else {
                 let mut transfers = config.transfers();
                 let now = crate::sftp::unix_timestamp_secs();
                 if recover_interrupted_transfers {
@@ -657,9 +660,6 @@ impl AxShell {
 
         this.sync_custom_theme_inputs_from_draft(window, cx);
         this.apply_theme_preferences(window, cx);
-        if !is_detached_workspace {
-            this.start_file_icon_cache_refresh(cx);
-        }
         this.start_event_pump(cx);
         this
     }

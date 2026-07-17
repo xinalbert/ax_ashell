@@ -1190,7 +1190,17 @@ impl AxShell {
         }
     }
 
+    fn ensure_sftp_local_resources_loaded(&mut self, cx: &mut Context<Self>) {
+        if self
+            .file_icons
+            .load_if_needed(ConfigStore::file_icons_path().ok())
+        {
+            self.start_file_icon_cache_refresh(cx);
+        }
+    }
+
     pub(crate) fn restore_active_local_sftp_path(&mut self, cx: &mut Context<Self>) {
+        self.ensure_sftp_local_resources_loaded(cx);
         let saved_path = self
             .active_sftp_saved_session_id()
             .and_then(|session_id| self.config.last_local_sftp_path(&session_id))

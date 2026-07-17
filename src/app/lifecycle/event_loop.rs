@@ -807,7 +807,7 @@ impl AxShell {
                             let is_graceful_exit =
                                 reason == "local shell closed" || reason == "ssh session closed";
                             if is_graceful_exit {
-                                self.handle_tab_close(tab_id.clone());
+                                self.handle_tab_close(tab_id.clone(), cx);
                                 self.status = reason.into();
                                 continue;
                             }

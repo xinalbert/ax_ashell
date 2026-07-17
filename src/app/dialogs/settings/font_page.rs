@@ -35,11 +35,12 @@ fn terminal_font_names(window: &mut Window, cx: &mut gpui::App, font_size: f32) 
 
     let mut names = settings_font_names(cx);
     names.retain(|name| {
-        crate::terminal::element::terminal_font_is_monospace(
-            window,
-            name.clone().into(),
-            px(font_size),
-        )
+        !crate::app::theme::BUILT_IN_TERMINAL_FONT_FAMILIES.contains(&name.as_str())
+            && crate::terminal::element::terminal_font_is_monospace(
+                window,
+                name.clone().into(),
+                px(font_size),
+            )
     });
     names.sort_unstable();
     names.dedup();
@@ -62,16 +63,8 @@ fn font_family_label(family: &str) -> String {
     }
 }
 
-fn take_built_in_font_names(names: &mut Vec<String>) -> Vec<String> {
-    crate::app::theme::BUILT_IN_FONT_FAMILIES
-        .iter()
-        .filter_map(|family| {
-            names
-                .iter()
-                .position(|name| name == family)
-                .map(|index| names.remove(index))
-        })
-        .collect()
+fn remove_built_in_font_names(names: &mut Vec<String>) {
+    names.retain(|name| !crate::app::theme::BUILT_IN_FONT_FAMILIES.contains(&name.as_str()));
 }
 
 pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell) -> SettingGroup {
@@ -169,6 +162,7 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                             let current = current.clone();
                             move |_window, cx| {
                                 let mut names = settings_font_names(cx);
+                                remove_built_in_font_names(&mut names);
                                 let mut items = vec![super::fast_menu::FastMenuItem::new(
                                     t!("system_default").to_string(),
                                     current == *".SystemUIFont" || current.is_empty(),
@@ -176,13 +170,13 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                                         this.change_ui_font_family(".SystemUIFont", window, cx);
                                     },
                                 )];
-                                for family in take_built_in_font_names(&mut names) {
+                                for &family in crate::app::theme::BUILT_IN_FONT_FAMILIES {
                                     let checked = current == family;
                                     items.push(super::fast_menu::FastMenuItem::new(
-                                        font_family_label(&family),
+                                        font_family_label(family),
                                         checked,
                                         move |this, window, cx| {
-                                            this.change_ui_font_family(&family, window, cx);
+                                            this.change_ui_font_family(family, window, cx);
                                         },
                                     ));
                                 }
@@ -222,14 +216,15 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
                             let current = current.clone();
                             move |window, cx| {
                                 let mut names = terminal_font_names(window, cx, terminal_font_size);
+                                remove_built_in_font_names(&mut names);
                                 let mut items = Vec::new();
-                                for family in take_built_in_font_names(&mut names) {
+                                for &family in crate::app::theme::BUILT_IN_TERMINAL_FONT_FAMILIES {
                                     let checked = current == family;
                                     items.push(super::fast_menu::FastMenuItem::new(
-                                        font_family_label(&family),
+                                        font_family_label(family),
                                         checked,
                                         move |this, _window, cx| {
-                                            this.change_terminal_font_family(&family, cx);
+                                            this.change_terminal_font_family(family, cx);
                                         },
                                     ));
                                 }
@@ -304,10 +299,10 @@ pub(super) fn settings_font_group(view: &gpui::Entity<AxShell>, shell: &AxShell)
 
 #[cfg(test)]
 mod tests {
-    use super::take_built_in_font_names;
+    use super::remove_built_in_font_names;
 
     #[test]
-    fn built_in_fonts_are_taken_in_product_order() {
+    fn built_in_fonts_are_removed_from_system_candidates() {
         let mut names = vec![
             "System Mono".to_string(),
             "JetBrains Mono".to_string(),
@@ -316,15 +311,8 @@ mod tests {
             "Monaspace Neon Var".to_string(),
         ];
 
-        assert_eq!(
-            take_built_in_font_names(&mut names),
-            vec![
-                "Maple Mono NF CN",
-                "Iosevka Term",
-                "JetBrains Mono",
-                "Monaspace Neon Var",
-            ]
-        );
+        remove_built_in_font_names(&mut names);
+
         assert_eq!(names, vec!["System Mono"]);
     }
 }

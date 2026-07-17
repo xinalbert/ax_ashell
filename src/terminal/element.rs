@@ -507,9 +507,10 @@ impl TerminalElement {
             .unwrap_or_else(|| self.font_family.clone())
     }
 
-    fn measured_metrics(&mut self, window: &mut Window) -> TerminalMetrics {
+    fn measured_metrics(&mut self, window: &mut Window, cx: &mut App) -> TerminalMetrics {
         let font_family =
             terminal_monospace_font_family(window, self.font_family.clone(), self.font_size);
+        ensure_terminal_font_family_loaded(&font_family, cx);
         self.effective_font_family = Some(font_family.clone());
         let font = Font {
             family: font_family,
@@ -1042,6 +1043,18 @@ impl TerminalElement {
     }
 }
 
+fn ensure_terminal_font_family_loaded(family: &str, cx: &mut App) {
+    if let Err(err) = crate::app::theme::ensure_embedded_font_family_loaded(family, cx) {
+        tracing::warn!(
+            component = "theme",
+            operation = "load_visible_terminal_font",
+            font_family = family,
+            error = %crate::diagnostics::sanitize_error(&format!("{err:#}")),
+            "Failed to load embedded terminal font for visible terminal"
+        );
+    }
+}
+
 pub(crate) fn terminal_monospace_font_family(
     window: &mut Window,
     family: SharedString,
@@ -1119,8 +1132,9 @@ impl Element for TerminalElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
+        ensure_terminal_font_family_loaded(&self.font_family, cx);
         let _ = self.base_text_style(cx);
-        let metrics = self.measured_metrics(window);
+        let metrics = self.measured_metrics(window, cx);
         let grid_rows = if let Some(id) = id {
             window.with_element_state(id, |cache: Option<GridLayoutCache>, window| {
                 self.cached_grid_rows(cache, metrics, window, cx)

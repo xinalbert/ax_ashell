@@ -52,14 +52,6 @@ fn main() {
         app::app_menu::install(cx);
         app::theme::load_embedded_themes(cx);
         app::theme::load_user_themes(cx);
-        if let Err(err) = app::theme::load_fonts(cx) {
-            tracing::warn!(
-                component = "theme",
-                operation = "load_fonts",
-                error = %diagnostics::sanitize_error(&format!("{err:#}")),
-                "Failed to load embedded fonts"
-            );
-        }
         app::startup::open_main_window(cx);
     });
 }

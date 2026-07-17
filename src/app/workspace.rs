@@ -1000,7 +1000,7 @@ impl AxShell {
         if let Some(progress) = &self.connection_progress {
             let tab_id = progress.tab_id.clone();
             self.connection_progress = None;
-            self.handle_tab_close(tab_id);
+            self.handle_tab_close(tab_id, cx);
         }
         cx.notify();
     }
