@@ -2,9 +2,9 @@
 
 ## Current Goal
 
-- Goal: Completed cross-platform AxShell detached-window memory reductions without changing GPUI renderer ownership.
+- Goal: Completed updated-sample triage and on-demand AxShell resource initialization without changing GPUI renderer ownership.
 - Coordinator: main thread
-- Last Updated: 2026-07-17 10:25 CST
+- Last Updated: 2026-07-17 11:30 CST
 
 ## Reuse Rules
 
@@ -31,3 +31,9 @@
 | detached-init-worker | /root/detached_init_worker | completed | 20260717-window-memory | detached-init-slimming | Added initialization mode, skipped detached icon/local-directory prewarming, and released stale main workspace globals. | 2026-07-17 10:17 CST | Full test suite and cargo check passed; one-shot source owner. |
 | renderer-reviewer | /root/renderer_reviewer | completed | 20260717-window-memory | renderer-boundary-validation | Confirmed per-window native presentation targets on all supported platforms and supplied manual verification guidance. | 2026-07-17 10:17 CST | No local files changed; one-shot reviewer. |
 | coordinator | main-thread | completed | 20260717-window-memory | integration-and-tracking | Integrated sampler, detached initialization, lifecycle cleanup, platform-boundary review, and validation records. | 2026-07-17 10:25 CST | Full Rust suite, diff check, and tracking validator passed; target-platform GUI profiling remains manual. |
+| bundle-boundary-reviewer | /root/bundle_boundary_reviewer | completed | 20260717-lazy-resources | external-font-bundle-boundary | Phase 2 is feasible with `Cow::Owned`, but requires all release/dev packaging routes and resource lookup; P1 remains the current low-risk delivery. | 2026-07-17 11:08 CST | No files changed; one-shot review, do not reuse. |
+| font-deferred-loader | /root/font_deferred_loader | completed | 20260717-lazy-resources | deferred-embedded-fonts | Replaced startup-wide font registration with UI / terminal first-use registration and static lazy-menu candidates. | 2026-07-17 11:10 CST | rustfmt, cargo check, focused tests, full 224-test suite, diff check, and hover audit passed; one-shot source owner. |
+| sample-resource-auditor | /root/sample_resource_auditor | completed | 20260717-lazy-resources | updated-sample-audit | Identified drawable dominance, a 21.54 MiB decoded file-icon cache, startup local-directory enumeration, and redundant detached transfer cloning. | 2026-07-17 11:10 CST | No files changed; one-shot audit, do not reuse. |
+| sftp-lazy-resource-loader | /root/sftp_lazy_resource_loader | completed | 20260717-lazy-resources | deferred-local-sftp-resources | Deferred file-icon cache, local SFTP directory enumeration, and the detached transfer-history clone to actual SFTP/transfer use. | 2026-07-17 11:12 CST | rustfmt, focused test, cargo check, full 225-test suite, and diff check passed; one-shot source owner. |
+| lazy-font-reviewer | /root/lazy_font_reviewer | completed | 20260717-lazy-resources | deferred-font-review | Approved first-use registration order and App-scoped cache; identified tracker-map refresh and residual manual-test caveat. | 2026-07-17 11:26 CST | Read-only review; no blocking defect, do not reuse. |
+| coordinator | main-thread | completed | 20260717-lazy-resources | integration-and-tracking | Integrated first-use fonts, delayed SFTP resources, route coverage, validation, and the behavior commit. | 2026-07-17 11:30 CST | `7999d30` contains only source behavior; tracking records remain a separate documentation commit. |

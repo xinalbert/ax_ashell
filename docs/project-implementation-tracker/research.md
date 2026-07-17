@@ -1,5 +1,15 @@
 # 外部检索记录
 
+## 2026-07-17 内置字体外部资源包可行性
+
+- 时间：2026-07-17 11:08 +0800
+- 检索问题：可选内置字体能否在 macOS、Windows 和 Linux 上移出 `include_bytes!`，并只在用户首次选择时读入内存。
+- 检索原因：family 级延迟注册能避免未选字体进入 GPUI 字体系统，但用户还要求未使用资源不要进入进程内存，需要区分“未注册”与“未映像”的边界。
+- 来源列表：锁定 GPUI `f9c9947` 的 `gpui/src/text_system.rs`、`gpui_macos/src/text_system.rs`、`gpui_windows/src/direct_write.rs`、`gpui_wgpu/src/cosmic_text_system.rs`；Microsoft `IDWriteFactory5::CreateInMemoryFontFileReference` <https://learn.microsoft.com/windows/win32/api/dwrite_3/nf-dwrite_3-idwritefactory5-createinmemoryfontfilereference>；项目 `scripts/package-macos-app.sh`、`.github/workflows/release.yml`、`examples/dev_reload.rs`、`Cargo.toml` 的打包路径。
+- 关键结论：GPUI 的 `add_fonts(Vec<Cow<'static, [u8]>>)` 支持运行时 `Cow::Owned`。macOS font-kit、Linux fontdb 和 Windows DirectWrite 都会在注册后保留或复制字节，因此外部 TTF 可安全在首次使用时读取；没有公开卸载接口。当前 11 个 TTF 约 61 MiB，P1 能阻止未选 family 的解析/注册，P2 才能让它们不再位于 executable 映像。
+- 对实施计划的影响：本轮先交付 P1 family 级延迟注册，并保持设置候选静态、打开菜单不读文件。P2 作为独立的打包改动：macOS `Contents/Resources/fonts`、Windows/Linux portable `resources/fonts`、Deb `/usr/share/ax_shell/fonts`，并需同步开发热重载与错误回退。由于跨平台发布链路多，P2 不与当前低风险行为改动混入同一提交。
+- 未解决问题：P2 需要在三种实际发布产物中验证字体文件存在、默认/可选 family 切换及 Windows 首次 DirectWrite 复制峰值；它不会降低每个可见窗口的 native drawable 基线。
+
 ## 2026-07-17 GPUI 多窗口渲染与内存边界
 
 - 时间：2026-07-17 10:17 +0800
