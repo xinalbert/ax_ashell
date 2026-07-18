@@ -37,5 +37,3 @@ cargo dev-reload
 - 了解工作区操作：[工作区](features/workspace.zh.md)
 - 传输远程文件：[SFTP](features/sftp.zh.md)
 - 查找配置和日志：[本地数据与故障排查](features/local-data-troubleshooting.zh.md)
-
-<!-- 截图目标：images/features/getting-started-workspace.png -->

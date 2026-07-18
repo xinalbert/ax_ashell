@@ -1,7 +1,7 @@
 [English](workspace.md) · [文档导航](../README.zh.md)
 
 # 工作区
-
+![工作区标签与 Pane](images/image-12.png)
 ## 标签与 Pane
 
 AxShell 可以在一个工作区内组织本地终端、SSH 终端、SFTP 页面、监控和设置。
@@ -57,6 +57,3 @@ AxShell 可以在一个工作区内组织本地终端、SSH 终端、SFTP 页面
 所有工作区和终端焦点快捷键都可以在 **Key Bindings** 设置中修改。
 
 已保存 SSH 会话也可在编辑表单中设置独立连接快捷键。快捷键会在终端和 SFTP 工作区生效，并且不能与上面的可配置快捷键冲突。
-
-<!-- 截图目标：../images/features/workspace-tabs-panes.png -->
-<!-- 截图目标：../images/features/workspace-keybindings.png -->

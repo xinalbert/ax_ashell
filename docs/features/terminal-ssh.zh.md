@@ -1,7 +1,7 @@
 [English](terminal-ssh.md) · [文档导航](../README.zh.md)
 
 # 终端与 SSH
-
+![终端与 SSH 工作区](images/image-11.png)
 ## 本地终端
 
 从已保存会话区域顶部固定的**本地终端**入口打开本地 Shell。本地终端与 SSH 终端共用标签、Pane、搜索和外观设置。
@@ -50,6 +50,3 @@
 - 旧版 SSH 算法默认关闭。仅当您信任的服务器无法协商当前算法时，才在单个会话中开启兼容性选项。启用后 AxShell 直接使用该旧算法集，绝不会在普通连接失败后自动降级到弱算法。
 
 代理传输和图形转发设置见[代理与 X11](proxy-x11.zh.md)。
-
-<!-- 截图目标：../images/features/terminal-ssh-session-form.png -->
-<!-- 截图目标：../images/features/terminal-ssh-saved-groups.png -->

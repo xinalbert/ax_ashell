@@ -5,7 +5,7 @@
 AxShell 可以通过 WebDAV 或 S3 兼容对象存储同步已保存 SSH 会话及其分组信息。
 
 ## 支持的后端
-
+![配置同步设置](images/image-6.png)
 - WebDAV 地址和用户名
 - S3 兼容 endpoint、region、bucket 和 object key
 
@@ -30,6 +30,3 @@ ax_shell-sync.json
 - 下载会解密远端载荷，并替换本机已保存会话列表及分组信息。
 - 下载会替换本地会话数据，操作前应确认 endpoint 和加密口令正确。
 - HTTP 地址和超出上限的响应会被拒绝，且不会应用任何同步会话数据。
-
-<!-- 截图目标：../images/features/configuration-sync-webdav.png -->
-<!-- 截图目标：../images/features/configuration-sync-s3.png -->

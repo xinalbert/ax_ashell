@@ -1,7 +1,7 @@
 [English](monitoring-lifecycle.md) · [文档导航](../README.zh.md)
 
 # 监控与生命周期
-
+![监控面板](images/image-7.png)
 ## 系统监控
 
 监控页面可以显示本机或当前 SSH 会话的系统信息，包括 CPU、内存、Swap、网络、磁盘和平台信息。设置中可以显示或隐藏监控，并选择放在侧边栏或底部区域。
@@ -24,6 +24,3 @@
 AxShell 将事件循环的长时间暂停视为可能的系统恢复，并保守地恢复当前上下文：当前 SSH 终端只会收到一次短连接检查；空闲 SFTP 页面只会在下次刷新或操作时按需重连。不会自动重连所有 SSH tab，也不会自动重启 SFTP 传输。SSH 会话若已丢失，请使用现有重连操作；需要远端命令跨断线持续时，请在服务器使用 `tmux` 或 `screen`。
 
 实现边界和生命周期设计见[资源生命周期](../resource-lifecycle.zh.md)。
-
-<!-- 截图目标：../images/features/monitoring-dashboard.png -->
-<!-- 截图目标：../images/features/monitoring-lifecycle-settings.png -->

@@ -2,6 +2,8 @@
 
 # Serial And Telnet
 
+![Serial and Telnet session settings](images/image-9.png)
+
 AxShell can save and reopen serial-console and Telnet sessions alongside local terminals and SSH connections. They use the same terminal tabs, panes, search, and keybinding controls.
 
 ## Create A Connection
@@ -30,5 +32,3 @@ Telnet is not encrypted. Use it only for trusted networks and systems that expli
 SFTP pages, remote system monitoring, X11 forwarding, SSH private-key/password authentication, and SSH connection-health recovery apply only to SSH sessions. A serial or Telnet session remains a terminal connection and does not open an SFTP page.
 
 For local shells and SSH setup, see [Terminal And SSH](terminal-ssh.md). For tabs, panes, and standalone terminal windows, see [Workspace](workspace.md).
-
-<!-- Screenshot target: ../images/features/serial-telnet-session-form.png -->

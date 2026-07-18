@@ -2,6 +2,8 @@
 
 # Terminal And SSH
 
+![Terminal and SSH workspace](images/image-11.png)
+
 ## Local Terminals
 
 Open a local terminal from the pinned **Local Terminal** entry in the saved-session area. Local terminals use the same tab, pane, search, and appearance controls as SSH terminals.
@@ -50,6 +52,3 @@ Future connections accept the saved key automatically. If the server presents a 
 - Legacy SSH algorithms are disabled by default. Enable the per-session compatibility option only for a trusted server that cannot negotiate current algorithms. AxShell then uses the selected legacy algorithm set directly; it never retries a normal connection with weaker algorithms automatically.
 
 See [Proxy And X11](proxy-x11.md) for transport and graphical forwarding settings.
-
-<!-- Screenshot target: ../images/features/terminal-ssh-session-form.png -->
-<!-- Screenshot target: ../images/features/terminal-ssh-saved-groups.png -->

@@ -28,11 +28,10 @@ This directory contains task-focused user guides, development notes, and design 
 ## Design And Maintenance
 
 - [Resource Lifecycle](resource-lifecycle.md): background resource policy and deep-sleep design
-- [Screenshot Guide](images/README.md): filenames and placement for future documentation images
 - [Project Implementation Tracker](project-implementation-tracker/current.md): current repository implementation record
 
 ## Documentation Convention
 
 - Root README files, development references, and feature guides use English `name.md` with Chinese `name.zh.md` counterparts.
 - Keep language pairs structurally aligned and use relative links.
-- Put feature screenshots under `docs/images/features/`; each feature guide contains commented insertion targets.
+- Shared feature screenshots live in `features/images/` and are referenced at matching points in both language pages.

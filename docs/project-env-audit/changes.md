@@ -2509,3 +2509,19 @@
 - 受影响文件：`src/terminal/element.rs`，`docs/project-env-audit/current.md`，`docs/project-env-audit/changes.md`，`docs/project-implementation-tracker/current.md`，`docs/project-implementation-tracker/changes/2026/07.md`，`docs/project-implementation-tracker/project-map.md`。
 - 更新后的命令或环境：继续使用 Rust 2024 / Cargo，未增加依赖或外部服务；验证使用 `rustfmt --edition 2024 src/terminal/element.rs`、`cargo test --quiet grid_layout_key`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 与 tracking docs validator。
 - 验证结果：`rustfmt`、定向测试（1 passed）、`cargo check`、完整测试（238 passed）、`git diff --check` 和 tracking docs validator 通过，仅保留既有 `block v0.1.6` future-incompat warning。真实 SSH 的长 scrollback、快速输入、IME、selection 与字体变更仍需手工验收。
+
+## 2026-07-18 P10 双语文档图片同步施工前预检
+
+- 时间：2026-07-18 22:27 +0800
+- 变化摘要：当前范围从 P9 Rust cache-key 修复切换为 Markdown 文档维护；用户新增根 README 与功能页 PNG，删除旧 `docs/images/` 图片说明。运行环境、MSRV、Cargo 依赖、manifest/lock、CI 与应用代码均不变。
+- 受影响文件：`README.md`，`README.zh.md`，`images/`，`docs/README.md`，`docs/README.zh.md`，`docs/features/`，`docs/features/images/`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：不运行 Rust 编译或测试；计划执行图片和 Markdown 链接存在性审阅、`git diff --check` 和 tracking docs validator。不新增依赖或外部服务，不联网。
+- 验证结果：已确认新增图片均为有效 PNG；英文功能页、文档导航和旧截图占位仍待同步与清理。
+
+## 2026-07-18 P10 双语文档图片同步完成环境验证
+
+- 时间：2026-07-18 22:35 +0800
+- 变化摘要：英文 README 与九个功能页已在中文对应位置引用共享图片；`docs/README*.md` 的已删除图片说明入口和所有旧截图占位已清理。运行环境、MSRV、Cargo 依赖、manifest/lock、CI 与应用代码均未改变。
+- 受影响文件：`README.md`，`README.zh.md`，`images/`，`docs/README.md`，`docs/README.zh.md`，`docs/getting-started*.md`，`docs/features/`，`docs/features/images/`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续只执行图片/链接存在性审阅、`git diff --check` 和 tracking docs validator；不运行 Rust 编译或测试，不新增依赖或外部服务。
+- 验证结果：根 README 和九个功能页的中英文图片路径逐一一致，所有被引用 PNG 均存在，用户可见 Markdown 无旧 `docs/images/` 或截图占位引用；`git diff --check` 和 tracking docs validator 通过。未引用的 `docs/features/images/image.png` 按用户工作区内容保留。

@@ -2,6 +2,8 @@
 
 # SFTP
 
+![SFTP file browser](images/image-10.png)
+
 ## Open The SFTP Page
 
 Open SFTP from an active SSH session. The page combines a remote browser, a local browser, and transfer state for that session.
@@ -50,6 +52,3 @@ Remote listings load on demand instead of reading the entire directory into the 
 Transfer tasks support pause, resume, and cancel. Completed, failed, interrupted, and active tasks are shown in transfer history, which keeps up to 100 records.
 
 Closing an SFTP page first asks about changed managed edit copies, then uses the configured confirmation flow for active transfers so work is not discarded silently.
-
-<!-- Screenshot target: ../images/features/sftp-browser.png -->
-<!-- Screenshot target: ../images/features/sftp-transfer-panel.png -->

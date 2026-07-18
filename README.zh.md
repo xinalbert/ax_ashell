@@ -8,7 +8,7 @@
 [![MSRV](https://img.shields.io/badge/MSRV-1.88.0%2B-dea584?logo=rust)](https://www.rust-lang.org/)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-1f6feb)](https://github.com/xinalbert/axshell/releases/latest)
 
-![AxShell 工作区预览](preview.png)
+![AxShell 工作区](images/image.png)
 
 AxShell 是一个基于 Rust 和 GPUI 的桌面终端工作区，用于统一管理本地 Shell、SSH、串口和 Telnet 会话、SFTP 文件与日常远程运维操作。
 

@@ -5,7 +5,7 @@
 AxShell 内置一组精简的终端友好字体，让用户尚未配置系统字体时也有可用默认值。运行时字体文件和本地授权说明位于 [assets/fonts](../../assets/fonts/README.md)。
 
 ## 字体家族
-
+![内置字体设置](images/image-5.png)
 | 字体 | 来源仓库 | 内置版本 | 内置样式 | 用途 |
 | --- | --- | --- | --- | --- |
 | Maple Mono NF CN | [subframe7536/maple-font](https://github.com/subframe7536/maple-font) | bundled release | Regular, Bold | 默认终端字体，覆盖 CJK 与 Nerd Font 字形 |

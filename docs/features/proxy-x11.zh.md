@@ -1,7 +1,7 @@
 [English](proxy-x11.md) · [文档导航](../README.zh.md)
 
 # 代理与 X11
-
+![代理与 X11 设置](images/image-8.png)
 ## 代理优先级
 
 SSH 和 SFTP 连接可以使用：
@@ -94,5 +94,3 @@ ldd ./ax_shell | grep "not found"
 ```
 
 没有输出表示动态链接器已经找到所需运行库。如果仍有其他库显示为 `not found`，先安装对应的 Ubuntu runtime package，再启动 AxShell。
-
-<!-- 截图目标：../images/features/proxy-x11-settings.png -->

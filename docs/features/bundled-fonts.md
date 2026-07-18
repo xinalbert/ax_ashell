@@ -6,6 +6,8 @@ AxShell embeds a small set of terminal-friendly fonts so the application has use
 
 ## Font Families
 
+![Bundled font settings](images/image-5.png)
+
 | Family | Source repository | Bundled version | Bundled styles | Intended use |
 | --- | --- | --- | --- | --- |
 | Maple Mono NF CN | [subframe7536/maple-font](https://github.com/subframe7536/maple-font) | bundled release | Regular, Bold | Default terminal font with CJK and Nerd Font coverage |

@@ -2,20 +2,20 @@
 
 ## 当前目标
 
-- 目标：消除高 RTT SSH 本地输入 overlay 的本地绘制卡顿，不改变 P8 的输入语义和安全回退。
-- 交付物：不把 composition 文本变化纳入终端行布局缓存 key、缓存行为回归测试和完整 Rust 验证。
+- 目标：将用户新增的 README 和功能页截图同步到英文文档，并清理已删除旧图片目录留下的文档入口。
+- 交付物：中英文 README/功能页一致的图片引用、无失效截图说明或占位注释的文档导航，以及链接校验记录。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/terminal/element.rs`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：改变 SSH 协议或引入 Mosh 服务端、P8 的输入语义/会话配置/回退条件、已确认终端 buffer、IME/selection 绘制语义、默认开启本地回显，以及 Telnet/串口输入优化。
+- 当前范围：`README.md`、`README.zh.md`、`images/`、`docs/README*.md`、`docs/features/`、`docs/features/images/`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：修改应用行为、终端/SSH/SFTP 实现、图片像素内容、发布版本或历史 release tag。
 
 ## 当前状态
 
 - 阶段：已完成
 - 开工判定：允许开工
-- 是否需要联网：是，已完成
+- 是否需要联网：否
 - 多 agent：未使用
 
 ## 活动计划
@@ -31,6 +31,7 @@
 | P7 | completed | 建立 SSH 输入到远端输出的匿名反馈延迟基线 | `TerminalTab` 单元测试；`cargo check`；`cargo test --quiet` | 仅记录时间与聚合值；不记录按键内容，不改变 backend 写入顺序 |
 | P8 | completed | 默认关闭的 SSH 会话级本地输入 overlay | 定向单元测试；`rustfmt`；`cargo check`；`cargo test --quiet`；`git diff --check` | 仅主屏、底部、已连接 SSH；不支持的输入先按顺序 flush 再直通 |
 | P9 | completed | 本地输入 overlay 不失效终端行布局缓存 | `TerminalElement` 定向测试；`rustfmt`；`cargo check`；`cargo test --quiet`；`git diff --check` | composition 独立绘制；只有实际影响 row shape 的状态可失效 cache |
+| P10 | completed | 同步用户新增的文档截图并清理旧图片目录入口 | 图片引用存在性、双语结构审阅、`git diff --check`、tracking docs validator | 图片不改像素；英文页面与中文页面使用同一相对路径 |
 
 ## 已完成
 
@@ -47,10 +48,12 @@
 - P9 已完成定位：`TerminalElement::cached_grid_rows` 的 `GridLayoutKey` 包含 `TerminalComposition`，但 `layout_row` 不读取 composition。每次本地键入改变 overlay 文本都会拒绝所有可见行的 `GridLayoutCache`，触发完整行 shape；composition 实际只在独立 paint 阶段使用。
 - P9 已完成上游核对：Zed 在 `prepaint` 中布局确认 terminal cell，并在 `paint` 中单独 shape / 覆盖 IME marked text；其分层与本地 cache-key 收窄一致，来源记录于 `docs/project-implementation-tracker/research.md`。
 - P9 已完成实现：`GridLayoutKey` 只保留 `layout_row` 实际消费的 style 和 selection；本地输入或 IME composition 文本继续在 paint 阶段独立重绘，不再使已确认可见行重新 shape。回归测试明确限定 cache key 只跟踪会改变 shaped row 的状态。
+- P10 已完成预检：用户已将根 README 图片放入 `images/`、功能截图放入 `docs/features/images/`，并删除旧 `docs/images/` 说明；英文页面和文档导航仍需同步。
+- P10 已完成：英文 README 与九个功能页在和中文相同的语义位置引用同一图片，双语图片均使用可读替代文字；旧 `docs/images/` 导航、所有失效截图占位注释和遗留 `preview.png` 引用均已清理。
 
 ## 验证
 
-- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9 完整 `cargo test --quiet`（238 passed）、`rustfmt`、`git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）。
+- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9 完整 `cargo test --quiet`（238 passed）、`rustfmt`、`git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）；P10 的图片存在性、双语路径配对和旧目录引用审阅。
 - 未完成：100/250/500 ms RTT SSH 服务上的 P7/P8/P9 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
 
 ## 风险与阻塞
@@ -64,11 +67,12 @@
 - P8 不自动识别 shell prompt，因此用户只能在普通、单行 shell 提示符处启用；密码提示、REPL、文本编辑器和全屏程序必须依赖回退路径，不能承诺预测显示正确。
 - P8 仍不能把首个远端输出当作逐字回显确认；它只把该输出作为显示层失效信号。用户输入内容不会进入日志或 metrics，但会在启用模式下短暂保留于进程内内存，直至提交、flush 或清理。
 - P9 保留 selection、字体、terminal snapshot、highlight 和颜色变化的布局失效；只移除了未被 `layout_row` 消费的 composition 依赖。GUI frame-time 改善仍须通过真实长 scrollback 和高频输入验收。
+- P10 已确认中英文页面只引用已有图片，且无用户可见的旧 `docs/images/` 导航或空白占位；未被页面引用的 `docs/features/images/image.png` 按用户工作区内容保留，待其指定用途。
 
 ## 下一步
 
-- 在 100/250/500 ms RTT 的 SSH 链路上验证长 scrollback 下的快速连续输入、IME、selection、字体变更和 P8 的所有回退路径；记录输入路径的 GUI frame-time 采样。
+- 继续 P7/P8/P9 的高 RTT GUI 验收；未使用的 `docs/features/images/image.png` 仅在明确用途或删除授权后处理。
 
 ## 最后更新时间
 
-- 2026-07-18 15:48 +0800
+- 2026-07-18 22:35 +0800

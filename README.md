@@ -8,7 +8,7 @@
 [![MSRV](https://img.shields.io/badge/MSRV-1.88.0%2B-dea584?logo=rust)](https://www.rust-lang.org/)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-1f6feb)](https://github.com/xinalbert/axshell/releases/latest)
 
-![AxShell workspace preview](preview.png)
+![AxShell workspace](images/image.png)
 
 AxShell is a Rust and GPUI desktop terminal workspace for local shells, SSH, serial, and Telnet sessions, SFTP file management, and repeatable remote operations.
 

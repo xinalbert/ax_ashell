@@ -37,5 +37,3 @@ Packaging prerequisites and platform commands are documented in [Development and
 - Learn workspace controls: [Workspace](features/workspace.md)
 - Transfer remote files: [SFTP](features/sftp.md)
 - Find config and logs: [Local Data And Troubleshooting](features/local-data-troubleshooting.md)
-
-<!-- Screenshot target: images/features/getting-started-workspace.png -->

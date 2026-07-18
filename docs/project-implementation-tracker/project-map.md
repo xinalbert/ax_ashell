@@ -8,7 +8,7 @@
 ## 索引范围
 
 - 根目录：`<repo-root>`
-- 覆盖：`AGENTS.md`，`.agents/skills/`，`src/app/`，`src/session.rs`，`src/sftp/`，`src/terminal/`，`src/sync.rs`，`locales/`，`docs/`，`Cargo.toml`，`Cargo.lock`，`build.rs`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
+- 覆盖：`AGENTS.md`，`.agents/skills/`，`src/app/`，`src/session.rs`，`src/sftp/`，`src/terminal/`，`src/sync.rs`，`locales/`，`docs/`，`images/`，`Cargo.toml`，`Cargo.lock`，`build.rs`，`.github/workflows/`，`scripts/`，`assets/*.desktop`
 - 排除：`.git/`，`target/`，`assets/` 批量图标/字体资源，构建产物与外部依赖缓存
 
 ## 目录地图
@@ -48,8 +48,9 @@
 | `assets/*.desktop` | Linux desktop entry | 改应用显示名、Exec、Icon、StartupWMClass 或 Debian metadata 时 | 当前 desktop 文件为 `assets/ax_shell.desktop` |
 | `assets/icons/terminal_icon_all_formats/` | 应用图标资源目录 | 改 `build.rs` Windows icon、macOS bundle icon、Linux desktop/deb icon、非 macOS runtime window icon 或 release 打包图标路径时 | 批量图标不逐项索引；`terminal_icon_256.png` 是 `startup.rs` 非 macOS runtime window icon 的编译期资源 |
 | `README.md` / `README.zh.md` | 英文默认项目入口与中文入口 | 改项目定位、快速开始、文档入口、贡献或支持信息时 | 保持简短并在顶部互链；详细功能放入 `docs/` |
-| `docs/README.md` / `docs/README.zh.md` | 英文默认文档导航与中文文档导航 | 新增、删除、移动用户/开发/设计文档时 | 用户功能页位于 `docs/features/`，两种语言结构对齐 |
-| `docs/features/` | 按功能拆分的双语用户文档 | 改终端/SSH、串口/Telnet、工作区、SFTP、设置、内置字体、同步、代理/X11、监控或本地数据行为时 | 默认英文 `.md`，中文 `.zh.md`；`serial-telnet*.md` 说明端口参数、Telnet 边界与 SSH-only 功能；`bundled-fonts*.md` 记录内置字体上游仓库、版本、样式和授权；截图建议路径记录在各页和 `docs/images/README.md` |
+| `images/` | 根 README 的共享图片资源 | 改 README 第一屏的项目截图时 | 根 README 使用仓库相对 `images/` 路径；中英文页引用同一图片 |
+| `docs/README.md` / `docs/README.zh.md` | 英文默认文档导航与中文文档导航 | 新增、删除、移动用户/开发/设计文档时 | 用户功能页位于 `docs/features/`，两种语言结构对齐；不再维护已删除 `docs/images/` 图片说明入口 |
+| `docs/features/` / `docs/features/images/` | 按功能拆分的双语用户文档与共享截图 | 改终端/SSH、串口/Telnet、工作区、SFTP、设置、内置字体、同步、代理/X11、监控、本地数据或截图时 | 默认英文 `.md`，中文 `.zh.md`；功能截图位于 `docs/features/images/`，同一功能的双语页共用相对图片路径 |
 | `docs/` | 用户/开发文档、资源生命周期设计、环境审计和实施跟踪 | 改项目名称、配置目录、同步文件名、休眠策略、打包命令或验证边界时 | 根导航为 `docs/README*.md`；英语 `resource-lifecycle.md` 与中文 `resource-lifecycle.zh.md` 记录深睡分期与资源边界 |
 
 ## 关键文件
@@ -200,8 +201,8 @@
 ## 刷新规则
 
 - 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、同步 endpoint 安全边界、启动初始化、独立文件图标缓存、首次 SFTP 的本地图标/目录加载、内置字体 family 首次注册、local shell profile/PTY argv、Rayon worker 配置或自定义值范围、日志/crash hook、Tokio runtime 生命周期、terminal Output batching / dirty generation / `TermDamage` / snapshot / highlight cache / URL-path modifier visuals、terminal backend 类型、SSH/SFTP 主机密钥信任、SSH legacy 算法策略、SSH 本地输入 overlay 安全 gate、SSH/Serial/Telnet 会话模型和端口检测、非 SSH SFTP/监控边界、非 macOS runtime 图标资源、release workflow、CI RustSec 审计、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、内置字体 family/字重/授权/排序、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、内置 theme JSON、设置页字段分组、Settings 下拉菜单、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、系统恢复兜底/远程监控代次/SSH 健康检查、workspace page / tab 模型、Settings About 菜单入口、会话 `sftp_path` / `x11_forwarding` / `shortcut`、无凭据 session JSON 剪贴板往返、本机 X server 检测、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 递归下载/覆盖确认/传输标签面板、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`AGENTS.md`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/ci.yml`，`src/session.rs`，`src/app/actions/terminal.rs`，`src/app/lifecycle/event_loop.rs`，`src/terminal/tab.rs`，`src/terminal/element.rs`，`docs/project-env-audit/current.md`，`docs/project-implementation-tracker/research.md`
+- 最近依据：`AGENTS.md`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/ci.yml`，`README.md`，`README.zh.md`，`docs/README.md`，`docs/README.zh.md`，`docs/features/`，`docs/features/images/`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-18 15:48 +0800
+- 2026-07-18 22:35 +0800

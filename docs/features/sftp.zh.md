@@ -1,7 +1,7 @@
 [English](sftp.md) · [文档导航](../README.zh.md)
 
 # SFTP
-
+![SFTP 文件浏览器](images/image-10.png)
 ## 打开 SFTP 页面
 
 从当前 SSH 会话打开 SFTP。页面同时提供远程文件浏览、本地文件浏览和该会话的传输状态。
@@ -50,6 +50,3 @@
 传输任务支持暂停、恢复和取消。传输历史显示进行中、完成、失败和中断状态，最多保留 100 条记录。
 
 关闭 SFTP 页面会先询问已修改的受管编辑副本，随后再按已配置的确认流程处理活动传输，避免静默丢失工作。
-
-<!-- 截图目标：../images/features/sftp-browser.png -->
-<!-- 截图目标：../images/features/sftp-transfer-panel.png -->

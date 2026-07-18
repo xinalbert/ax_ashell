@@ -2,6 +2,8 @@
 
 # Monitoring And Lifecycle
 
+![Monitoring dashboard](images/image-7.png)
+
 ## Monitoring
 
 The monitoring page can display local or active-SSH system information, including CPU, memory, swap, network, disk, and platform details. Settings can show or hide monitoring and place it in the sidebar or bottom area.
@@ -24,6 +26,3 @@ After the delay, AxShell keeps only low-frequency backend event handling. Deep s
 AxShell detects a long pause in its event loop as a possible system resume. It refreshes the visible context conservatively: the current SSH terminal receives one short connection check, while idle SFTP pages reconnect only when you next refresh or use them. It does not reconnect all SSH tabs or restart SFTP transfers automatically. If an SSH session was lost, use the existing reconnect action; use `tmux` or `screen` remotely when commands must survive a disconnect.
 
 For implementation boundaries and lifecycle rationale, see [Resource Lifecycle](../resource-lifecycle.md).
-
-<!-- Screenshot target: ../images/features/monitoring-dashboard.png -->
-<!-- Screenshot target: ../images/features/monitoring-lifecycle-settings.png -->

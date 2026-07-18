@@ -6,6 +6,8 @@ AxShell can synchronize saved SSH sessions and group assignments through WebDAV 
 
 ## Supported Backends
 
+![Configuration sync settings](images/image-6.png)
+
 - WebDAV endpoint and username
 - S3-compatible endpoint, region, bucket, and object key
 
@@ -30,6 +32,3 @@ ax_shell-sync.json
 - Download decrypts the remote payload and replaces the local saved-session list and group assignments.
 - Verify the selected endpoint and encryption password before downloading because the operation replaces local session data.
 - HTTP endpoints and oversized responses are rejected before any synchronized session data is applied.
-
-<!-- Screenshot target: ../images/features/configuration-sync-webdav.png -->
-<!-- Screenshot target: ../images/features/configuration-sync-s3.png -->

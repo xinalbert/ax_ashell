@@ -2,6 +2,8 @@
 
 # Workspace
 
+![Workspace tabs and panes](images/image-12.png)
+
 ## Tabs And Panes
 
 AxShell can keep local terminals, SSH terminals, SFTP pages, monitoring, and settings in one workspace.
@@ -57,6 +59,3 @@ When the terminal itself has focus, these additional bindings are available:
 All workspace and terminal-focus bindings can be changed in **Key Bindings** settings.
 
 Saved SSH sessions can also have individual connection shortcuts in their edit form. Those shortcuts work from the terminal and SFTP workspace, and must not conflict with the configured bindings above.
-
-<!-- Screenshot target: ../images/features/workspace-tabs-panes.png -->
-<!-- Screenshot target: ../images/features/workspace-keybindings.png -->

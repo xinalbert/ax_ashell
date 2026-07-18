@@ -2,6 +2,8 @@
 
 # Proxy And X11
 
+![Proxy and X11 settings](images/image-8.png)
+
 ## Proxy Priority
 
 SSH and SFTP connections can use:
@@ -94,5 +96,3 @@ ldd ./ax_shell | grep "not found"
 ```
 
 No output means the dynamic linker found the required runtime libraries. If other libraries are still listed as `not found`, install the matching Ubuntu runtime packages before starting AxShell.
-
-<!-- Screenshot target: ../images/features/proxy-x11-settings.png -->
