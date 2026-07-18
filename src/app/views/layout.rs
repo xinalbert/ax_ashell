@@ -63,6 +63,11 @@ impl Render for AxShell {
             && self.active_title_bar_style == crate::config::TitleBarStyle::Native
             && matches!(window.window_decorations(), Decorations::Client { .. });
         let sftp_context_remote_ready = self.active_sftp().is_some();
+        let connection_progress = self
+            .active_dialog
+            .is_none()
+            .then(|| self.connection_progress.clone())
+            .flatten();
 
         let body_panel = v_flex()
             .size_full()
@@ -487,7 +492,6 @@ impl Render for AxShell {
             .child(
                 div().flex_1().min_h_0().child(workspace),
             )
-            .children(Root::render_dialog_layer(window, cx))
             .children(Root::render_sheet_layer(window, cx))
             .when_some(self.sftp_context_menu.clone(), |this, menu| {
                 let menu_hover_tokens = fast_hover_tokens(cx);
@@ -1199,7 +1203,7 @@ impl Render for AxShell {
                         ),
                 )
             })
-            .when_some(self.connection_progress.clone(), |this, progress| {
+            .when_some(connection_progress, |this, progress| {
                 this.child(
                     div()
                         .absolute()
@@ -1331,6 +1335,7 @@ impl Render for AxShell {
                         ),
                 )
             })
+            .children(Root::render_dialog_layer(window, cx))
             .on_prepaint({
                 let view = cx.entity().clone();
                 move |_, window, cx| {
