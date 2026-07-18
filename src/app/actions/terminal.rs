@@ -18,6 +18,12 @@ thread_local! {
     static LAST_DRAG_SCROLL: std::cell::Cell<Option<std::time::Instant>> = std::cell::Cell::new(None);
 }
 
+enum LocalInputOutcome {
+    Handled,
+    Submit(Vec<u8>),
+    Passthrough,
+}
+
 impl AxShell {
     fn set_terminal_link_activation_modifier(
         &mut self,
@@ -228,7 +234,11 @@ impl AxShell {
                     && !event.keystroke.modifiers.function
                     && !event.keystroke.modifiers.platform
                 {
-                    self.send_terminal_input(text.as_bytes().to_vec(), window, cx);
+                    if event.keystroke.modifiers.alt {
+                        self.send_terminal_input_direct(text.as_bytes().to_vec(), window, cx);
+                    } else {
+                        self.send_terminal_input(text.as_bytes().to_vec(), window, cx);
+                    }
                 }
             }
             return;
@@ -478,6 +488,25 @@ impl AxShell {
     }
 
     fn send_terminal_input(&mut self, bytes: Vec<u8>, window: &mut Window, cx: &mut Context<Self>) {
+        self.send_terminal_input_with_overlay(bytes, true, window, cx);
+    }
+
+    fn send_terminal_input_direct(
+        &mut self,
+        bytes: Vec<u8>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.send_terminal_input_with_overlay(bytes, false, window, cx);
+    }
+
+    fn send_terminal_input_with_overlay(
+        &mut self,
+        bytes: Vec<u8>,
+        allow_local_overlay: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
@@ -487,16 +516,45 @@ impl AxShell {
             return;
         }
         self.clear_terminal_marked_text(window, cx);
-        {
+        let local_input_anchor = {
             let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
                 return;
             };
-
-            if tab.display_offset() > 0 {
+            let was_scrolled = tab.display_offset() > 0;
+            if was_scrolled {
                 tab.scroll_to_bottom();
             }
-        }
+            (allow_local_overlay && !was_scrolled)
+                .then(|| tab.local_input_overlay_anchor())
+                .flatten()
+        };
         self.clear_terminal_selection_for_tab(&active_id);
+
+        if allow_local_overlay {
+            match self.handle_local_input(&active_id, &bytes, local_input_anchor) {
+                LocalInputOutcome::Handled => {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
+                LocalInputOutcome::Submit(bytes) => {
+                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
+                        tab.send_user_input(bytes);
+                    }
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
+                LocalInputOutcome::Passthrough => {
+                    self.flush_local_input_buffer_for_tab(&active_id);
+                }
+            }
+        } else {
+            self.flush_local_input_buffer_for_tab(&active_id);
+        }
+
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
             return;
         };
@@ -504,6 +562,107 @@ impl AxShell {
         window.prevent_default();
         cx.stop_propagation();
         cx.notify();
+    }
+
+    fn handle_local_input(
+        &mut self,
+        tab_id: &str,
+        bytes: &[u8],
+        anchor: Option<(usize, usize, usize)>,
+    ) -> LocalInputOutcome {
+        if self
+            .local_input_buffer
+            .as_ref()
+            .is_some_and(|buffer| buffer.tab_id == tab_id)
+        {
+            let mut clear_buffer = false;
+            let outcome = {
+                let buffer = self
+                    .local_input_buffer
+                    .as_mut()
+                    .expect("matching local input buffer exists");
+                if buffer.awaiting_remote_output {
+                    clear_buffer = true;
+                    LocalInputOutcome::Passthrough
+                } else if bytes == b"\r" {
+                    buffer
+                        .submit()
+                        .map(LocalInputOutcome::Submit)
+                        .unwrap_or(LocalInputOutcome::Passthrough)
+                } else if bytes == b"\x7f" {
+                    buffer.backspace();
+                    LocalInputOutcome::Handled
+                } else if matches!(bytes, b"\x1b[D" | b"\x1bOD") {
+                    buffer.move_left();
+                    LocalInputOutcome::Handled
+                } else if matches!(bytes, b"\x1b[C" | b"\x1bOC") {
+                    buffer.move_right();
+                    LocalInputOutcome::Handled
+                } else if let Ok(text) = std::str::from_utf8(bytes)
+                    && buffer.insert_ascii(text)
+                {
+                    LocalInputOutcome::Handled
+                } else {
+                    LocalInputOutcome::Passthrough
+                }
+            };
+            if clear_buffer {
+                self.local_input_buffer = None;
+            }
+            return outcome;
+        }
+
+        let Some((anchor_row, anchor_col, max_columns)) = anchor else {
+            return LocalInputOutcome::Passthrough;
+        };
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return LocalInputOutcome::Passthrough;
+        };
+        let mut buffer = crate::app::LocalInputBuffer::new(
+            tab_id.to_string(),
+            anchor_row,
+            anchor_col,
+            max_columns,
+        );
+        if !buffer.insert_ascii(text) {
+            return LocalInputOutcome::Passthrough;
+        }
+        self.local_input_buffer = Some(buffer);
+        LocalInputOutcome::Handled
+    }
+
+    pub(crate) fn clear_local_input_buffer_for_tab(&mut self, tab_id: &str) -> bool {
+        if self
+            .local_input_buffer
+            .as_ref()
+            .is_some_and(|buffer| buffer.tab_id == tab_id)
+        {
+            self.local_input_buffer = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn flush_local_input_buffer_for_tab(&mut self, tab_id: &str) -> bool {
+        if !self
+            .local_input_buffer
+            .as_ref()
+            .is_some_and(|buffer| buffer.tab_id == tab_id)
+        {
+            return false;
+        }
+        let buffer = self
+            .local_input_buffer
+            .take()
+            .expect("matching local input buffer exists");
+
+        if !buffer.awaiting_remote_output && !buffer.text.is_empty() {
+            if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id) {
+                tab.send_user_input(buffer.text.into_bytes());
+            }
+        }
+        true
     }
 
     pub(crate) fn active_terminal_selection_text(&self) -> Option<String> {
@@ -553,6 +712,7 @@ impl AxShell {
             }
             return;
         }
+        self.flush_local_input_buffer_for_tab(&active_id);
         {
             let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
                 return;
@@ -585,10 +745,27 @@ impl AxShell {
     }
 
     pub(crate) fn terminal_composition_for_tab(&self, tab_id: &str) -> Option<TerminalComposition> {
-        self.terminal_composition
+        if let Some(composition) = self
+            .terminal_composition
             .as_ref()
             .filter(|composition| composition.tab_id == tab_id && !composition.text.is_empty())
             .cloned()
+        {
+            return Some(composition);
+        }
+
+        self.local_input_buffer
+            .as_ref()
+            .filter(|buffer| buffer.tab_id == tab_id && !buffer.text.is_empty())
+            .map(|buffer| TerminalComposition {
+                tab_id: buffer.tab_id.clone(),
+                text: buffer.text.clone(),
+                selected_range_utf16: None,
+                cursor_utf16: (!buffer.awaiting_remote_output).then_some(buffer.cursor),
+                underline: false,
+                anchor_row: buffer.anchor_row,
+                anchor_col: buffer.anchor_col,
+            })
     }
 
     pub(crate) fn terminal_frozen_selection_for_tab(
@@ -625,6 +802,8 @@ impl AxShell {
             return;
         };
 
+        self.flush_local_input_buffer_for_tab(&active_id);
+
         if text.is_empty() {
             self.clear_terminal_marked_text(window, cx);
             return;
@@ -645,6 +824,8 @@ impl AxShell {
             tab_id: active_id,
             text,
             selected_range_utf16,
+            cursor_utf16: None,
+            underline: true,
             anchor_row,
             anchor_col,
         });
@@ -689,6 +870,7 @@ impl AxShell {
             }
         }
         self.clear_terminal_selection_for_tab(&active_id);
+        self.flush_local_input_buffer_for_tab(&active_id);
         self.terminal_composition = None;
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) else {
             return;
@@ -753,6 +935,7 @@ impl AxShell {
         let Some(active_id) = self.active_tab.clone() else {
             return;
         };
+        self.flush_local_input_buffer_for_tab(&active_id);
         if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == active_id) {
             tab.begin_selection(row, col, side, selection_type);
             self.terminal_selecting = true;
@@ -937,6 +1120,9 @@ impl AxShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(active_id) = self.active_tab.clone() {
+            self.flush_local_input_buffer_for_tab(&active_id);
+        }
         // Cmd on macOS, Ctrl on Windows/Linux + scroll → zoom terminal font size.
         if event.modifiers.secondary() {
             let delta = match event.delta {

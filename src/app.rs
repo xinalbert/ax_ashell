@@ -52,7 +52,7 @@ pub(crate) use sftp::{
     SftpTransferTab, SftpUiState, SortDirection,
 };
 pub(crate) use terminal::{
-    HoverTargetKind, HoveredUrl, TerminalFontMetrics, TerminalScrollbarHandle,
+    HoverTargetKind, HoveredUrl, LocalInputBuffer, TerminalFontMetrics, TerminalScrollbarHandle,
     terminal_link_activation_modifier_pressed, terminal_link_visual_active,
 };
 pub(crate) use workspace::{TabGroup, WorkspacePage, workspace_group_tab_label};
@@ -134,6 +134,7 @@ pub(crate) struct AxShell {
     pub(crate) available_serial_ports: Vec<String>,
     pub(crate) session_x11_forwarding: bool,
     pub(crate) session_legacy_ssh_compatibility: bool,
+    pub(crate) session_local_input_optimization: bool,
     pub(crate) ssh_advanced_options_visible: bool,
     pub(crate) session_shortcut: String,
     pub(crate) recording_session_shortcut: bool,
@@ -235,6 +236,7 @@ pub(crate) struct AxShell {
     pub(crate) dragging_splitter: Option<(Vec<usize>, usize)>, // (parent_path, child_index)
     pub(crate) drag_split_origin: Option<gpui::Point<Pixels>>,
     pub(crate) terminal_composition: Option<TerminalComposition>,
+    pub(crate) local_input_buffer: Option<LocalInputBuffer>,
     pub(crate) terminal_frozen_selection: Option<TerminalFrozenSelection>,
     pub(crate) sidebar_collapsed: bool,
     pub(crate) collapsed_saved_scroll_handle: UniformListScrollHandle,

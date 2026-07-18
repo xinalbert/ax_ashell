@@ -101,6 +101,8 @@ pub(crate) struct Session {
     pub(crate) last_used: Option<String>,
     #[serde(default)]
     pub(crate) legacy_ssh_compatibility: bool,
+    #[serde(default)]
+    pub(crate) local_input_optimization: bool,
     #[serde(default = "default_global_proxy_type")]
     pub(crate) proxy_type: String,
     #[serde(default)]
@@ -149,6 +151,7 @@ impl Session {
             passphrase: String::new(),
             last_used: None,
             legacy_ssh_compatibility: false,
+            local_input_optimization: false,
             proxy_type: "none".to_string(),
             proxy_host: String::new(),
             proxy_port: None,
@@ -190,6 +193,7 @@ impl Session {
             passphrase,
             last_used: None,
             legacy_ssh_compatibility: false,
+            local_input_optimization: false,
             proxy_type: "none".to_string(),
             proxy_host: String::new(),
             proxy_port: None,
@@ -224,6 +228,7 @@ impl Session {
             passphrase: String::new(),
             last_used: None,
             legacy_ssh_compatibility: false,
+            local_input_optimization: false,
             proxy_type: "none".to_string(),
             proxy_host: String::new(),
             proxy_port: None,
@@ -301,6 +306,10 @@ mod tests {
         value
             .as_object_mut()
             .expect("session is an object")
+            .remove("local_input_optimization");
+        value
+            .as_object_mut()
+            .expect("session is an object")
             .remove("baud_rate");
         value.as_object_mut().expect("session is an object").insert(
             "last_successful_ssh_mode".to_string(),
@@ -316,6 +325,7 @@ mod tests {
         assert_eq!(session.kind, SessionKind::Ssh);
         assert_eq!(session.baud_rate, 115_200);
         assert!(!session.legacy_ssh_compatibility);
+        assert!(!session.local_input_optimization);
         let serialized = serde_json::to_value(session).expect("session should serialize");
         assert!(serialized.get("last_successful_ssh_mode").is_none());
     }

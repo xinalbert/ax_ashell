@@ -288,6 +288,14 @@ impl AxShell {
             .filter(|id| !id.is_empty())
             .map(str::to_string)
             .collect::<HashSet<_>>();
+        if let Some(tab_id) = self
+            .local_input_buffer
+            .as_ref()
+            .map(|buffer| buffer.tab_id.clone())
+            .filter(|tab_id| tab_ids.contains(tab_id))
+        {
+            self.flush_local_input_buffer_for_tab(&tab_id);
+        }
         let all_tabs = std::mem::take(&mut self.tabs);
         let (tabs, remaining_tabs): (Vec<_>, Vec<_>) = all_tabs
             .into_iter()
@@ -680,6 +688,7 @@ impl AxShell {
             session.sftp_path = sftp_path;
             session.x11_forwarding = self.session_x11_forwarding;
             session.legacy_ssh_compatibility = self.session_legacy_ssh_compatibility;
+            session.local_input_optimization = self.session_local_input_optimization;
         }
         if kind == SessionKind::Serial {
             session.data_bits = self
@@ -783,6 +792,7 @@ impl AxShell {
         Self::set_input_value(&self.serial_flow_control_input, "none", window, cx);
         self.session_x11_forwarding = true;
         self.session_legacy_ssh_compatibility = false;
+        self.session_local_input_optimization = false;
     }
 
     pub(crate) fn load_session_into_form(
@@ -899,11 +909,13 @@ impl AxShell {
         );
         self.session_x11_forwarding = session.x11_forwarding;
         self.session_legacy_ssh_compatibility = session.legacy_ssh_compatibility;
+        self.session_local_input_optimization = session.local_input_optimization;
         self.ssh_advanced_options_visible = session.proxy_type != "none"
             || !session.sftp_path.trim().is_empty()
             || !session.shortcut.trim().is_empty()
             || !session.x11_forwarding
-            || session.legacy_ssh_compatibility;
+            || session.legacy_ssh_compatibility
+            || session.local_input_optimization;
         self.recording_session_shortcut = false;
         self.session_shortcut_error = None;
         self.session_import_error = None;
@@ -1813,6 +1825,7 @@ impl AxShell {
     fn clear_tab_ui_state(&mut self, tab_id: &str) {
         self.terminal_scrollbars.remove(tab_id);
         self.terminal_bounds.remove(tab_id);
+        self.clear_local_input_buffer_for_tab(tab_id);
 
         if self
             .hovered_url

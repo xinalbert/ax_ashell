@@ -416,6 +416,7 @@ impl AxShell {
                         }
                         BackendEvent::Connected { tab_id } => {
                             result.ui_changed = true;
+                            self.clear_local_input_buffer_for_tab(&tab_id);
                             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                                 tab.backend_initialized = true;
                                 tab.connected = true;
@@ -769,6 +770,7 @@ impl AxShell {
                         }
                         BackendEvent::Closed { tab_id, reason } => {
                             result.ui_changed = true;
+                            self.clear_local_input_buffer_for_tab(&tab_id);
                             self.monitoring.invalidate_remote_samples();
                             let is_stale =
                                 self.tabs
@@ -1036,6 +1038,7 @@ impl AxShell {
         result: &mut DrainResult,
     ) {
         for (tab_id, bytes) in terminal_output.take() {
+            self.flush_local_input_buffer_for_tab(&tab_id);
             if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id) {
                 tab.backend_initialized = true;
                 result.terminal_changed |= tab.feed(&bytes);

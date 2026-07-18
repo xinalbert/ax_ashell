@@ -953,11 +953,13 @@ impl TerminalElement {
         );
 
         let mut base_style = self.base_text_style(cx);
-        base_style.underline = Some(UnderlineStyle {
-            color: Some(base_style.color),
-            thickness: px(1.0),
-            wavy: false,
-        });
+        if composition.underline {
+            base_style.underline = Some(UnderlineStyle {
+                color: Some(base_style.color),
+                thickness: px(1.0),
+                wavy: false,
+            });
+        }
 
         let selected_bytes = composition_selected_byte_range(
             &composition.text,
@@ -1040,6 +1042,17 @@ impl TerminalElement {
                 cx,
             )
             .ok();
+
+        if let Some(cursor_utf16) = composition.cursor_utf16 {
+            let cursor_utf16 = cursor_utf16.min(composition.text.encode_utf16().count());
+            window.paint_quad(fill(
+                Bounds::new(
+                    point(pos.x + metrics.cell_width * cursor_utf16 as f32, pos.y),
+                    gpui::size(px(2.), metrics.line_height),
+                ),
+                base_style.color,
+            ));
+        }
     }
 }
 
@@ -1778,6 +1791,8 @@ mod tests {
                 tab_id: "tab".to_string(),
                 text: "ime".to_string(),
                 selected_range_utf16: Some(0..1),
+                cursor_utf16: None,
+                underline: true,
                 anchor_row: 1,
                 anchor_col: 2,
             }),

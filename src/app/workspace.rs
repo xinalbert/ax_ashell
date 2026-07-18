@@ -888,6 +888,7 @@ impl AxShell {
     }
 
     pub(crate) fn feed_terminal_tab_bytes(&mut self, tab_id: &str, bytes: &[u8]) -> bool {
+        self.flush_local_input_buffer_for_tab(tab_id);
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id) else {
             return false;
         };

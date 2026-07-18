@@ -295,6 +295,8 @@ pub struct TerminalComposition {
     pub tab_id: String,
     pub text: String,
     pub selected_range_utf16: Option<Range<usize>>,
+    pub cursor_utf16: Option<usize>,
+    pub underline: bool,
     pub anchor_row: usize,
     pub anchor_col: usize,
 }
@@ -562,6 +564,29 @@ impl TerminalTab {
 
     pub fn app_cursor_mode(&self) -> bool {
         self.term.mode().contains(TermMode::APP_CURSOR)
+    }
+
+    /// Returns a stable anchor for the narrow local input overlay mode.
+    ///
+    /// The overlay deliberately stays outside `Term`: it is only safe while a
+    /// user-selected SSH session is at the live primary-screen cursor with
+    /// room remaining on the row.
+    pub fn local_input_overlay_anchor(&self) -> Option<(usize, usize, usize)> {
+        if self.kind != TabKind::Ssh
+            || !self.connected
+            || !self
+                .session
+                .as_ref()
+                .is_some_and(|session| session.local_input_optimization)
+            || self.display_offset() != 0
+            || self.term.mode().contains(TermMode::ALT_SCREEN)
+        {
+            return None;
+        }
+
+        let cursor = self.cursor_state()?;
+        let max_columns = (self.cols as usize).saturating_sub(cursor.col.saturating_add(1));
+        (max_columns > 0).then_some((cursor.row, cursor.col, max_columns))
     }
 
     pub fn mouse_tracking_mode(&self) -> TerminalMouseTrackingMode {
@@ -1114,6 +1139,7 @@ mod tests {
 
     use crate::{
         events::backend_event_channel,
+        session::Session,
         terminal::{BackendShutdown, BackendTx},
     };
 
@@ -1225,6 +1251,31 @@ mod tests {
 
         assert!(!tab.term.mode().contains(TermMode::ALT_SCREEN));
         assert_eq!(row_text(&tab, 0), "primary     ");
+    }
+
+    #[test]
+    fn local_input_overlay_requires_opt_in_and_primary_screen() {
+        let (commands, _commands_rx) = mpsc::channel();
+        let backend = BackendTx::Local {
+            commands,
+            shutdown: Arc::new(NoopShutdown),
+        };
+        let (events, _events_rx) = backend_event_channel();
+        let mut session =
+            Session::password("example.com".into(), 22, "root".into(), "password".into());
+        let mut tab = TerminalTab::new_ssh("ssh-tab".into(), &session, backend, events);
+        tab.resize(8, 4);
+        tab.connected = true;
+
+        assert_eq!(tab.local_input_overlay_anchor(), None);
+
+        session.local_input_optimization = true;
+        tab.session = Some(session);
+        assert_eq!(tab.local_input_overlay_anchor(), Some((0, 0, 7)));
+
+        tab.feed(b"\x1b[?1049h");
+        assert!(tab.term.mode().contains(TermMode::ALT_SCREEN));
+        assert_eq!(tab.local_input_overlay_anchor(), None);
     }
 
     #[test]

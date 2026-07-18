@@ -90,6 +90,8 @@ impl AxShell {
                         let session_x11_forwarding = shell.session_x11_forwarding;
                         let session_legacy_ssh_compatibility =
                             shell.session_legacy_ssh_compatibility;
+                        let session_local_input_optimization =
+                            shell.session_local_input_optimization;
                         let recording_session_shortcut = shell.recording_session_shortcut;
                         let session_shortcut = shell.session_shortcut.clone();
                         let session_shortcut_error = shell.session_shortcut_error.clone();
@@ -770,6 +772,45 @@ impl AxShell {
                                                                     .child(
                                                                         t!(
                                                                             "legacy_ssh_compatibility_hint"
+                                                                        )
+                                                                        .to_string(),
+                                                                    ),
+                                                            ),
+                                                    )
+                                                    .child(
+                                                        v_flex()
+                                                            .gap_1()
+                                                            .child(
+                                                                Checkbox::new(
+                                                                    "ssh-session-local-input-optimization",
+                                                                )
+                                                                .checked(
+                                                                    session_local_input_optimization,
+                                                                )
+                                                                .label(
+                                                                    t!(
+                                                                        "local_input_optimization"
+                                                                    )
+                                                                    .to_string(),
+                                                                )
+                                                                .on_click(window.listener_for(
+                                                                    &view,
+                                                                    |this, checked, _, cx| {
+                                                                        this.session_local_input_optimization =
+                                                                            *checked;
+                                                                        cx.notify();
+                                                                    },
+                                                                )),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .text_xs()
+                                                                    .text_color(
+                                                                        cx.theme().muted_foreground,
+                                                                    )
+                                                                    .child(
+                                                                        t!(
+                                                                            "local_input_optimization_hint"
                                                                         )
                                                                         .to_string(),
                                                                     ),

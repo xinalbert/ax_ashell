@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：分阶段改善高 RTT SSH 会话的输入体验；本阶段先建立不含按键内容的输入反馈延迟基线。
-- 交付物：每个 SSH tab 的匿名输入到首个远端输出计时与聚合状态、超时回收、单元测试和诊断记录；后续阶段才加入提示符感知的本地输入 overlay。
+- 目标：分阶段改善高 RTT SSH 会话的输入体验；本阶段实现默认关闭、可随 SSH 会话保存的保守本地输入 overlay。
+- 交付物：会话级显式开关、单行 ASCII 输入/退格/左右键的本地预测层、Enter 后的远端确认清理、不可预测输入的有序直通回退和单元测试。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/actions/terminal.rs`、`src/terminal/tab.rs`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：改变 SSH 协议或引入 Mosh 服务端、直接修改已确认终端 buffer、默认开启本地回显、Telnet/串口输入优化、保存或记录按键内容。
+- 当前范围：`src/session.rs`、`src/app.rs`、`src/app/terminal.rs`、`src/app/actions/terminal.rs`、`src/app/actions/session.rs`、`src/app/dialogs/ssh.rs`、`src/app/lifecycle/event_loop.rs`、`src/app/workspace.rs`、`src/app/lifecycle/init.rs`、`src/terminal/tab.rs`、`src/terminal/element.rs`、`locales/`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：改变 SSH 协议或引入 Mosh 服务端、自动识别所有 shell prompt、直接修改已确认终端 buffer、默认开启本地回显、中文/其他 IME、粘贴、Tab/Ctrl/Alt 等复杂输入的预测，以及 Telnet/串口输入优化。
 
 ## 当前状态
 
@@ -29,6 +29,7 @@
 | P5 | completed | 更新双语安全行为文档、环境/实施记录并完成收口验证 | tracking validator；`git diff --check`；完整 `cargo test --quiet` | 自动化收口完成，保留实机验收清单 |
 | P6 | completed | 修复主机密钥确认框与连接进度遮罩的层级和点击冲突 | `rustfmt`；`cargo check`；`cargo test --quiet`；真实首次连接确认点击 | 主机密钥确认是唯一可交互模态；等待确认时不显示连接进度遮罩 |
 | P7 | completed | 建立 SSH 输入到远端输出的匿名反馈延迟基线 | `TerminalTab` 单元测试；`cargo check`；`cargo test --quiet` | 仅记录时间与聚合值；不记录按键内容，不改变 backend 写入顺序 |
+| P8 | completed | 默认关闭的 SSH 会话级本地输入 overlay | 定向单元测试；`rustfmt`；`cargo check`；`cargo test --quiet`；`git diff --check` | 仅主屏、底部、已连接 SSH；不支持的输入先按顺序 flush 再直通 |
 
 ## 已完成
 
@@ -41,11 +42,12 @@
 - P6 已完成：对话框层移到所有应用内遮罩之后；存在活动对话框时不渲染连接进度遮罩，因此主机密钥确认成为唯一可见、可点击的模态交互。
 - P7 已完成方案研究：`xiaoxingshell` 使用提示符感知的本地行缓冲和远端回显去重；Mosh 使用有 ACK/过期语义的预测 overlay。两者均表明预测层必须与确认终端状态分离，本项目先测量现有 SSH 输入反馈再修改交互语义。
 - P7 已完成实现：SSH 键盘和 IME 输入会启动匿名反馈样本，首个后续输出更新最近值与平均值；连续输入合并为一个样本，30 秒无反馈的样本被丢弃，重连时清空待确认状态。日志不含按键或远端输出内容。
+- P8 已完成：SSH 高级选项新增默认关闭的会话级开关。启用后，`LocalInputBuffer` 只在已连接 SSH 主屏、滚动到底部和可见 cursor 时预测单行 ASCII、退格和左右键；Enter 发送整行并等待首个远端输出清理。粘贴、IME、Tab/Ctrl/Alt、鼠标选择、滚动和工作区迁移会先 flush；未提交行遇异步输出也会先发送，避免输入丢失。预测层不写入 Alacritty 确认 buffer。
 
 ## 验证
 
-- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；各步骤的 `cargo check`；RustSec 缓存数据库下的 CI 等效命令与 CI YAML 解析；完整 `cargo test --quiet`（235 passed）。
-- 未完成：100/250/500 ms RTT SSH 服务上的 P7 手工采样；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
+- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8 完整 `cargo test --quiet`（238 passed）、`rustfmt`、`git diff --check` 和 tracking docs validator。
+- 未完成：100/250/500 ms RTT SSH 服务上的 P7/P8 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
 
 ## 风险与阻塞
 
@@ -55,11 +57,13 @@
 - RustSec 仍报告 `rsa` 和 `quick-xml` 的已知公告，但 CI 只暂缓无可用兼容修复的三个公告 ID；任何新的漏洞公告仍会使 CI 失败。
 - 主机密钥确认必须保留明确的“拒绝/信任”选择；问题在于两个模态层同时存在而非确认本身多余。
 - 远端输出不保证是对输入的逐字回显；P7 仅测量从本地输入到首个后续远端输出的反馈时间，不能把它作为严格网络 RTT。对无输出或全屏应用必须超时清理，不能阻塞输入。
+- P8 不自动识别 shell prompt，因此用户只能在普通、单行 shell 提示符处启用；密码提示、REPL、文本编辑器和全屏程序必须依赖回退路径，不能承诺预测显示正确。
+- P8 仍不能把首个远端输出当作逐字回显确认；它只把该输出作为显示层失效信号。用户输入内容不会进入日志或 metrics，但会在启用模式下短暂保留于进程内内存，直至提交、flush 或清理。
 
 ## 下一步
 
-- 在 100/250/500 ms RTT 的 SSH 链路上采集匿名反馈延迟，确认超时、无回显和快速连续输入不会积压状态；随后开始 P8，实现默认关闭、仅普通 shell 提示符可用的本地输入 overlay；并继续完成既有 SSH/SFTP、同步和 CI 实机验收。
+- 在 100/250/500 ms RTT 的 SSH 链路上验证普通 shell、无回显、快速连续输入、异步输出、粘贴、IME、Alt/Tab/Ctrl、全屏程序、滚动历史、工作区迁移与重连退回路径；根据实测决定是否进入 P9（提示符识别或更严格的确认策略），并继续完成既有 SSH/SFTP、同步和 CI 实机验收。
 
 ## 最后更新时间
 
-- 2026-07-18 14:44 +0800
+- 2026-07-18 15:10 +0800

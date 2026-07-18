@@ -2469,3 +2469,19 @@
 - 更新后的命令或环境：CI 额外运行 `cargo install cargo-audit --locked` 与带三个明确 RustSec 暂缓 ID 的 `cargo audit --file Cargo.lock`。本地使用临时 `cargo-audit` 的 `--no-fetch --stale` 等效命令复测；其余验证继续使用 `rustfmt`、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking validator。
 - 验证结果：`cargo check`、定向主机密钥/legacy/sync 测试、完整 `cargo test --quiet`（232 passed）、CI YAML 解析和 RustSec 等效命令均通过；保留既有 `block v0.1.6` future-incompat warning。RustSec 输出保留 8 条 informational warnings，以及暂缓的无补丁/上游受限公告。
 - 风险/待办：GitHub CI 尚未实跑。仍须在 macOS、Windows、Linux 连接真实 SSH/SFTP 服务，验证首次信任、密钥失配、拒绝、超时和显式 legacy；以 HTTPS WebDAV/S3 与 HTTP/超限响应服务验证同步边界。
+
+## 2026-07-18 P8 高 RTT SSH 输入 overlay 施工前预检
+
+- 时间：2026-07-18 14:54 +0800
+- 变化摘要：运行环境、MSRV、Cargo 依赖图和五平台 CI 未变；当前施工范围切换为默认关闭的 SSH 会话级本地输入 overlay。现有终端输入经 `BackendCommand::Input`，远端输出由 event loop 批处理后进入 `TerminalTab::feed`，可在两者之间外置短暂预测状态，不修改 Alacritty 已确认 buffer。
+- 受影响文件：`src/session.rs`，`src/app.rs`，`src/app/terminal.rs`，`src/app/actions/terminal.rs`，`src/app/actions/session.rs`，`src/app/dialogs/ssh.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/workspace.rs`，`src/app/lifecycle/init.rs`，`src/terminal/tab.rs`，`src/terminal/element.rs`，`locales/`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo，`rustc 1.96.1` / `cargo 1.96.1` 满足 `rust-version = 1.88.0`；计划运行受影响 Rust 文件的 `rustfmt --edition 2024`、定向单元测试、`cargo check`、`cargo test --quiet`、`git diff --check` 和 tracking docs validator。不新增依赖，不修改 `Cargo.toml` / `Cargo.lock`，不联网或使用多 agent。
+- 验证结果：确认 session serde 具备默认值兼容模式，SSH 高级表单已有会话级开关范式，terminal 具备可见 cursor/display offset/alternate screen gate，IME 与粘贴各有独立直通路径。真实 SSH、RTT 注入和 GUI 交互须在自动化验证后手工验收。
+
+## 2026-07-18 P8 高 RTT SSH 输入 overlay 完成验证
+
+- 时间：2026-07-18 15:10 +0800
+- 变化摘要：新增会话级默认关闭的高 RTT 本地输入开关和纯前端 `LocalInputBuffer`；只在显式 opt-in 的 SSH 主屏、实时底部和可见 cursor 上预测单行 ASCII、退格和左右键。Enter 提交整行后等待远端输出；粘贴、IME、Tab/Ctrl/Alt、选择、滚动和工作区迁移有序 flush，未提交行遇异步输出也会先发送以避免数据丢失。确认 terminal buffer、依赖、manifest/lock 与 CI 均未改动。
+- 受影响文件：`src/session.rs`，`src/app.rs`，`src/app/terminal.rs`，`src/app/actions/terminal.rs`，`src/app/actions/session.rs`，`src/app/dialogs/ssh.rs`，`src/app/lifecycle/event_loop.rs`，`src/app/workspace.rs`，`src/app/lifecycle/init.rs`，`src/terminal/tab.rs`，`src/terminal/element.rs`，`locales/`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo，未新增依赖或外部服务；已执行受影响 Rust 文件的 `rustfmt --edition 2024`、`cargo check`、`cargo test --quiet local_input`、`cargo test --quiet input_feedback`、session/gate 定向测试、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator。
+- 验证结果：`cargo check` 通过；定向测试共 8 项通过；完整 `cargo test --quiet` 238 项通过；仅保留既有依赖 `block v0.1.6` future-incompat warning。真实 SSH、100/250/500 ms RTT 注入、IME、全屏程序和三平台 GUI 仍需手工验收。

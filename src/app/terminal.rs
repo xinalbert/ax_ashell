@@ -30,6 +30,85 @@ impl TerminalFontMetrics {
     }
 }
 
+/// Short-lived local input kept outside the confirmed terminal buffer.
+///
+/// This is intentionally limited to printable ASCII on one terminal row. The
+/// caller sends it to the remote backend only when the user submits or leaves
+/// the supported input path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct LocalInputBuffer {
+    pub(crate) tab_id: String,
+    pub(crate) text: String,
+    pub(crate) cursor: usize,
+    pub(crate) anchor_row: usize,
+    pub(crate) anchor_col: usize,
+    max_columns: usize,
+    pub(crate) awaiting_remote_output: bool,
+}
+
+impl LocalInputBuffer {
+    pub(crate) fn new(
+        tab_id: String,
+        anchor_row: usize,
+        anchor_col: usize,
+        max_columns: usize,
+    ) -> Self {
+        Self {
+            tab_id,
+            text: String::new(),
+            cursor: 0,
+            anchor_row,
+            anchor_col,
+            max_columns,
+            awaiting_remote_output: false,
+        }
+    }
+
+    pub(crate) fn insert_ascii(&mut self, text: &str) -> bool {
+        if self.awaiting_remote_output
+            || text.is_empty()
+            || !text.bytes().all(|byte| (b' '..=b'~').contains(&byte))
+            || self.text.len().saturating_add(text.len()) > self.max_columns
+        {
+            return false;
+        }
+
+        self.text.insert_str(self.cursor, text);
+        self.cursor += text.len();
+        true
+    }
+
+    pub(crate) fn backspace(&mut self) {
+        if !self.awaiting_remote_output && self.cursor > 0 {
+            self.cursor -= 1;
+            self.text.remove(self.cursor);
+        }
+    }
+
+    pub(crate) fn move_left(&mut self) {
+        if !self.awaiting_remote_output {
+            self.cursor = self.cursor.saturating_sub(1);
+        }
+    }
+
+    pub(crate) fn move_right(&mut self) {
+        if !self.awaiting_remote_output {
+            self.cursor = (self.cursor + 1).min(self.text.len());
+        }
+    }
+
+    pub(crate) fn submit(&mut self) -> Option<Vec<u8>> {
+        if self.awaiting_remote_output || self.text.is_empty() {
+            return None;
+        }
+
+        self.awaiting_remote_output = true;
+        let mut bytes = self.text.as_bytes().to_vec();
+        bytes.push(b'\r');
+        Some(bytes)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TerminalLinkActivationPlatform {
     MacOs,
@@ -142,8 +221,8 @@ mod tests {
     use gpui::Modifiers;
 
     use super::{
-        TerminalLinkActivationPlatform, terminal_link_activation_modifier_pressed_for_platform,
-        terminal_link_visual_active,
+        LocalInputBuffer, TerminalLinkActivationPlatform,
+        terminal_link_activation_modifier_pressed_for_platform, terminal_link_visual_active,
     };
 
     #[test]
@@ -188,5 +267,31 @@ mod tests {
         assert!(!terminal_link_visual_active(true, false));
         assert!(!terminal_link_visual_active(false, true));
         assert!(terminal_link_visual_active(true, true));
+    }
+
+    #[test]
+    fn local_input_buffer_edits_ascii_at_the_local_caret() {
+        let mut buffer = LocalInputBuffer::new("ssh".into(), 2, 8, 12);
+
+        assert!(buffer.insert_ascii("ab"));
+        buffer.move_left();
+        assert!(buffer.insert_ascii("X"));
+        buffer.backspace();
+        buffer.move_right();
+
+        assert_eq!(buffer.text, "ab");
+        assert_eq!(buffer.cursor, 2);
+        assert_eq!(buffer.submit(), Some(b"ab\r".to_vec()));
+        assert!(buffer.awaiting_remote_output);
+    }
+
+    #[test]
+    fn local_input_buffer_rejects_non_ascii_and_row_overflow() {
+        let mut buffer = LocalInputBuffer::new("ssh".into(), 0, 0, 3);
+
+        assert!(!buffer.insert_ascii("中"));
+        assert!(buffer.insert_ascii("abc"));
+        assert!(!buffer.insert_ascii("d"));
+        assert_eq!(buffer.text, "abc");
     }
 }
