@@ -64,6 +64,7 @@ pub struct TerminalTab {
     highlight_refresh: RefCell<HighlightRefresh>,
     snapshot_cache: RefCell<Option<SnapshotCache>>,
     pending_damage: RefCell<DirtyRows>,
+    input_feedback: InputFeedbackTracker,
     // Tracks terminal or viewport mutations without scanning every visible cell.
     dirty_generation: u64,
 }
@@ -77,6 +78,63 @@ struct SnapshotCache {
 
 const HIGHLIGHT_REFRESH_INTERVAL: Duration = Duration::from_millis(125);
 const MAX_SYNCHRONOUS_HIGHLIGHT_ROWS: usize = 4;
+const INPUT_FEEDBACK_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Anonymous timing data for the next output after SSH user input.
+///
+/// This is a feedback measurement rather than strict network RTT: it includes
+/// backend scheduling and server-side terminal output, and intentionally keeps
+/// no input or output bytes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct InputFeedbackMetrics {
+    pub samples: u64,
+    pub last: Option<Duration>,
+    pub average: Option<Duration>,
+}
+
+#[derive(Default)]
+struct InputFeedbackTracker {
+    first_pending_at: Option<Instant>,
+    metrics: InputFeedbackMetrics,
+}
+
+impl InputFeedbackTracker {
+    fn record_input(&mut self, now: Instant) {
+        if self
+            .first_pending_at
+            .is_some_and(|sent_at| now.saturating_duration_since(sent_at) >= INPUT_FEEDBACK_TIMEOUT)
+        {
+            self.first_pending_at = None;
+        }
+        self.first_pending_at.get_or_insert(now);
+    }
+
+    fn record_output(&mut self, now: Instant) -> Option<Duration> {
+        let sent_at = self.first_pending_at.take()?;
+        let elapsed = now.saturating_duration_since(sent_at);
+        if elapsed >= INPUT_FEEDBACK_TIMEOUT {
+            return None;
+        }
+
+        self.metrics.samples = self.metrics.samples.saturating_add(1);
+        self.metrics.last = Some(elapsed);
+        self.metrics.average = Some(match self.metrics.average {
+            Some(previous) => {
+                let samples = self.metrics.samples as f64;
+                Duration::from_secs_f64(
+                    previous.as_secs_f64()
+                        + (elapsed.as_secs_f64() - previous.as_secs_f64()) / samples,
+                )
+            }
+            None => elapsed,
+        });
+        Some(elapsed)
+    }
+
+    fn reset(&mut self) {
+        self.first_pending_at = None;
+    }
+}
 
 struct HighlightRefresh {
     pending_damage: DirtyRows,
@@ -366,6 +424,7 @@ impl TerminalTab {
             highlight_refresh: RefCell::new(HighlightRefresh::default()),
             snapshot_cache: RefCell::new(None),
             pending_damage: RefCell::new(DirtyRows::full()),
+            input_feedback: InputFeedbackTracker::default(),
             dirty_generation: 0,
         }
     }
@@ -373,6 +432,20 @@ impl TerminalTab {
     pub fn feed(&mut self, bytes: &[u8]) -> bool {
         if bytes.is_empty() {
             return false;
+        }
+        if self.kind == TabKind::Ssh
+            && let Some(feedback) = self.input_feedback.record_output(Instant::now())
+        {
+            let metrics = self.input_feedback_metrics();
+            tracing::debug!(
+                component = "terminal",
+                operation = "input_feedback",
+                tab_id = %self.id,
+                feedback_ms = feedback.as_millis(),
+                average_feedback_ms = metrics.average.unwrap_or_default().as_millis(),
+                samples = metrics.samples,
+                "Observed SSH input feedback"
+            );
         }
         self.capture_working_directory(bytes);
         self.processor.advance(&mut self.term, bytes);
@@ -410,10 +483,26 @@ impl TerminalTab {
         }
     }
 
+    /// Send keyboard or IME input and start an anonymous SSH feedback sample.
+    pub fn send_user_input(&mut self, bytes: Vec<u8>) {
+        if bytes.is_empty() {
+            return;
+        }
+        if self.kind == TabKind::Ssh {
+            self.input_feedback.record_input(Instant::now());
+        }
+        self.send_backend(BackendCommand::Input(bytes));
+    }
+
+    pub fn input_feedback_metrics(&self) -> InputFeedbackMetrics {
+        self.input_feedback.metrics
+    }
+
     /// Replace the backend with a new one. The `Term`'s internal listener
     /// shares the same `Arc`, so user input is automatically routed to the
     /// new backend. The previous backend is always asked to stop first.
     pub fn set_backend(&mut self, new_backend: BackendTx) {
+        self.input_feedback.reset();
         let old_backend = self
             .backend
             .lock()
@@ -1029,9 +1118,56 @@ mod tests {
     };
 
     use super::{
-        DirtyRows, HIGHLIGHT_REFRESH_INTERVAL, RenderRow, RenderSnapshot, SelectionType, Side,
-        TerminalTab, build_visible_rows,
+        DirtyRows, HIGHLIGHT_REFRESH_INTERVAL, INPUT_FEEDBACK_TIMEOUT, InputFeedbackTracker,
+        RenderRow, RenderSnapshot, SelectionType, Side, TerminalTab, build_visible_rows,
     };
+
+    #[test]
+    fn input_feedback_uses_the_first_input_in_a_burst() {
+        let start = Instant::now();
+        let mut tracker = InputFeedbackTracker::default();
+
+        tracker.record_input(start);
+        tracker.record_input(start + Duration::from_millis(20));
+
+        assert_eq!(
+            tracker.record_output(start + Duration::from_millis(80)),
+            Some(Duration::from_millis(80))
+        );
+        assert_eq!(tracker.metrics.samples, 1);
+        assert_eq!(tracker.metrics.last, Some(Duration::from_millis(80)));
+    }
+
+    #[test]
+    fn input_feedback_tracks_a_running_average() {
+        let start = Instant::now();
+        let mut tracker = InputFeedbackTracker::default();
+
+        tracker.record_input(start);
+        tracker.record_output(start + Duration::from_millis(80));
+        tracker.record_input(start + Duration::from_millis(100));
+        tracker.record_output(start + Duration::from_millis(220));
+
+        assert_eq!(tracker.metrics.samples, 2);
+        assert_eq!(tracker.metrics.last, Some(Duration::from_millis(120)));
+        assert_eq!(tracker.metrics.average, Some(Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn input_feedback_discards_expired_samples() {
+        let start = Instant::now();
+        let mut tracker = InputFeedbackTracker::default();
+
+        tracker.record_input(start);
+        assert_eq!(tracker.record_output(start + INPUT_FEEDBACK_TIMEOUT), None);
+        assert_eq!(tracker.metrics.samples, 0);
+
+        tracker.record_input(start + INPUT_FEEDBACK_TIMEOUT);
+        assert_eq!(
+            tracker.record_output(start + INPUT_FEEDBACK_TIMEOUT + Duration::from_millis(30)),
+            Some(Duration::from_millis(30))
+        );
+    }
 
     struct NoopShutdown;
 

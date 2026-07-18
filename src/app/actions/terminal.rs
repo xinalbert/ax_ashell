@@ -11,7 +11,7 @@ use gpui::{
 use crate::{
     AxShell, TerminalBacktabKey, TerminalTabKey,
     app::{WorkspacePage, terminal_link_activation_modifier_pressed},
-    terminal::{BackendCommand, TerminalComposition, TerminalFrozenSelection, encode_key},
+    terminal::{TerminalComposition, TerminalFrozenSelection, encode_key},
 };
 
 thread_local! {
@@ -500,7 +500,7 @@ impl AxShell {
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) else {
             return;
         };
-        tab.send_backend(BackendCommand::Input(bytes));
+        tab.send_user_input(bytes);
         window.prevent_default();
         cx.stop_propagation();
         cx.notify();
@@ -694,7 +694,7 @@ impl AxShell {
             return;
         };
         if !text.is_empty() {
-            tab.send_backend(BackendCommand::Input(text.as_bytes().to_vec()));
+            tab.send_user_input(text.as_bytes().to_vec());
         }
         window.invalidate_character_coordinates();
         cx.notify();
