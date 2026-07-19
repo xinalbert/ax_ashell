@@ -32,10 +32,12 @@ impl AxShell {
         let focus_serial_port_input = serial_port_input.clone();
         let deferred_view = view.clone();
 
-        window.open_dialog(cx, move |dialog: Dialog, _window, _cx| {
+        window.open_dialog(cx, move |dialog: Dialog, window, _cx| {
+            let dialog_width = (window.viewport_size().width - px(32.)).min(px(560.));
+            let dialog_height = (window.viewport_size().height * 0.8).min(px(800.));
             dialog
-                .title(t!("new_connection"))
-                .w(px(560.))
+                .w(dialog_width)
+                .h(dialog_height)
                 .overlay_closable(false)
                 .on_ok({
                     let view = view.clone();
@@ -104,8 +106,14 @@ impl AxShell {
                         let current_group_name =
                             session_group_input.read(cx).value().trim().to_string();
                         let available_serial_ports = shell.available_serial_ports.clone();
+                        let scroll_handle = window
+                            .use_keyed_state("new-connection-scroll", cx, |_, _| {
+                                gpui::ScrollHandle::default()
+                            })
+                            .read(cx)
+                            .clone();
 
-                        content.child(
+                        let form = {
                             v_flex()
                                 .track_focus(&view.read(cx).focus_handle)
                                 .on_key_down(window.listener_for(
@@ -115,6 +123,12 @@ impl AxShell {
                                     },
                                 ))
                                 .gap_3()
+                                .child(
+                                    div()
+                                        .text_base()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .child(t!("new_connection").to_string()),
+                                )
                                 .child(
                                     v_flex()
                                         .gap_2()
@@ -967,6 +981,35 @@ impl AxShell {
                                                             },
                                                         )),
                                                 ),
+                                        ),
+                            )
+                        };
+
+                        content.min_h_0().child(
+                            div()
+                                .relative()
+                                .w_full()
+                                .flex_1()
+                                .min_h_0()
+                                .child(
+                                    v_flex()
+                                        .id("new-connection-scroll-view")
+                                        .size_full()
+                                        .track_scroll(&scroll_handle)
+                                        .overflow_y_scroll()
+                                        .pr(px(14.))
+                                        .child(form),
+                                )
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .top_0()
+                                        .right_0()
+                                        .bottom_0()
+                                        .w(px(16.))
+                                        .child(
+                                            Scrollbar::vertical(&scroll_handle)
+                                                .scrollbar_show(ScrollbarShow::Always),
                                         ),
                                 ),
                         )
