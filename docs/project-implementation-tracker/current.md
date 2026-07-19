@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：将用户新增的 README 和功能页截图同步到英文文档，并清理已删除旧图片目录留下的文档入口。
-- 交付物：中英文 README/功能页一致的图片引用、无失效截图说明或占位注释的文档导航，以及链接校验记录。
+- 目标：让新建/编辑连接页面从标题到末尾操作成为连续的整体滚动内容。
+- 交付物：滚动内容内的连接页标题、连续表单滚动和 GUI 验证记录。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`README.md`、`README.zh.md`、`images/`、`docs/README*.md`、`docs/features/`、`docs/features/images/`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：修改应用行为、终端/SSH/SFTP 实现、图片像素内容、发布版本或历史 release tag。
+- 当前范围：`src/app/dialogs.rs`、`src/app/dialogs/ssh.rs`、`docs/project-env-audit/`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：修改连接字段、认证/代理/X11 语义、保存/连接处理、全局 Dialog 组件、其他对话框布局或发布版本。
 
 ## 当前状态
 
@@ -32,6 +32,11 @@
 | P8 | completed | 默认关闭的 SSH 会话级本地输入 overlay | 定向单元测试；`rustfmt`；`cargo check`；`cargo test --quiet`；`git diff --check` | 仅主屏、底部、已连接 SSH；不支持的输入先按顺序 flush 再直通 |
 | P9 | completed | 本地输入 overlay 不失效终端行布局缓存 | `TerminalElement` 定向测试；`rustfmt`；`cargo check`；`cargo test --quiet`；`git diff --check` | composition 独立绘制；只有实际影响 row shape 的状态可失效 cache |
 | P10 | completed | 同步用户新增的文档截图并清理旧图片目录入口 | 图片引用存在性、双语结构审阅、`git diff --check`、tracking docs validator | 图片不改像素；英文页面与中文页面使用同一相对路径 |
+| P11 | completed | 小窗口中的新建连接表单可滚动 | `rustfmt`；`cargo check`；`cargo test --quiet`；小窗口 GUI 手工验收 | 仅限制高度和滚动表单；保存/连接操作保持原位置与语义 |
+| P12 | completed | 修正受限 Dialog 高度下的表单滚动约束 | `rustfmt`；`cargo check`；`cargo test --quiet`；小窗口 GUI 截图验收 | 显式高度让滚动区获得稳定剩余空间；不改连接语义 |
+| P13 | completed | 让新建连接页标题与表单整体滚动 | `rustfmt`；`cargo check`；`cargo test --quiet`；小窗口 GUI 截图验收 | 标题进入 scroll body；右上角关闭按钮保持固定 |
+| P14 | completed | 修正连接页滚动容器所在的 Dialog 渲染分支 | `rustfmt`；`cargo check`；`cargo test --quiet`；小窗口 GUI 截图验收 | 使用 Dialog 内置 child scroll body，不改连接语义 |
+| P15 | completed | 修复新建连接页的 GPUI 双重借用崩溃并建立安全滚动区 | `rustfmt`；`cargo check`；`cargo test --quiet`；小窗口 GUI 截图验收 | content 延迟构建，显式 scroll handle 与 flex 约束 |
 
 ## 已完成
 
@@ -50,11 +55,21 @@
 - P9 已完成实现：`GridLayoutKey` 只保留 `layout_row` 实际消费的 style 和 selection；本地输入或 IME composition 文本继续在 paint 阶段独立重绘，不再使已确认可见行重新 shape。回归测试明确限定 cache key 只跟踪会改变 shaped row 的状态。
 - P10 已完成预检：用户已将根 README 图片放入 `images/`、功能截图放入 `docs/features/images/`，并删除旧 `docs/images/` 说明；英文页面和文档导航仍需同步。
 - P10 已完成：英文 README 与九个功能页在和中文相同的语义位置引用同一图片，双语图片均使用可读替代文字；旧 `docs/images/` 导航、所有失效截图占位注释和遗留 `preview.png` 引用均已清理。
+- P11 已完成定位：`show_ssh_dialog` 只设置 560px 宽度，表单与底部操作处于非滚动 content 中；高级 SSH 选项展开后可超过视口而被裁切。项目依赖的 Dialog 支持受限高度与可滚动容器，可在本地对话框层修复。
+- P11 已完成：新建/编辑连接对话框的宽度限制为 560px 或当前视口减去边距中的较小值，高度按当前视口限制；整个连接表单由独立垂直滚动区承载，因此长高级选项和底部操作不再被裁切。连接字段、焦点事件和保存/连接处理未改。
+- P12 已完成定位：实际小窗口截图表明 P11 的 `max_h` 仅裁切外层，未向 content 的 flex 布局提供确定高度，滚动区无法稳定占用剩余空间。需要改为显式视口高度，保留 10% 上下边距。
+- P12 已完成：连接对话框高度为当前视口的 80%，最高 800px；结合默认 10% 顶部偏移保留上下边距。表单滚动容器因此获得稳定高度，并在内容超过可用空间时显示垂直滚动条。
+- P13 已完成定位：P12 的滚动容器已覆盖连接类型、认证和末尾操作，但 `Dialog.title` 仍在滚动区外。用户要求整页滚动，需将同样样式的标题移入 form 的首行，保留 Dialog 右上角关闭按钮。
+- P13 已完成：固定 `Dialog.title` 已移除，`new_connection` 使用同样 base/semibold 样式成为 form 首个元素；标题、连接类型、认证、高级选项和底部操作现在共享一个连续滚动内容，右上角关闭按钮保持固定。
+- P14 已完成定位：实际截图确认 P13 的标题位置正确，但 `Dialog.content(...)` 分支没有使用 Dialog 为 `.child(...)` 提供的内置 scroll body。嵌套滚动层仍按表单原始高度布局，因此被裁切而不能滚动。
+- P14 已完成：连接 form 直接作为 Dialog child 渲染，固定高度下由组件的内置 `overflow_y_scrollbar()` body 管理；表单焦点、键盘事件、取消、保存和保存并连接 callback 保持不变。
+- P15 已完成定位：崩溃报告显示 `.child(...)` 的 form 在 `show_ssh_dialog` 对 `AxShell` 的 update 中同步执行，并调用 `view.read(cx)`；GPUI 禁止同一 Entity 在 update 中再次 read，因此触发 `cannot read AxShell while it is already being updated`。`Dialog.content(...)` 的 builder 延迟到正常渲染路径，可避免该重入借用。
+- P15 已完成：恢复 `Dialog.content(...)` 的延迟 builder，在其内部以稳定 ID 的 `ScrollHandle`、`flex_1`、`min_h_0` 和 `overflow_y_scroll()` 形成明确高度的滚动区；标题、连接类型、认证、全部高级项和末尾操作仍由同一 form 承载。
 
 ## 验证
 
-- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9 完整 `cargo test --quiet`（238 passed）、`rustfmt`、`git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）；P10 的图片存在性、双语路径配对和旧目录引用审阅。
-- 未完成：100/250/500 ms RTT SSH 服务上的 P7/P8/P9 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
+- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9/P11/P14/P15 完整 `cargo test --quiet`（238 passed）与 `rustfmt`；P8/P9/P11/P15 的 `git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）；P10 的图片存在性、双语路径配对和旧目录引用审阅。
+- 未完成：P15 的真实小窗口 GUI 截图验收；100/250/500 ms RTT SSH 服务上的 P7/P8/P9 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
 
 ## 风险与阻塞
 
@@ -68,11 +83,16 @@
 - P8 仍不能把首个远端输出当作逐字回显确认；它只把该输出作为显示层失效信号。用户输入内容不会进入日志或 metrics，但会在启用模式下短暂保留于进程内内存，直至提交、flush 或清理。
 - P9 保留 selection、字体、terminal snapshot、highlight 和颜色变化的布局失效；只移除了未被 `layout_row` 消费的 composition 依赖。GUI frame-time 改善仍须通过真实长 scrollback 和高频输入验收。
 - P10 已确认中英文页面只引用已有图片，且无用户可见的旧 `docs/images/` 导航或空白占位；未被页面引用的 `docs/features/images/image.png` 按用户工作区内容保留，待其指定用途。
+- P11 已将视口高度和宽度约束应用在本地对话框层，滚动只包围表单；input focus、键盘 Enter、取消、保存和保存并连接操作保持原实现。真实窗口最小高度仍需手工确认。
+- P12 让 Dialog 的实际高度与 content 的 flex 剩余空间一致；窗口高度极小时表单以滚动代替裁切。真实 GUI 仍须确认滚动条、焦点和末尾操作可见。
+- P13 保持关闭按钮在滚动区外，避免用户在长表单底部时失去关闭出口；标题和表单内容连续滚动。真实 GUI 仍须确认视觉层级和滚动范围。
+- P14 的 child 构建方案已被 P15 替代，不再用于连接页；需要确认鼠标滚轮、触控板、焦点、取消、保存和保存并连接仍可用。
+- P15 必须保留 `Dialog.content(...)` 的延迟构建边界，不能在 `show_ssh_dialog` 的 `AxShell` update 内同步 `view.read(cx)`；crash hook 仅用于诊断，不能作为继续运行的兜底。
 
 ## 下一步
 
-- 继续 P7/P8/P9 的高 RTT GUI 验收；未使用的 `docs/features/images/image.png` 仅在明确用途或删除授权后处理。
+- 在实际小窗口中确认鼠标滚轮和触控板可连续滚动标题、连接类型、认证、高级选项和末尾操作，且打开对话框不再崩溃、关闭按钮固定可用；随后继续 P7/P8/P9 的高 RTT GUI 验收。
 
 ## 最后更新时间
 
-- 2026-07-18 22:35 +0800
+- 2026-07-19 09:20 +0800

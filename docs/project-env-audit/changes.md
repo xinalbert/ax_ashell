@@ -2525,3 +2525,83 @@
 - 受影响文件：`README.md`，`README.zh.md`，`images/`，`docs/README.md`，`docs/README.zh.md`，`docs/getting-started*.md`，`docs/features/`，`docs/features/images/`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
 - 更新后的命令或环境：继续只执行图片/链接存在性审阅、`git diff --check` 和 tracking docs validator；不运行 Rust 编译或测试，不新增依赖或外部服务。
 - 验证结果：根 README 和九个功能页的中英文图片路径逐一一致，所有被引用 PNG 均存在，用户可见 Markdown 无旧 `docs/images/` 或截图占位引用；`git diff --check` 和 tracking docs validator 通过。未引用的 `docs/features/images/image.png` 按用户工作区内容保留。
+
+## 2026-07-19 P11 新建连接对话框小窗口施工前预检
+
+- 时间：2026-07-19 08:08 +0800
+- 变化摘要：当前范围从 P10 文档图片同步切换为新建/编辑连接表单的小窗口可用性。运行环境、MSRV、Cargo 依赖图、manifest/lock 和 CI 均不变；`show_ssh_dialog` 当前只设置宽度，长表单不滚动，可能超出小窗口视口。
+- 受影响文件：`src/app/dialogs.rs`，`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo，计划运行 `rustfmt --edition 2024 src/app/dialogs.rs src/app/dialogs/ssh.rs`、`cargo check`、`cargo test --quiet`、`git diff --check` 与 tracking docs validator；不新增依赖或外部服务。
+- 验证结果：已确认依赖 Dialog 支持受限高度和滚动容器，且 transfer/selector 对话框已有可复用的滚动布局范式。待完成代码、Rust 验证和真实小窗口 GUI 验收。
+
+## 2026-07-19 P11 新建连接对话框小窗口完成环境验证
+
+- 时间：2026-07-19 08:17 +0800
+- 变化摘要：新建/编辑连接对话框已按视口限制宽度和最大高度；表单主体在高度受限时出现垂直滚动条，使高级 SSH 选项和底部操作可访问。连接字段、认证/代理/X11 语义、保存/连接 callback、依赖、manifest/lock 与 CI 均未改变。
+- 受影响文件：`src/app/dialogs.rs`，`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；已执行 `rustfmt --edition 2024 src/app/dialogs.rs src/app/dialogs/ssh.rs`、`cargo check` 与完整 `cargo test --quiet`。收口前将复跑 `git diff --check` 与 tracking docs validator。
+- 验证结果：格式化、`cargo check` 和完整测试（238 passed）通过，仅保留既有 `block v0.1.6` future-incompat warning；真实小窗口、展开高级选项、滚动、焦点、取消、保存和保存并连接仍需手工验收。
+
+## 2026-07-19 P12 连接表单受限高度滚动施工前预检
+
+- 时间：2026-07-19 08:19 +0800
+- 变化摘要：用户截图确认 P11 的 `max_h` 仅裁切 Dialog 外层，表单 content 没有确定高度，滚动区不能可靠工作。P12 将使用当前视口的显式高度，保留滚动表单；运行环境、MSRV、Cargo 依赖、manifest/lock、CI 和连接业务语义均不变。
+- 受影响文件：`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo，计划重跑受影响 Rust 文件 `rustfmt`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 和 tracking docs validator；不新增依赖或外部服务。
+- 验证结果：已获得实际 GUI 截图作为 P11 layout 失败的证据；待完成 P12 代码与新的缩小窗口截图验收。
+
+## 2026-07-19 P12 连接表单受限高度滚动完成环境验证
+
+- 时间：2026-07-19 08:21 +0800
+- 变化摘要：连接对话框现在使用当前视口 80%、最高 800px 的实际高度，确保 Dialog content 有稳定的 flex 剩余空间；连接表单在内容溢出时由内部垂直滚动条承载。连接字段、认证/代理/X11、保存/连接 callback、依赖、manifest/lock 与 CI 均未改变。
+- 受影响文件：`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；已执行 `rustfmt --edition 2024 src/app/dialogs.rs src/app/dialogs/ssh.rs`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 与 tracking docs validator。
+- 验证结果：格式化、`cargo check`、完整测试（238 passed）、`git diff --check` 和 tracking docs validator 通过，仅保留既有 `block v0.1.6` future-incompat warning；真实小窗口、展开高级选项、滚动条、焦点、取消、保存和保存并连接仍需新的截图验收。
+
+## 2026-07-19 P13 新建连接页整体滚动施工前预检
+
+- 时间：2026-07-19 08:35 +0800
+- 变化摘要：用户要求新建连接页整体滚动。P12 的 form 已可滚动，但 `Dialog.title` 仍固定在滚动区外；P13 会将标题移入 form 首行，右上角关闭按钮保留。运行环境、MSRV、Cargo 依赖、manifest/lock、CI 和连接业务语义均不变。
+- 受影响文件：`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo，计划运行受影响 Rust 文件 `rustfmt`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 与 tracking docs validator；不新增依赖或外部服务。
+- 验证结果：已确认 DialogTitle 使用 base/semibold 样式，可在 form 内等价渲染；待完成 P13 代码和小窗口整体滚动截图验收。
+
+## 2026-07-19 P13 新建连接页整体滚动完成环境验证
+
+- 时间：2026-07-19 08:37 +0800
+- 变化摘要：`new_connection` 标题已从固定 Dialog title 变为 form 首项，标题与连接类型、认证、高级选项和末尾操作共用表单滚动容器；Dialog 右上角关闭按钮保留。运行环境、MSRV、Cargo 依赖、manifest/lock、CI 和连接业务语义均未改变。
+- 受影响文件：`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；已执行 `rustfmt --edition 2024 src/app/dialogs/ssh.rs`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 与 tracking docs validator。
+- 验证结果：格式化、`cargo check`、完整测试（238 passed）、`git diff --check` 和 tracking docs validator 通过，仅保留既有 `block v0.1.6` future-incompat warning；真实小窗口整体滚动、关闭按钮固定、焦点和末尾操作仍需截图验收。
+
+## 2026-07-19 P14 连接页实际滚动修正施工前预检
+
+- 时间：2026-07-19 08:55 +0800
+- 变化摘要：用户截图确认 P13 的标题已进入连接页，但滚动条仍无法工作。审阅 gpui-component `Dialog` 后确认 `.content(...)` 分支不含其内置 child scroll body；P14 将以 `.child(form)` 取代该嵌套滚动布局。运行环境、MSRV、Cargo 依赖、manifest/lock、CI 和连接业务语义均不变。
+- 受影响文件：`src/app/dialogs.rs`，`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo，计划运行 `rustfmt --edition 2024 src/app/dialogs.rs src/app/dialogs/ssh.rs`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 与 tracking docs validator；不新增依赖或外部服务。
+- 验证结果：已获得实际失败截图，并确认 Dialog 的 `.child(...)` 路径在固定高度下渲染内置 `overflow_y_scrollbar()`；待完成 P14 源码和新的小窗口滚动验收。
+
+## 2026-07-19 P14 连接页实际滚动修正完成环境验证
+
+- 时间：2026-07-19 09:02 +0800
+- 变化摘要：连接 form 已从 `Dialog.content(...)` 的嵌套滚动容器改为 `Dialog.child(...)`；Dialog 在已限制的视口相对高度内直接提供 child body 的垂直滚动。标题、连接类型、认证、高级选项、导入与末尾操作属于同一滚动内容；右上角关闭按钮仍由 Dialog 固定渲染。
+- 受影响文件：`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；已执行 `rustfmt --edition 2024 src/app/dialogs/ssh.rs`、`cargo check` 和完整 `cargo test --quiet`。收口前将执行 `git diff --check` 与 tracking docs validator。
+- 验证结果：格式化、`cargo check` 和完整测试（238 passed）通过，仅保留既有 `block v0.1.6` future-incompat warning；真实小窗口整体滚动、关闭按钮固定、焦点和末尾操作仍需截图验收。
+
+## 2026-07-19 P15 连接页双重借用崩溃修复施工前预检
+
+- 时间：2026-07-19 09:12 +0800
+- 变化摘要：崩溃报告确认 P14 的 `Dialog.child(...)` block 在 `show_ssh_dialog` 更新 AxShell 时读取同一 Entity，触发 GPUI double lease panic。P15 将使用 `Dialog.content(...)` 的延迟构建边界，并在该内容区内建立明确高度的滚动区域。运行环境、MSRV、Cargo 依赖、manifest/lock、CI、连接业务语义和生命周期恢复策略均不变。
+- 受影响文件：`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo，计划运行 `rustfmt --edition 2024 src/app/dialogs/ssh.rs`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 与 tracking docs validator；不新增依赖或外部服务。
+- 验证结果：crash hook 已正常写出完整报告；它不会也不应捕获并继续执行 UI reentrant panic。待完成 P15 源码和新的小窗口滚动验收。
+
+## 2026-07-19 P15 连接页双重借用崩溃修复完成环境验证
+
+- 时间：2026-07-19 09:20 +0800
+- 变化摘要：连接 form 已从 P14 的同步 `Dialog.child(...)` 构建恢复为 `Dialog.content(...)` 延迟 builder，避免在 AxShell update 时再次读取同一 Entity。该 content 内使用稳定 scroll handle、`flex_1`、`min_h_0` 与 `overflow_y_scroll()` 形成可收缩的垂直滚动区。
+- 受影响文件：`src/app/dialogs/ssh.rs`，`docs/project-env-audit/`，`docs/project-implementation-tracker/`。
+- 更新后的命令或环境：继续使用 Rust 2024 / Cargo；已执行 `rustfmt --edition 2024 src/app/dialogs/ssh.rs`、`cargo check`、完整 `cargo test --quiet`、`git diff --check` 与 tracking docs validator。
+- 验证结果：格式化、`cargo check`、完整测试（238 passed）、`git diff --check` 和 tracking docs validator 通过，无新增编译 warning；仅保留既有 `block v0.1.6` future-incompat warning。真实小窗口整体滚动、关闭按钮固定、焦点和末尾操作仍需截图验收。

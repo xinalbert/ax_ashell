@@ -90,8 +90,8 @@
 | `src/app/session_ui.rs` | session selector 与连接进度 UI 模型 | `SelectorEntry`，`ConnectionProgress` | 改 session selector 条目或连接进度遮罩状态时 |
 | `src/app/search.rs` | terminal 搜索状态与行为 | `SearchState`，`perform_search`，`search_highlight_map` | 改搜索输入、全缓冲区匹配、跳转或高亮时 |
 | `src/app/config_sync.rs` | app 层配置同步动作 | sync credentials，`validate_credentials`，upload/download action，`SyncFinished` | 改 WebDAV/S3 表单取值、HTTPS 输入校验、同步触发或状态接线时 |
-| `src/app/dialogs/` | 弹窗和设置页渲染目录模块 | `ssh.rs`，`host_key_confirm.rs`，`selector.rs`，`transfers.rs`，`delete_confirm.rs`，`sftp_close_confirm.rs`，`sftp_edit_upload_confirm.rs`，`settings_close_confirm.rs`，`settings/` | 改 SSH 弹窗、主机密钥确认、session selector、关闭确认、受管编辑上传确认、transfer history、下载文件清单、delete confirm、设置页和 About 页面时；入口为 `src/app/dialogs.rs` |
-| `src/app/dialogs.rs` | dialogs 目录模块入口和共享 imports | 子模块声明，`crate::app::dialogs` 路由 | 改 dialogs 模块可见性、共享 imports 或新增 dialog 子文件时 |
+| `src/app/dialogs/` | 弹窗和设置页渲染目录模块 | `ssh.rs`，`host_key_confirm.rs`，`selector.rs`，`transfers.rs`，`delete_confirm.rs`，`sftp_close_confirm.rs`，`sftp_edit_upload_confirm.rs`，`settings_close_confirm.rs`，`settings/` | 改 SSH 弹窗、主机密钥确认、session selector、关闭确认、受管编辑上传确认、transfer history、下载文件清单、delete confirm、设置页和 About 页面时；`ssh.rs` 需以实际视口高度约束 Dialog，并在 `Dialog.content(...)` 的延迟 builder 内用 scroll handle、`flex_1` 与 `min_h_0` 让标题、长连接表单与末尾操作连续滚动；不得在 AxShell update 内以 `Dialog.child(...)` 同步读取该 Entity；入口为 `src/app/dialogs.rs` |
+| `src/app/dialogs.rs` | dialogs 目录模块入口和共享 imports | 子模块声明，`Scrollbar`，`crate::app::dialogs` 路由 | 改 dialogs 模块可见性、共享 imports、新增 dialog 子文件或本地对话框滚动容器时 |
 | `src/app/dialogs/settings/` | 设置页子页面目录 | `general.rs`，`appearance.rs`，`font_page.rs`，`custom.rs`，`fast_menu.rs`，`terminal.rs`，`workspace.rs`，`monitoring.rs`，`sync.rs`，`proxy.rs`，`keybindings.rs`，`shell.rs`，`about.rs`，`help.rs` | 入口为 `src/app/dialogs/settings.rs`；侧栏按 General、Appearance & Theme、Theme Editor、Terminal、Workspace、Monitor & Resources、Connections、Sync、Shortcuts、Help、About 装配；Settings 下拉统一走本地 fast menu |
 | `src/app/dialogs/settings/general.rs` | Settings 通用页 | `settings_general_page` | 改显示语言或 Settings 页面自身行为，例如第二次 Settings 快捷键动作时 |
 | `src/app/dialogs/settings/appearance.rs` | Settings 外观与主题页 | `settings_appearance_page` | 改主题模式、主题套装选择、标题栏样式、字体/光标分组挂载或外观页命名时 |
@@ -201,8 +201,8 @@
 ## 刷新规则
 
 - 刷新触发：项目命名、Cargo 包/二进制名、构建脚本、配置目录、同步默认文件名、同步 endpoint 安全边界、启动初始化、独立文件图标缓存、首次 SFTP 的本地图标/目录加载、内置字体 family 首次注册、local shell profile/PTY argv、Rayon worker 配置或自定义值范围、日志/crash hook、Tokio runtime 生命周期、terminal Output batching / dirty generation / `TermDamage` / snapshot / highlight cache / URL-path modifier visuals、terminal backend 类型、SSH/SFTP 主机密钥信任、SSH legacy 算法策略、SSH 本地输入 overlay 安全 gate、SSH/Serial/Telnet 会话模型和端口检测、非 SSH SFTP/监控边界、非 macOS runtime 图标资源、release workflow、CI RustSec 审计、tag/version 映射规则、manifest/lock 临时同步、macOS/Linux 打包元数据、仓库级 agent 指令、项目本地 agent skill、Rust 模块布局约束、共享快速 hover 接口、Settings 下拉/长列表 hover 性能规则、内置字体 family/字重/授权/排序、SAVED 侧栏入口、theme profile 默认套装、theme 设置页主路径、custom theme 持久化模型、custom theme 导入/保存路径、custom theme 实时预览、theme file 注册策略、内置 theme JSON、设置页字段分组、Settings 下拉菜单、Settings 关闭确认偏好/dialog、theme list 行为、terminal 亮度语义、终端字体 metrics、窗口激活/后台/深睡状态、系统恢复兜底/远程监控代次/SSH 健康检查、workspace page / tab 模型、Settings About 菜单入口、会话 `sftp_path` / `x11_forwarding` / `shortcut`、无凭据 session JSON 剪贴板往返、本机 X server 检测、SFTP 按需页面/标签关闭/快捷键焦点、SFTP worker/task 关闭所有权、SFTP 分页或受限目录浏览/预览、SFTP 递归下载/覆盖确认/传输标签面板、SSH 连接认证/legacy/远程系统探针/X11 relay、settings Custom/shell 拆分、app/backend 根目录收拢、app/actions/state/config/session/sftp/backend/ui/dialogs 模块拆分或用户文档范围发生变化时刷新
-- 最近依据：`AGENTS.md`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/ci.yml`，`README.md`，`README.zh.md`，`docs/README.md`，`docs/README.zh.md`，`docs/features/`，`docs/features/images/`，`docs/project-env-audit/current.md`
+- 最近依据：`AGENTS.md`，`Cargo.toml`，`Cargo.lock`，`.github/workflows/ci.yml`，`src/app/dialogs.rs`，`src/app/dialogs/ssh.rs`，`docs/project-env-audit/current.md`
 
 ## 最后更新时间
 
-- 2026-07-18 22:35 +0800
+- 2026-07-19 09:20 +0800
