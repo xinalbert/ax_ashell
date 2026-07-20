@@ -90,22 +90,21 @@
 | `src/app/session_ui.rs` | session selector 与连接进度 UI 模型 | `SelectorEntry`，`ConnectionProgress` | 改 session selector 条目或连接进度遮罩状态时 |
 | `src/app/search.rs` | terminal 搜索状态与行为 | `SearchState`，`perform_search`，`search_highlight_map` | 改搜索输入、全缓冲区匹配、跳转或高亮时 |
 | `src/app/config_sync.rs` | app 层配置同步动作 | sync credentials，`validate_credentials`，upload/download action，`SyncFinished` | 改 WebDAV/S3 表单取值、HTTPS 输入校验、同步触发或状态接线时 |
-| `src/app/dialogs/` | 弹窗和设置页渲染目录模块 | `ssh.rs`，`host_key_confirm.rs`，`selector.rs`，`transfers.rs`，`delete_confirm.rs`，`sftp_close_confirm.rs`，`sftp_edit_upload_confirm.rs`，`settings_close_confirm.rs`，`settings/` | 改 SSH 弹窗、主机密钥确认、session selector、关闭确认、受管编辑上传确认、transfer history、下载文件清单、delete confirm、设置页和 About 页面时；`ssh.rs` 需以实际视口高度约束 Dialog，并在 `Dialog.content(...)` 的延迟 builder 内用 scroll handle、`flex_1` 与 `min_h_0` 让标题、长连接表单与末尾操作连续滚动；不得在 AxShell update 内以 `Dialog.child(...)` 同步读取该 Entity；入口为 `src/app/dialogs.rs` |
+| `src/app/dialogs/` | 弹窗和设置页渲染目录模块 | `ssh.rs`，`host_key_confirm.rs`，`selector.rs`，`transfers.rs`，`delete_confirm.rs`，`sftp_close_confirm.rs`，`sftp_edit_upload_confirm.rs`，`settings/` | 改 SSH 弹窗、主机密钥确认、session selector、SFTP 传输关闭确认、受管编辑上传确认、transfer history、下载文件清单、delete confirm、设置页和 About 页面时；`ssh.rs` 需以实际视口高度约束 Dialog，并在 `Dialog.content(...)` 的延迟 builder 内用 scroll handle、`flex_1` 与 `min_h_0` 让标题、长连接表单与末尾操作连续滚动；不得在 AxShell update 内以 `Dialog.child(...)` 同步读取该 Entity；入口为 `src/app/dialogs.rs` |
 | `src/app/dialogs.rs` | dialogs 目录模块入口和共享 imports | 子模块声明，`Scrollbar`，`crate::app::dialogs` 路由 | 改 dialogs 模块可见性、共享 imports、新增 dialog 子文件或本地对话框滚动容器时 |
 | `src/app/dialogs/settings/` | 设置页子页面目录 | `general.rs`，`appearance.rs`，`font_page.rs`，`custom.rs`，`fast_menu.rs`，`terminal.rs`，`workspace.rs`，`monitoring.rs`，`sync.rs`，`proxy.rs`，`keybindings.rs`，`shell.rs`，`about.rs`，`help.rs` | 入口为 `src/app/dialogs/settings.rs`；侧栏按 General、Appearance & Theme、Theme Editor、Terminal、Workspace、Monitor & Resources、Connections、Sync、Shortcuts、Help、About 装配；Settings 下拉统一走本地 fast menu |
-| `src/app/dialogs/settings/general.rs` | Settings 通用页 | `settings_general_page` | 改显示语言或 Settings 页面自身行为，例如第二次 Settings 快捷键动作时 |
+| `src/app/dialogs/settings/general.rs` | Settings 通用页 | `settings_general_page` | 改显示语言时 |
 | `src/app/dialogs/settings/appearance.rs` | Settings 外观与主题页 | `settings_appearance_page` | 改主题模式、主题套装选择、标题栏样式、字体/光标分组挂载或外观页命名时 |
 | `src/app/dialogs/settings/font_page.rs` | Settings 字体与光标分组 helper | `settings_font_group`，`remove_built_in_font_names` | 改 UI/terminal 字体、monospace 过滤、内置字体优先顺序或标签时；内置项由静态 metadata 展示，候选列表保持 lazy/cache，避免 hover 时扫描或注册字体 |
 | `src/app/dialogs/settings/fast_menu.rs` | Settings 专用轻量下拉菜单 helper | `FastMenuItem`，`fast_settings_menu`，`fast_settings_menu_lazy`，`fast_settings_menu_disabled` | 改 Settings 内下拉 hover 反馈、避免 `PopupMenu` hover selected-state 重绘、延迟构建昂贵菜单候选或新增简单 Settings 菜单时 |
 | `src/app/dialogs/settings/terminal.rs` | Settings 终端行为与 local shell profile 页 | `settings_terminal_page`，shared `fast_settings_menu` | 改右键复制/粘贴、关键词高亮、默认 shell 选择、profile 程序/逐行 argv 编辑时；不得绕过 shared fast menu |
 | `src/app/dialogs/sftp_close_confirm.rs` | 活跃 SFTP 传输的页面关闭确认弹窗 | `show_sftp_transfer_close_dialog` | 改首次确认、group 绑定、二次快捷键、保持页面、后台继续、取消断开或记住动作时 |
 | `src/app/dialogs/sftp_overwrite_confirm.rs` | SFTP 本地同名文件覆盖确认弹窗 | `show_next_sftp_overwrite_dialog`，`approve_queued_sftp_overwrites` | 改跳过、替换、任务内全部替换、进程内全部替换、排队或失效请求处理时 |
-| `src/app/dialogs/settings_close_confirm.rs` | Settings 页面关闭确认弹窗 | `show_settings_close_confirm_dialog` | 改确认关闭、保持页面、记住第二次快捷键动作或关闭提示文案时 |
 | `src/app/dialogs/settings/workspace.rs` | Settings 工作区布局页 | `settings_workspace_page` | 改布局锁定、非激活标签状态色或 reset layout 入口时 |
 | `src/app/dialogs/settings/monitoring.rs` | Settings 监控与资源页 | `settings_monitoring_page`，deep sleep，Rayon worker numeric input | 改监控仪表盘、资源策略、Rayon worker 或监控位置设置时 |
 | `src/app/dialogs/settings/custom.rs` | Custom theme 设置页 | `settings_custom_page` | 改 custom theme name、基于预设修改语义、亮/暗高级变体、override 输入、保存路径、浏览目录、导入主题和保存/重置入口时 |
 | `src/app/dialogs/settings/proxy.rs` | Settings 连接与网络页 | `settings_connection_page` | 改 SSH 重试、SFTP 默认本地目录、SFTP 传输关闭策略、全局代理或 X11 转发设置时 |
-| `src/app/dialogs/settings/shell.rs` | 设置页外层交互壳 | `settings_page_shell` | 改设置页内 keybinding 录制、关闭确认、OpenSession/NewSsh/Prev/NextTab 捕获或失焦取消录制时 |
+| `src/app/dialogs/settings/shell.rs` | 设置页外层交互壳 | `settings_page_shell` | 改设置页内 keybinding 录制、Settings 快捷键直接关闭、OpenSession/NewSsh/Prev/NextTab 捕获或失焦取消录制时 |
 | `src/app/views/` | 主工作区视图目录模块，按渲染区域拆分 SFTP、监控、侧栏、顶部标签、终端 pane 和整体布局 | `helpers.rs`，`layout.rs`，`monitoring.rs`，`sftp_panel.rs`，`sidebar.rs`，`tab_bar.rs`，`terminal_panel.rs` | 增加固定 Local Terminal 入口、调整 SFTP 双列面板、saved session 分组、侧栏折叠态、顶部标签、监控面板或主布局时 |
 | `src/app/views.rs` | views 目录模块入口和共享 imports | 子模块声明，`crate::app::views` 路由 | 改 views 模块可见性、共享 imports 或新增 views 子文件时 |
 | `src/app/views/layout.rs` | `Render for AxShell` 和顶层菜单/workspace/body 布局 | `render`，独立窗口标题栏与回迁 action，platform menu row，workspace page route，resizable panels，overlays | 改 Windows/Linux 全宽菜单、独立 Terminal 窗口标题居中和回迁、主布局、SFTP 页面接线、自绘文件/传输/saved session/saved group 右键菜单或全局 overlays 时 |

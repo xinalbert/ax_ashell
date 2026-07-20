@@ -252,7 +252,6 @@ pub(crate) struct AxShell {
     pub(crate) settings_page_open: bool,
     pub(crate) settings_page_generation: u64,
     pub(crate) settings_initial_page: usize,
-    pub(crate) settings_close_remember_choice: bool,
     /// Error message when a recorded keybinding conflicts with another
     pub(crate) keybind_error: Option<(String, String)>, // (action_id, error_message)
     /// Whether workspace keybindings are currently suspended (during settings)

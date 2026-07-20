@@ -21,7 +21,7 @@ pub(super) fn settings_page_shell(
                             ev,
                         )
                     {
-                        this.request_close_settings_page(window, cx);
+                        this.close_settings_page(cx);
                         window.prevent_default();
                         cx.stop_propagation();
                         return;

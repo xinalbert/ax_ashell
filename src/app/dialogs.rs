@@ -31,7 +31,6 @@ mod delete_confirm;
 mod host_key_confirm;
 mod selector;
 pub(super) mod settings;
-mod settings_close_confirm;
 mod sftp_close_confirm;
 mod sftp_edit_upload_confirm;
 mod sftp_overwrite_confirm;
@@ -45,7 +44,6 @@ pub(crate) enum DialogKind {
     TransferFiles,
     NewSsh,
     HostKeyConfirm,
-    SettingsCloseConfirm,
     SftpCloseConfirm,
     SftpEditUploadConfirm,
     SftpOverwriteConfirm,

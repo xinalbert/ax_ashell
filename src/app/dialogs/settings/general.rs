@@ -1,11 +1,10 @@
 use super::*;
 
 use gpui::IntoElement;
-use gpui_component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
+use gpui_component::setting::{SettingGroup, SettingItem, SettingPage};
 
 pub(super) fn settings_general_page(view: &gpui::Entity<AxShell>, shell: &AxShell) -> SettingPage {
     let current_locale = shell.config.locale().to_string();
-    let settings_close_shortcut_confirms = shell.config.settings_close_shortcut_confirms();
 
     SettingPage::new(t!("settings_general").to_string())
         .icon(IconName::Settings)
@@ -60,29 +59,5 @@ pub(super) fn settings_general_page(view: &gpui::Entity<AxShell>, shell: &AxShel
                         }
                     }),
                 )),
-        )
-        .group(
-            SettingGroup::new()
-                .title(t!("settings_behavior").to_string())
-                .item(
-                    SettingItem::new(
-                        t!("settings_close_shortcut_confirms").to_string(),
-                        SettingField::render({
-                            let view = view.clone();
-                            move |_, window, _cx| {
-                                Switch::new("settings-close-shortcut-confirms")
-                                    .small()
-                                    .checked(settings_close_shortcut_confirms)
-                                    .on_click(window.listener_for(&view, |this, checked, _, cx| {
-                                        this.config.set_settings_close_shortcut_confirms(*checked);
-                                        this.config.save_logged("set_settings_close_shortcut");
-                                        cx.notify();
-                                    }))
-                                    .into_any_element()
-                            }
-                        }),
-                    )
-                    .description(t!("settings_close_shortcut_confirms_hint").to_string()),
-                ),
         )
 }

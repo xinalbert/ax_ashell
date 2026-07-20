@@ -622,7 +622,6 @@ impl AxShell {
             settings_page_open: false,
             settings_page_generation: 0,
             settings_initial_page: 0,
-            settings_close_remember_choice: false,
             keybind_error: None,
             keybinds_suspended: false,
             monitoring: MonitoringState {

@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：修复 detached workspace 返回主窗口时的 macOS 窗口关闭重入崩溃。
-- 交付物：下一轮 macOS 运行循环执行的 AppKit 关闭调度，以及自动化和 GUI 验证记录。
+- 目标：移除 Settings 页关闭时无条件出现的确认对话框。
+- 交付物：直接关闭的 Settings 快捷键和标签关闭按钮，以及移除的无效确认配置表面。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/actions/session.rs`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：工作区转移语义、GPUI 或 AppKit 依赖升级、Metal renderer 实现、其他窗口关闭路径或发布版本。
+- 当前范围：`src/app.rs`、`src/app/dialogs.rs`、`src/app/dialogs/settings/`、`src/app/lifecycle/init.rs`、`src/app/views/tab_bar.rs`、`src/app/workspace.rs`、`src/config/`、`locales/`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：未保存表单的 dirty-state 检测、SFTP 传输关闭确认、连接表单关闭语义、其他窗口关闭路径或发布版本。
 
 ## 当前状态
 
@@ -38,6 +38,7 @@
 | P14 | completed | 修正连接页滚动容器所在的 Dialog 渲染分支 | `rustfmt`；`cargo check`；`cargo test --quiet`；小窗口 GUI 截图验收 | 使用 Dialog 内置 child scroll body，不改连接语义 |
 | P15 | completed | 修复新建连接页的 GPUI 双重借用崩溃并建立安全滚动区 | `rustfmt`；`cargo check`；`cargo test --quiet`；小窗口 GUI 截图验收 | content 延迟构建，显式 scroll handle 与 flex 约束 |
 | P16 | completed | 将 detached workspace 的 AppKit 窗口关闭投递到下一轮 macOS 运行循环 | `rustfmt`；`cargo check`；`cargo test --quiet`；返回主窗口 GUI 验收 | 保留 Metal drawable 清理，但不得在 GPUI `App::update` 借用期间同步关闭 |
+| P17 | completed | 移除 Settings 页无条件关闭确认及其失效配置表面 | `rustfmt`；`cargo check`；`cargo test --quiet`；Settings 快捷键/标签关闭按钮 GUI 验收 | SFTP 传输关闭确认保持不变 |
 
 ## 已完成
 
@@ -68,11 +69,13 @@
 - P15 已完成：恢复 `Dialog.content(...)` 的延迟 builder，在其内部以稳定 ID 的 `ScrollHandle`、`flex_1`、`min_h_0` 和 `overflow_y_scroll()` 形成明确高度的滚动区；标题、连接类型、认证、全部高级项和末尾操作仍由同一 form 承载。
 - P16 已完成定位：`a75e4cb` 在 detached workspace 返回时用 `window.defer` 调用 AppKit `performClose:`。GPUI 的 defer 在当前 `App::update` effect cycle 内执行，`performClose:` 同步进入 GPUI `on_close` 并尝试再次借用 `App`，导致 `RefCell already borrowed`；panic 穿过 Objective-C 回调后升级为无法 unwind 的进程终止。
 - P16 已完成：`performClose:` 改为零延迟的 AppKit selector，进入下一轮主运行循环；移除包裹它的 GPUI `window.defer`。因此 GPUI 会先返回外层 `App::update` 并释放 `RefCell` 借用，随后关闭 callback 才能安全调用 `AsyncApp::update`；AppKit handle 不可用时仍回退到既有 `remove_window()`。
+- P17 已完成定位：Settings 关闭只隐藏 Settings tab 并回到 terminal；绝大多数设置即时保存，而保留 Save 按钮的表单也没有被确认框检测。无条件确认不能防止特定数据丢失，反而每次关闭增加交互步骤。SFTP 提示不同，仅在运行或暂停传输时出现，保留后台继续和取消断连两种后果不同的行为，故不在本轮修改。
+- P17 已完成：Settings 快捷键与标签关闭按钮直接调用 `close_settings_page`；删除 Settings 关闭确认 dialog、第二次快捷键动作配置、初始化状态、测试和双语文案。保留 Save 按钮的表单仍须显式保存，旧 JSON 中已废弃的确认字段按 serde 默认规则忽略并在后续保存时移除。
 
 ## 验证
 
-- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9/P11/P14/P15/P16 完整 `cargo test --quiet`（238 passed）与 `rustfmt`；P8/P9/P11/P15/P16 的 `git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）；P10 的图片存在性、双语路径配对和旧目录引用审阅。
-- 未完成：P16 的 macOS detached workspace 返回主窗口验收；P15 的真实小窗口 GUI 截图验收；100/250/500 ms RTT SSH 服务上的 P7/P8/P9 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
+- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9/P11/P14/P15/P16 完整 `cargo test --quiet`（238 passed）与 `rustfmt`；P17 完整 `cargo test --quiet`（236 passed）与 `rustfmt`；P8/P9/P11/P15/P16/P17 的 `git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）；P10 的图片存在性、双语路径配对和旧目录引用审阅。
+- 未完成：P17 的 Settings 快捷键和标签关闭按钮 GUI 验收；P16 的 macOS detached workspace 返回主窗口验收；P15 的真实小窗口 GUI 截图验收；100/250/500 ms RTT SSH 服务上的 P7/P8/P9 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
 
 ## 风险与阻塞
 
@@ -92,11 +95,12 @@
 - P14 的 child 构建方案已被 P15 替代，不再用于连接页；需要确认鼠标滚轮、触控板、焦点、取消、保存和保存并连接仍可用。
 - P15 必须保留 `Dialog.content(...)` 的延迟构建边界，不能在 `show_ssh_dialog` 的 `AxShell` update 内同步 `view.read(cx)`；crash hook 仅用于诊断，不能作为继续运行的兜底。
 - P16 不能在 GPUI `App::update` 或 `window.defer` effect 中同步调用 `performClose:`；关闭仍需在 macOS 主运行循环完成，确保 GPUI 先释放其 `App` 借用。
+- P17 直接关闭 Settings 不会保存带 Save 按钮表单中未提交的 input；本轮按用户请求移除无条件确认，不实现未保存修改检测。SFTP 活跃传输关闭确认不可复用为 Settings 关闭逻辑。
 
 ## 下一步
 
-- 在 macOS 将 detached workspace 返回主窗口，确认窗口关闭、工作区还原和进程稳定；随后继续 P15 与 P7/P8/P9 的 GUI 验收。
+- 在 Settings 页面按一次 Settings 快捷键和关闭标签按钮，确认都立即返回 terminal；随后继续 P16、P15 与 P7/P8/P9 的 GUI 验收。
 
 ## 最后更新时间
 
-- 2026-07-20 11:15 +0800
+- 2026-07-20 11:50 +0800
