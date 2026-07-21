@@ -1,7 +1,7 @@
 use super::*;
 
 use gpui::IntoElement;
-use gpui_component::setting::{SettingGroup, SettingItem, SettingPage};
+use gpui_component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
 
 pub(super) fn settings_general_page(view: &gpui::Entity<AxShell>, shell: &AxShell) -> SettingPage {
     let current_locale = shell.config.locale().to_string();

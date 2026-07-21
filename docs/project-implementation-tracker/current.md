@@ -2,14 +2,14 @@
 
 ## 当前目标
 
-- 目标：移除 Settings 页关闭时无条件出现的确认对话框。
-- 交付物：直接关闭的 Settings 快捷键和标签关闭按钮，以及移除的无效确认配置表面。
+- 目标：修复移除 Settings 关闭确认后导致五平台 release CI 失败的编译回归。
+- 交付物：恢复语言下拉所需的 `SettingField` import，并完成本地验证记录。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app.rs`、`src/app/dialogs.rs`、`src/app/dialogs/settings/`、`src/app/lifecycle/init.rs`、`src/app/views/tab_bar.rs`、`src/app/workspace.rs`、`src/config/`、`locales/`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：未保存表单的 dirty-state 检测、SFTP 传输关闭确认、连接表单关闭语义、其他窗口关闭路径或发布版本。
+- 当前范围：`src/app/dialogs/settings/general.rs`、`docs/project-implementation-tracker/`。
+- 不在本轮范围内：Settings 关闭行为、未保存表单的 dirty-state 检测、SFTP 传输关闭确认、连接表单关闭语义、其他窗口关闭路径或发布版本。
 
 ## 当前状态
 
@@ -39,6 +39,7 @@
 | P15 | completed | 修复新建连接页的 GPUI 双重借用崩溃并建立安全滚动区 | `rustfmt`；`cargo check`；`cargo test --quiet`；小窗口 GUI 截图验收 | content 延迟构建，显式 scroll handle 与 flex 约束 |
 | P16 | completed | 将 detached workspace 的 AppKit 窗口关闭投递到下一轮 macOS 运行循环 | `rustfmt`；`cargo check`；`cargo test --quiet`；返回主窗口 GUI 验收 | 保留 Metal drawable 清理，但不得在 GPUI `App::update` 借用期间同步关闭 |
 | P17 | completed | 移除 Settings 页无条件关闭确认及其失效配置表面 | `rustfmt`；`cargo check`；`cargo test --quiet`；Settings 快捷键/标签关闭按钮 GUI 验收 | SFTP 传输关闭确认保持不变 |
+| P18 | completed | 修复 Settings 通用页缺失 `SettingField` import 的五平台编译回归 | `rustfmt`；`cargo check`；`cargo test --quiet`；CI 重跑 | 不改变 P17 的直接关闭行为 |
 
 ## 已完成
 
@@ -71,11 +72,13 @@
 - P16 已完成：`performClose:` 改为零延迟的 AppKit selector，进入下一轮主运行循环；移除包裹它的 GPUI `window.defer`。因此 GPUI 会先返回外层 `App::update` 并释放 `RefCell` 借用，随后关闭 callback 才能安全调用 `AsyncApp::update`；AppKit handle 不可用时仍回退到既有 `remove_window()`。
 - P17 已完成定位：Settings 关闭只隐藏 Settings tab 并回到 terminal；绝大多数设置即时保存，而保留 Save 按钮的表单也没有被确认框检测。无条件确认不能防止特定数据丢失，反而每次关闭增加交互步骤。SFTP 提示不同，仅在运行或暂停传输时出现，保留后台继续和取消断连两种后果不同的行为，故不在本轮修改。
 - P17 已完成：Settings 快捷键与标签关闭按钮直接调用 `close_settings_page`；删除 Settings 关闭确认 dialog、第二次快捷键动作配置、初始化状态、测试和双语文案。保留 Save 按钮的表单仍须显式保存，旧 JSON 中已废弃的确认字段按 serde 默认规则忽略并在后续保存时移除。
+- P18 已完成定位：P17 删除 `settings_behavior` group 时误删 `SettingField` import，但语言下拉仍使用 `SettingField::render`。GitHub CI 的 macOS arm64/x86_64、Linux x86_64/aarch64 和 Windows x86_64 都在 release build 因同一 `E0433` 失败；RustSec audit 通过。本地 `cargo check` 已复现。
+- P18 已完成：恢复 `SettingField` import，语言下拉恢复编译；Settings 关闭路径和 P17 删除的确认配置没有变化。
 
 ## 验证
 
-- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9/P11/P14/P15/P16 完整 `cargo test --quiet`（238 passed）与 `rustfmt`；P17 完整 `cargo test --quiet`（236 passed）与 `rustfmt`；P8/P9/P11/P15/P16/P17 的 `git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）；P10 的图片存在性、双语路径配对和旧目录引用审阅。
-- 未完成：P17 的 Settings 快捷键和标签关闭按钮 GUI 验收；P16 的 macOS detached workspace 返回主窗口验收；P15 的真实小窗口 GUI 截图验收；100/250/500 ms RTT SSH 服务上的 P7/P8/P9 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
+- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9/P11/P14/P15/P16 完整 `cargo test --quiet`（238 passed）与 `rustfmt`；P17/P18 完整 `cargo test --quiet`（236 passed）与 `rustfmt`；P8/P9/P11/P15/P16/P17/P18 的 `git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）；P10 的图片存在性、双语路径配对和旧目录引用审阅。
+- 未完成：P18 的 CI 重跑；P17 的 Settings 快捷键和标签关闭按钮 GUI 验收；P16 的 macOS detached workspace 返回主窗口验收；P15 的真实小窗口 GUI 截图验收；100/250/500 ms RTT SSH 服务上的 P7/P8/P9 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
 
 ## 风险与阻塞
 
@@ -99,8 +102,8 @@
 
 ## 下一步
 
-- 在 Settings 页面按一次 Settings 快捷键和关闭标签按钮，确认都立即返回 terminal；随后继续 P16、P15 与 P7/P8/P9 的 GUI 验收。
+- 推送 P18 修复并确认 CI 五个平台 release build 通过；随后继续 P17、P16、P15 与 P7/P8/P9 的 GUI 验收。
 
 ## 最后更新时间
 
-- 2026-07-20 11:50 +0800
+- 2026-07-20 12:15 +0800
