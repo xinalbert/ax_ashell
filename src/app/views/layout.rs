@@ -62,6 +62,11 @@ impl Render for AxShell {
         let show_linux_client_title_bar = cfg!(target_os = "linux")
             && self.active_title_bar_style == crate::config::TitleBarStyle::Native
             && matches!(window.window_decorations(), Decorations::Client { .. });
+        let show_top_native_tab_bar = !is_detached_workspace
+            && cfg!(any(target_os = "windows", target_os = "linux"))
+            && self.active_title_bar_style == crate::config::TitleBarStyle::Native;
+        let show_macos_native_workspace_tab_bar = cfg!(target_os = "macos")
+            && self.active_title_bar_style == crate::config::TitleBarStyle::Native;
         let sftp_context_remote_ready = self.active_sftp().is_some();
         let connection_progress = self
             .active_dialog
@@ -104,25 +109,19 @@ impl Render for AxShell {
                             .size_full()
                             .relative()
                             .overflow_hidden()
-                            .when(
-                                self.active_title_bar_style == crate::config::TitleBarStyle::Native,
-                                |this| {
-                                    this.child(
-                                        div()
-                                            .id("native-tab-bar-drag-collapsed")
-                                            .flex_none()
-                                            .h(px(32.))
-                                            .w_full()
-                                            .bg(cx.theme().tab_bar)
-                                            .border_b_1()
-                                            .border_color(cx.theme().border)
-                                            .child(self.render_tab_bar(cx))
-                                            .when(cfg!(target_os = "linux"), |this| {
-                                                Self::bind_titlebar_drag(this, cx)
-                                            }),
-                                    )
-                                },
-                            )
+                            .when(show_macos_native_workspace_tab_bar, |this| {
+                                this.child(
+                                    div()
+                                        .id("native-tab-bar-collapsed")
+                                        .flex_none()
+                                        .h(px(32.))
+                                        .w_full()
+                                        .bg(cx.theme().tab_bar)
+                                        .border_b_1()
+                                        .border_color(cx.theme().border)
+                                        .child(self.render_tab_bar(cx)),
+                                )
+                            })
                             .child(body_panel),
                     ),
                 )
@@ -143,25 +142,19 @@ impl Render for AxShell {
                     .size_full()
                     .relative()
                     .overflow_hidden()
-                    .when(
-                        self.active_title_bar_style == crate::config::TitleBarStyle::Native,
-                        |this| {
-                            this.child(
-                                div()
-                                    .id("native-tab-bar-drag-main")
-                                    .flex_none()
-                                    .h(px(32.))
-                                    .w_full()
-                                    .bg(cx.theme().tab_bar)
-                                    .border_b_1()
-                                    .border_color(cx.theme().border)
-                                    .child(self.render_tab_bar(cx))
-                                    .when(cfg!(target_os = "linux"), |this| {
-                                        Self::bind_titlebar_drag(this, cx)
-                                    }),
-                            )
-                        },
-                    )
+                    .when(show_macos_native_workspace_tab_bar, |this| {
+                        this.child(
+                            div()
+                                .id("native-tab-bar-main")
+                                .flex_none()
+                                .h(px(32.))
+                                .w_full()
+                                .bg(cx.theme().tab_bar)
+                                .border_b_1()
+                                .border_color(cx.theme().border)
+                                .child(self.render_tab_bar(cx)),
+                        )
+                    })
                     .child(body_panel),
             );
 
@@ -471,6 +464,22 @@ impl Render for AxShell {
                         .child("AxShell"),
                 ))
             })
+            .when(
+                show_top_native_tab_bar,
+                |this| {
+                    this.child(
+                        div()
+                            .id("native-tab-bar")
+                            .flex_none()
+                            .h(px(32.))
+                            .w_full()
+                            .bg(cx.theme().tab_bar)
+                            .border_b_1()
+                            .border_color(cx.theme().border)
+                            .child(self.render_tab_bar(cx)),
+                    )
+                },
+            )
             .when(show_platform_menu_bar, |this| {
                 this.child(
                     div()

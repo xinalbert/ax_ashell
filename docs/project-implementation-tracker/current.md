@@ -2,14 +2,15 @@
 
 ## 当前目标
 
-- 目标：修复移除 Settings 关闭确认后导致五平台 release CI 失败的编译回归。
-- 交付物：恢复语言下拉所需的 `SettingField` import，并完成本地验证记录。
+- 目标 ID：P19
+- 目标：将 Windows/Linux 原生标题栏模式的工作区标签栏提升到应用内容区域顶部。
+- 交付物：全宽顶部标签栏，位于 Windows/Linux 系统标题栏之后、菜单栏之前；保留 macOS integrated 和所有原生窗口装饰。
 
 ## 项目边界
 
 - 根目录：`<repo-root>`
-- 当前范围：`src/app/dialogs/settings/general.rs`、`docs/project-implementation-tracker/`。
-- 不在本轮范围内：Settings 关闭行为、未保存表单的 dirty-state 检测、SFTP 传输关闭确认、连接表单关闭语义、其他窗口关闭路径或发布版本。
+- 当前范围：`src/app/views/layout.rs`、`src/app/views/tab_bar.rs`、`docs/project-implementation-tracker/`、已弃用的根目录 `worker.md`。
+- 不在本轮范围内：Windows/Linux 自绘窗口框架、CSD 默认策略、macOS integrated 标题栏、菜单内容、标签功能、窗口装饰或发布版本。
 
 ## 当前状态
 
@@ -40,6 +41,7 @@
 | P16 | completed | 将 detached workspace 的 AppKit 窗口关闭投递到下一轮 macOS 运行循环 | `rustfmt`；`cargo check`；`cargo test --quiet`；返回主窗口 GUI 验收 | 保留 Metal drawable 清理，但不得在 GPUI `App::update` 借用期间同步关闭 |
 | P17 | completed | 移除 Settings 页无条件关闭确认及其失效配置表面 | `rustfmt`；`cargo check`；`cargo test --quiet`；Settings 快捷键/标签关闭按钮 GUI 验收 | SFTP 传输关闭确认保持不变 |
 | P18 | completed | 修复 Settings 通用页缺失 `SettingField` import 的五平台编译回归 | `rustfmt`；`cargo check`；`cargo test --quiet`；CI 重跑 | 不改变 P17 的直接关闭行为 |
+| P19 | completed | 原生标题栏模式下的全宽顶部工作区标签栏 | `rustfmt`；`cargo check`；`cargo test --quiet`；Windows/Linux GUI 验收 | 标签栏位于系统标题栏之后、菜单栏之前；保留系统标题栏与按钮 |
 
 ## 已完成
 
@@ -74,11 +76,12 @@
 - P17 已完成：Settings 快捷键与标签关闭按钮直接调用 `close_settings_page`；删除 Settings 关闭确认 dialog、第二次快捷键动作配置、初始化状态、测试和双语文案。保留 Save 按钮的表单仍须显式保存，旧 JSON 中已废弃的确认字段按 serde 默认规则忽略并在后续保存时移除。
 - P18 已完成定位：P17 删除 `settings_behavior` group 时误删 `SettingField` import，但语言下拉仍使用 `SettingField::render`。GitHub CI 的 macOS arm64/x86_64、Linux x86_64/aarch64 和 Windows x86_64 都在 release build 因同一 `E0433` 失败；RustSec audit 通过。本地 `cargo check` 已复现。
 - P18 已完成：恢复 `SettingField` import，语言下拉恢复编译；Settings 关闭路径和 P17 删除的确认配置没有变化。
+- P19 已完成：Windows/Linux Native 模式的工作区标签栏从主工作区内部提升到 root 布局，横跨侧栏与主区域，位于系统标题栏之后、应用菜单栏之前；macOS Native 模式保留原有工作区内位置。macOS integrated 路径、Linux CSD 标题栏、窗口装饰和标签功能保持不变；Native 标签栏不再承担 Linux 窗口拖动。已删除违反 tracker 当前约定且只含已结束 agent 历史的根目录 `worker.md`，本轮未创建 canonical worker registry。
 
 ## 验证
 
-- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9/P11/P14/P15/P16 完整 `cargo test --quiet`（238 passed）与 `rustfmt`；P17/P18 完整 `cargo test --quiet`（236 passed）与 `rustfmt`；P8/P9/P11/P15/P16/P17/P18 的 `git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）；P10 的图片存在性、双语路径配对和旧目录引用审阅。
-- 未完成：P18 的 CI 重跑；P17 的 Settings 快捷键和标签关闭按钮 GUI 验收；P16 的 macOS detached workspace 返回主窗口验收；P15 的真实小窗口 GUI 截图验收；100/250/500 ms RTT SSH 服务上的 P7/P8/P9 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
+- 已完成：安全代码审阅、RustSec 官方公告数据库审计、依赖链初步定位、基线 `cargo test --quiet`（225 passed）；P1 的 `cargo test --quiet host_key`（6 passed）、P2 的 `cargo test --quiet legacy_ssh`（1 passed）、P3 的 `cargo test --quiet sync`（7 passed）；P7 的 `cargo test --quiet input_feedback`（3 passed）；P8 的 `cargo test --quiet local_input`（3 passed）、`cargo test --quiet session::tests::new_session_fields_default_when_loading_existing_sessions`（1 passed）、`cargo test --quiet local_input_overlay_requires_opt_in_and_primary_screen`（1 passed）；各步骤的 `cargo check`；P8/P9/P11/P14/P15/P16 完整 `cargo test --quiet`（238 passed）与 `rustfmt`；P17/P18/P19 完整 `cargo test --quiet`（236 passed）与 `rustfmt`；P8/P9/P11/P15/P16/P17/P18/P19 的 `git diff --check` 和 tracking docs validator；P9 的 `cargo test --quiet grid_layout_key`（1 passed）；P10 的图片存在性、双语路径配对和旧目录引用审阅。
+- 未完成：P19 的 Windows/Linux GUI 验收（确认标签栏在系统标题栏之后、菜单栏之前、横跨侧栏，且标签点击/关闭/拖动与窗口控制保持可用）；P18 的 CI 重跑；P17 的 Settings 快捷键和标签关闭按钮 GUI 验收；P16 的 macOS detached workspace 返回主窗口验收；P15 的真实小窗口 GUI 截图验收；100/250/500 ms RTT SSH 服务上的 P7/P8/P9 手工采样与交互验收；主机密钥确认点击的实机验收、CI 实跑，以及 macOS/Windows/Linux 的真实 SSH/SFTP/同步服务验收。
 
 ## 风险与阻塞
 
@@ -99,11 +102,12 @@
 - P15 必须保留 `Dialog.content(...)` 的延迟构建边界，不能在 `show_ssh_dialog` 的 `AxShell` update 内同步 `view.read(cx)`；crash hook 仅用于诊断，不能作为继续运行的兜底。
 - P16 不能在 GPUI `App::update` 或 `window.defer` effect 中同步调用 `performClose:`；关闭仍需在 macOS 主运行循环完成，确保 GPUI 先释放其 `App` 借用。
 - P17 直接关闭 Settings 不会保存带 Save 按钮表单中未提交的 input；本轮按用户请求移除无条件确认，不实现未保存修改检测。SFTP 活跃传输关闭确认不可复用为 Settings 关闭逻辑。
+- P19 不能将 Windows/Linux Native 模式改为 integrated/self-drawn titlebar；Linux CSD 仍由窗口管理器协商，原生窗口控制区必须保持不变。标签栏不是拖拽区，Linux CSD 标题栏和系统标题栏继续承担窗口拖动；需要在真实 Windows 与 Linux 桌面环境中确认菜单、标签点击、拖拽和窗口控制没有回归。
 
 ## 下一步
 
-- 推送 P18 修复并确认 CI 五个平台 release build 通过；随后继续 P17、P16、P15 与 P7/P8/P9 的 GUI 验收。
+- 在 Windows 和 Linux GUI 验收 P19 的顶部标签栏顺序、交互与原生窗口控制；随后继续既有 P18、P17、P16、P15 与 P7/P8/P9 的验收。
 
 ## 最后更新时间
 
-- 2026-07-20 12:15 +0800
+- 2026-07-21 15:52 +0800

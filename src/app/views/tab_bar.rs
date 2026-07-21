@@ -23,8 +23,6 @@ impl AxShell {
         let workspace_tabs = self.workspace_tabs();
         let selected = self.active_workspace_tab_index(&workspace_tabs);
         let is_integrated = self.active_title_bar_style == crate::config::TitleBarStyle::Integrated;
-        let is_linux_native_drag_bar = cfg!(target_os = "linux")
-            && self.active_title_bar_style == crate::config::TitleBarStyle::Native;
         let color_inactive_tabs = self.config.color_inactive_tabs();
 
         h_flex()
@@ -340,9 +338,7 @@ impl AxShell {
                                     }
                                 }
                             }))
-                            .suffix(h_flex().h_full().flex_none().when(
-                                is_integrated || is_linux_native_drag_bar,
-                                |this| {
+                            .suffix(h_flex().h_full().flex_none().when(is_integrated, |this| {
                                     this.child(
                                         div()
                                             .id("tab-bar-drag-spacer")
@@ -353,9 +349,6 @@ impl AxShell {
                                                 this.window_control_area(
                                                     gpui::WindowControlArea::Drag,
                                                 )
-                                            })
-                                            .when(is_linux_native_drag_bar, |this| {
-                                                Self::bind_titlebar_drag(this, cx)
                                             }),
                                     )
                                 },
